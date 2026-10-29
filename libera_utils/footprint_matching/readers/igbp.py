@@ -25,7 +25,7 @@ from typing import ClassVar
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import _SinusoidalGeometry, read_modis_sinusoidal_hdf4
-from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.readers.base import StaticReader, in_box
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch, VariableSpec
 
 # MCD12Q1 ``LC_Type1`` valid IGBP land-cover codes are 1..17, where 17 = Water Bodies
@@ -46,6 +46,10 @@ _IGBP_VALID_MAX: int = 17
 # ``IGBPSurfaceType`` domain (an upper bound on ``LC_Type1``'s 1..17) so the bins line
 # up with the enum; unused high bins simply receive zero weight.
 _N_IGBP_CATEGORIES: int = 20
+
+
+# The products that carry the IGBP variables: every FMATCH product.
+_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
 
 
 class IGBPReader(StaticReader):
@@ -81,7 +85,7 @@ class IGBPReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The MCD12Q1 HDF4 tile file(s) (e.g., ``MCD12Q1.A2023001.h09v05.061.hdf``).
     """
 
@@ -98,7 +102,7 @@ class IGBPReader(StaticReader):
             name="surface_type",
             dtype="int16",
             aggregation="weighted_mode",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
@@ -111,21 +115,21 @@ class IGBPReader(StaticReader):
             name="surface_type_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
@@ -256,7 +260,7 @@ class _SinusoidalTiles:
             lat = np.broadcast_to(row_lat_deg[:, np.newaxis], lon.shape)
             # The inclusive box mask; every box half lies inside [-180, 180], so it also
             # excludes the pixels off the sinusoidal globe (|lon| > 180).
-            inside = (lat >= bbox.lat_min) & (lat <= bbox.lat_max) & (lon >= bbox.lon_min) & (lon <= bbox.lon_max)
+            inside = in_box(lat, lon, bbox)
             codes = self.data[t, r0 : r1 + 1, c0 : c1 + 1][inside]
             lats_out.append(lat[inside])
             lons_out.append(lon[inside])

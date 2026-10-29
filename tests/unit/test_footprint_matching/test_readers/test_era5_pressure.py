@@ -48,7 +48,7 @@ class TestERA5PressureLevelReaderPlanes:
         the constant for its spec (so levels are selected by value, not by position), with source ``"era5_pressure"``
         and no timestamp source.
         """
-        reader = ERA5PressureLevelReader(make_era5_pressure_netcdf_fixture(tmp_path))
+        reader = ERA5PressureLevelReader([make_era5_pressure_netcdf_fixture(tmp_path)])
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
         assert data.shape == (_N_SPECS, 4, 4)
@@ -78,7 +78,7 @@ class TestERA5PressureLevelReaderErrors:
         # ValueError("missing configured pressure") rather than substituting neighboring levels.
         partial_levels = tuple(_ERA5_PRESSURE_LEVELS[:-2])  # drop 975 and 1000 hPa
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, levels=partial_levels)
-        reader = ERA5PressureLevelReader(fixture_path)
+        reader = ERA5PressureLevelReader([fixture_path])
         with pytest.raises(ValueError, match="missing configured pressure"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -97,7 +97,7 @@ class TestERA5PressureLevelReaderErrors:
         stripped_path = tmp_path / "era5_pressure_missing_o3.nc"
         stripped.to_netcdf(stripped_path)
 
-        reader = ERA5PressureLevelReader(stripped_path)
+        reader = ERA5PressureLevelReader([stripped_path])
         with pytest.raises(KeyError, match="missing variable"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -114,7 +114,7 @@ class TestERA5PressureLevelReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5PressureLevelReader(fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc")
+        return ERA5PressureLevelReader([fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc"])
 
     def test_every_level_of_the_window_is_served(self, reader):
         """``ERA5PressureLevelReader._load_step`` serves every configured level of a real 37-level download.

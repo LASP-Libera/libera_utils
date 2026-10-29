@@ -65,7 +65,7 @@ class TestERA5ReaderBase:
         Queries a synthetic file whose latitudes are stored 2 to 0 over its full extent and asserts the served,
         row-major latitudes never decrease and both coordinate arrays are float64.
         """
-        samples = reader_cls(make_fixture(tmp_path)).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
+        samples = reader_cls([make_fixture(tmp_path)]).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         assert np.all(np.diff(samples.lats) >= 0), f"Lats should be ascending but got: {samples.lats}"
         assert samples.lats.dtype == np.float64
         assert samples.lons.dtype == np.float64
@@ -81,7 +81,7 @@ class TestERA5ReaderBase:
         rows and two interior columns are served.
         """
         fixture_path = make_fixture(tmp_path, lat_min=0.0, lat_max=4.0, lon_min=10.0, lon_max=12.0, n_lat=8, n_lon=4)
-        data, lats, lons = _region(reader_cls(fixture_path), BoundingBox(1.0, 3.0, 10.5, 11.5), _T)
+        data, lats, lons = _region(reader_cls([fixture_path]), BoundingBox(1.0, 3.0, 10.5, 11.5), _T)
         np.testing.assert_allclose(lats, np.linspace(0.0, 4.0, 8)[2:6])
         np.testing.assert_allclose(lons, np.linspace(10.0, 12.0, 4)[1:3])
         assert data.shape[1:] == (4, 2)
@@ -95,7 +95,7 @@ class TestERA5ReaderBase:
         Writes a file whose grids have only latitude and longitude dimensions and asserts a query raises
         ``ValueError`` naming the time dimension.
         """
-        reader = reader_cls(make_fixture(tmp_path, **no_time))
+        reader = reader_cls([make_fixture(tmp_path, **no_time)])
         with pytest.raises(ValueError, match="time dimension"):
             reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -108,7 +108,7 @@ class TestERA5ReaderBase:
         Loads one step of a larger synthetic grid under ``tracemalloc`` and compares the traced peak with the size of
         the returned data array.
         """
-        reader = reader_cls(make_fixture(tmp_path, **large_grid))
+        reader = reader_cls([make_fixture(tmp_path, **large_grid)])
         _ = reader._steps
         tracemalloc.start()
         try:
@@ -135,7 +135,7 @@ class TestERA5ReaderPlanes:
         timestamp source and times as above.
         """
         fixture_path = make_era5_surface_netcdf_fixture(tmp_path, u10_fill=3.0, v10_fill=-2.0, time_dim=time_dim)
-        reader = ERA5SurfaceReader(fixture_path)
+        reader = ERA5SurfaceReader([fixture_path])
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
         assert data.shape == (7, 4, 4)
@@ -180,7 +180,7 @@ class TestERA5ReaderMissingVariables:
         path = tmp_path / "era5_winds_only.nc"
         ds.to_netcdf(path)
 
-        reader = ERA5SurfaceReader(path)
+        reader = ERA5SurfaceReader([path])
         with pytest.raises(KeyError, match="missing variable"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -205,7 +205,7 @@ class TestERA5ReaderDateline:
         path = tmp_path / "era5_0_360.nc"
         ds.to_netcdf(path)
 
-        samples = ERA5SurfaceReader(path).samples_in(BoundingBox(0.0, 2.0, 178.6, 181.4, wraps_dateline=True), _T)
+        samples = ERA5SurfaceReader([path]).samples_in(BoundingBox(0.0, 2.0, 178.6, 181.4, wraps_dateline=True), _T)
 
         assert samples.n_samples == 4 * 3
         assert sorted(set(zip(samples.lons.tolist(), samples.values[0].tolist(), strict=True))) == [
@@ -233,7 +233,7 @@ class TestERA5ReaderTimeSteps:
         Writes three hourly steps whose ``u10`` is 10, 20 and 30, queries at 00:10 and 01:50, and asserts ``u10`` is 10
         and 30.
         """
-        reader = ERA5SurfaceReader(self._three_steps(tmp_path))
+        reader = ERA5SurfaceReader([self._three_steps(tmp_path)])
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         at_0010 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
         at_0150 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(110, "m"))
@@ -248,7 +248,7 @@ class TestERA5ReaderTimeSteps:
         Queries a three-step file at the first and then the last step, holds a weak reference to the first step's data,
         and asserts it is collected and the loaded step index is 2.
         """
-        reader = ERA5SurfaceReader(self._three_steps(tmp_path))
+        reader = ERA5SurfaceReader([self._three_steps(tmp_path)])
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
         first_step = weakref.ref(reader._loaded_step[1].data)
@@ -291,7 +291,7 @@ class TestERA5ReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5SurfaceReader(fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc")
+        return ERA5SurfaceReader([fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc"])
 
     def test_window_is_served_on_normalized_longitudes(self, reader):
         """``ERA5SurfaceReader._load_step`` serves a real 0..360 CDS download on -180..180 longitudes.

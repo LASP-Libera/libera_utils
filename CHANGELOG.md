@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.18.0] - 2026-10-29
+
+### Added
+
+- The swath readers CERES FLASHFlux (`flashflux`, `FLASHFluxReader`, reading the RBSP FLASHFlux product in the CERES SSF file layout for FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, with its extended cloud/aerosol/albedo fields carried by FMATCH-IMAGER alone) and CERES CLDPIX, and the VIIRS daily L3 cloud-property reader `viirs_cldprop_d3` (`VIIRSCldpropD3Reader`, `CLDPROP_D3_VIIRS_NOAA20`, `DAILY`), completing the nine-reader registry. Every FLASHFlux and CLDPIX field, geolocation and observation time included, is read with its own `_FillValue` and `valid_range`, and every VIIRS cloud-property field with its own `_FillValue`; a field without one raises `ValueError`. CLDPIX cloud phase and mask codes that the file's `flag_meanings` label `bad_data` are dropped before the mode, and a categorical field without `flag_values`/`flag_meanings` raises `ValueError`. A FLASHFlux granule missing a group or variable the reader reads, or whose variable has other dimensions than the reader expects, raises `ValueError` naming it and the file's `product_version`, as does a CLDPIX granule missing a variable the reader reads. A time variable without a `units` attribute raises `ValueError`. The FLASHFlux scene and ADM type codes are int16. The FLASHFlux and CLDPIX readers are `PassReader`s (`TIME_MATCH = NEAREST_PASS`): they convert CLDPIX colatitude to latitude and normalize 0..360 longitudes to -180..180, raising `ValueError` when a CLDPIX `Latitude` declares a `valid_range` other than [0, 180] or a FLASHFlux footprint latitude is not in `degrees_north`, read each footprint's (`Time_and_Position/time`) or pixel's (`Observation_Time`, fractional hours each dated to the day nearest `time_coverage_start`) observation time, serve every footprint or pixel as its own time-stamped sample from the pass nearest the footprint time, the samples within `PASS_WINDOW` of the observation time of the sample nearest the footprint time, so a footprint midway between two passes gets only the nearer (none beyond `MAX_TIME_OFFSET`), choosing that sample from those inside the footprint's own box and from the padding only when none falls inside, hold only the hourly granules within that offset of the current footprint, and measure the granule's own sample spacing (`PointSamples.spacing_km`, the larger of the along-scan and along-track spacings) for the coverage measure in place of the nominal `RESOLUTION_KM`. `PassReader` joins `StaticReader` and `SteppedGridReader` as a reader base, and `ReaderRegistry.get_readers_for_mode` returns the readers that contribute to an `OperationalMode`'s product (`FMATCH_MODE_READERS`, derived from the built-in readers' `VariableSpec.modes`).
+- `notebooks/03_readers_swath.ipynb`, a demonstration of the swath readers.
+- Fill and valid-range helpers in `libera_utils.io.netcdf`, used by the CERES FLASHFlux, CLDPIX and VIIRS cloud-property readers: `fill_in_dtype` returns a `_FillValue` in a given dtype, or `None` when no value of that dtype can equal it; `field_fill_value` and `field_valid_range` return a netCDF4 variable's own `_FillValue` and `valid_range`, raising `ValueError` when it has none; `apply_fill_and_valid_range` returns a raw, optionally masked array as float64 with masked entries, fill values (compared in the raw dtype) and values outside an inclusive `valid_range` (either order) set to NaN.
+
+### Changed
+
+- **BREAKING:** An `AncillaryReader` is constructed from a sequence of staged granule paths: a bare `str` or `Path` raises `TypeError`, an empty sequence `ValueError`, and a path that is not an existing file `FileNotFoundError` naming the reader and every such path. A single path was previously accepted, and a missing file failed only when it was read.
+- **BREAKING:** `VariableSpec` takes a required `modes`, a `frozenset[OperationalMode]` naming every product that carries the variable, in place of `required_mode`. An empty `modes` raises `ValueError`, and one that is not a frozenset of `OperationalMode` members raises `TypeError`. A standard-deviation companion from `with_standard_deviation_companions` carries its parent's `modes`.
+
+### Removed
+
+- **BREAKING:** `OperationalMode.rank`, `VariableSpec.required_mode`, `VariableSpec.only_modes` and `spec_active_in_mode`. A variable belongs to a product exactly when `mode in spec.modes`.
+
 ## [5.17.0] - 2026-10-29
 
 ### Added
@@ -928,7 +945,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...HEAD
+[5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
 [5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
 [5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
 [5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0

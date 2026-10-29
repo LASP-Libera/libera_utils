@@ -17,8 +17,7 @@ class OperationalMode(enum.Enum):
     """Five operational modes for the FMATCH algorithm.
 
     Each mode produces a distinct data product with its own identifier.
-    Modes are ordered by increasing data latency; the ``rank`` property
-    exposes this ordering for reader filtering.
+    Members are declared in order of increasing data latency.
 
     Attributes
     ----------
@@ -44,18 +43,6 @@ class OperationalMode(enum.Enum):
     IMAGER_FLASH = "FMATCH-IMAGER-FLASH"
     IMAGER = "FMATCH-IMAGER"
     IMAGER_CAMTIME = "FMATCH-IMAGER-CAMTIME"
-
-    @property
-    def rank(self) -> int:
-        """Integer ordering of modes by data latency (0 = lowest latency).
-
-        Used to compare a :class:`VariableSpec`'s ``required_mode`` against the active
-        mode (a spec is carried when ``spec.required_mode.rank <= mode.rank``), which
-        gates variables *within* a reader -- e.g. the ERA5 single-level winds (CAM) vs
-        its IMAGER-only substitute fields. Reader-to-product membership is declared
-        separately by the per-product reader sets in ``readers/registry.py``.
-        """
-        return list(OperationalMode).index(self)
 
 
 class FmatchCoverageFlag(enum.IntFlag):
@@ -169,10 +156,10 @@ class TimeMatch(enum.Enum):
         between steps. A footprint farther than ``MAX_TIME_OFFSET`` from every step gets
         no samples.
     NEAREST_PASS
-        The source is swath or point data with a time per sample (CERES SSF, CLDPIX).
-        Of the samples in the box, those within ``PASS_WINDOW`` of the smallest
-        ``|sample time - footprint time|`` are served: the nearest pass, whole, and no
-        other pass. A footprint whose nearest sample is farther than
+        The source is swath or point data with a time per sample (CERES FLASHFlux, CLDPIX).
+        Of the samples in the box, those within ``PASS_WINDOW`` of the observation time
+        of the sample nearest the footprint time are served: the nearest pass, whole,
+        and no other pass. A footprint whose nearest sample is farther than
         ``MAX_TIME_OFFSET`` gets no samples.
     """
 
@@ -221,7 +208,7 @@ class GridSamples:
 class PointSamples:
     """A reader's native data as geolocated points.
 
-    The native form of swath, footprint and projected-grid sources (CERES SSF and
+    The native form of swath, footprint and projected-grid sources (CERES FLASHFlux and
     CLDPIX, IGBP tiles on the MODIS sinusoidal grid, NISE EASE-Grid pixels): each sample carries its
     own latitude and longitude, and for a ``NEAREST_PASS`` source its own time.
 
@@ -437,7 +424,7 @@ class VariableSpec:
     """Metadata describing a single output variable provided by a reader.
 
     Used by the reader base class and the aggregation engine to know what data a
-    reader supplies, how to aggregate it, and in which operational modes it is active.
+    reader supplies, how to aggregate it, and which products carry it.
 
     Attributes
     ----------
@@ -450,65 +437,42 @@ class VariableSpec:
         PSF aggregation strategy name (e.g., ``"weighted_mean"``,
         ``"weighted_mode"``, ``"weighted_log_mean"``). The strategy is resolved
         by the aggregation engine from the variables.yaml configuration.
-    required_mode : OperationalMode
-        Minimum operational mode in which this variable is processed. Readers
-        and variables with a rank higher than the active mode are excluded.
-        Ignored when ``only_modes`` is set (see below).
+    modes : frozenset[OperationalMode]
+        Every operational mode (product) that carries this variable. A variable
+        belongs to a product exactly when ``mode in spec.modes``, and a reader
+        feeds a product when any of its variables names that product
+        (``readers/registry.py`` derives ``FMATCH_MODE_READERS`` from these sets).
     n_categories : int or None
         For categorical variables only: number of distinct category values
-        (e.g., 20 for IGBP surface type). ``None`` for continuous variables.
-    only_modes : tuple[OperationalMode, ...] or None
-        Exact set of operational modes (products) this variable belongs to. When
-        ``None`` (the default), the variable uses the ``required_mode`` *minimum
-        latency* rule: it is carried by every product whose rank is at least
-        ``required_mode.rank``. When set, the variable is carried by **exactly**
-        the listed modes and the rank rule is bypassed -- this is how a spec is
-        pinned to a single product (e.g. a field that must appear only in
-        FMATCH-IMAGER, not in the higher-ranked FMATCH-IMAGER-CAMTIME). Membership
-        is resolved by :func:`spec_active_in_mode`.
+        (e.g., 20 for IGBP surface type). ``None`` for continuous variables, and
+        for a mode-aggregated code with no fixed count (e.g., the CERES FLASHFlux scene
+        and ADM type codes), which the aggregation bins by the codes it sees.
+
+    Raises
+    ------
+    TypeError
+        If ``modes`` is not a ``frozenset`` of :class:`OperationalMode` members.
+    ValueError
+        If ``modes`` is empty.
     """
 
     name: str
     dtype: str
     aggregation: str
-    required_mode: OperationalMode
+    modes: frozenset[OperationalMode]
     n_categories: int | None = None
-    only_modes: tuple[OperationalMode, ...] | None = None
 
-
-def spec_active_in_mode(spec: VariableSpec, mode: OperationalMode) -> bool:
-    """Return whether a variable spec is carried by a given operational mode.
-
-    The single source of truth for the spec-level product gate. It resolves the
-    two mutually exclusive gating rules a :class:`VariableSpec` can carry:
-
-    * ``only_modes`` set -> exact membership: the spec belongs to a product iff
-      ``mode`` is one of the listed modes. This can pin a spec to a single product
-      even when a higher-ranked product also activates the reader (rank alone
-      could not express that, since a higher-latency mode always has a larger
-      rank).
-    * ``only_modes`` unset -> the minimum-latency rule: the spec is carried once
-      the active mode's rank reaches the spec's ``required_mode`` rank.
-
-    Reader-to-product *membership* (which readers feed which product) is a
-    separate, coarser gate declared in ``readers/registry.py``; both gates must
-    pass for a variable to appear in a product.
-
-    Parameters
-    ----------
-    spec : VariableSpec
-        The variable specification to test.
-    mode : OperationalMode
-        The operational mode (product) to test against.
-
-    Returns
-    -------
-    bool
-        True when ``spec`` is part of ``mode``'s product definition.
-    """
-    if spec.only_modes is not None:
-        return mode in spec.only_modes
-    return spec.required_mode.rank <= mode.rank
+    def __post_init__(self) -> None:
+        if not isinstance(self.modes, frozenset) or not all(isinstance(m, OperationalMode) for m in self.modes):
+            raise TypeError(
+                f"VariableSpec {self.name!r} has modes={self.modes!r}: pass a frozenset of OperationalMode "
+                "members, e.g. frozenset({OperationalMode.IMAGER})."
+            )
+        if not self.modes:
+            raise ValueError(
+                f"VariableSpec {self.name!r} has empty modes: name at least one product that carries it, "
+                "e.g. frozenset({OperationalMode.IMAGER})."
+            )
 
 
 _MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_mean"})
@@ -554,17 +518,15 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
         if spec.aggregation in _MEAN_AGGREGATIONS:
             # A standard deviation is always a non-negative real number, so it is
             # stored as float32 regardless of the parent's dtype and carries no
-            # category count. The companion inherits the parent's mode gating --
-            # both ``required_mode`` and ``only_modes`` -- so it appears in exactly
-            # the same product definitions as its parent.
+            # category count. The companion inherits the parent's ``modes``, so it
+            # appears in exactly the same product definitions as its parent.
             expanded.append(
                 VariableSpec(
                     name=f"{spec.name}{STANDARD_DEVIATION_SUFFIX}",
                     dtype="float32",
                     aggregation="weighted_std",
-                    required_mode=spec.required_mode,
+                    modes=spec.modes,
                     n_categories=None,
-                    only_modes=spec.only_modes,
                 )
             )
     return tuple(expanded)

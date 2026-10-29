@@ -15,8 +15,8 @@ Wind components (every product, from mission start):
 
 - u10 / v10: 10 m U/V wind components
 
-Additional FMATCH-IMAGER single-level fields (``required_mode=IMAGER``), which
-sit in the FMATCH-IMAGER product alongside the RBSP CLDPIX/SSF cloud fields:
+Additional single-level fields, carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME
+alongside the RBSP CLDPIX/FLASHFlux cloud fields:
 
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
@@ -44,21 +44,23 @@ from libera_utils.footprint_matching.readers._longitude import normalize_longitu
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
+# The products that carry the winds: every FMATCH product, from mission start.
+_WIND_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+# The products that carry the other single-level fields, alongside the RBSP CLDPIX/FLASHFlux
+# cloud fields.
+_IMAGER_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+
 # Each output variable, the ERA5 variable it reads as stored in CDS NetCDF4 files, and
-# the operational mode that gates it. This order is VARIABLES order and axis 0 of the
-# reader's data array.
-_ERA5_SURFACE_VARIABLES: tuple[tuple[str, str, OperationalMode], ...] = (
-    # Wind components: every product, from mission start.
-    ("wind_u10", "u10", OperationalMode.CAM),
-    ("wind_v10", "v10", OperationalMode.CAM),
-    # FMATCH-IMAGER single-level fields: they flow to the FMATCH-IMAGER product while
-    # staying out of the lower-latency CAM products, alongside the RBSP CLDPIX/SSF
-    # cloud fields.
-    ("temperature_2m", "t2m", OperationalMode.IMAGER),
-    ("dew_point_temperature_2m", "d2m", OperationalMode.IMAGER),
-    ("surface_pressure", "sp", OperationalMode.IMAGER),
-    ("surface_geopotential", "z", OperationalMode.IMAGER),
-    ("forecast_albedo", "fal", OperationalMode.IMAGER),
+# the products that carry it. This order is VARIABLES order and axis 0 of the reader's
+# data array.
+_ERA5_SURFACE_VARIABLES: tuple[tuple[str, str, frozenset[OperationalMode]], ...] = (
+    ("wind_u10", "u10", _WIND_MODES),
+    ("wind_v10", "v10", _WIND_MODES),
+    ("temperature_2m", "t2m", _IMAGER_MODES),
+    ("dew_point_temperature_2m", "d2m", _IMAGER_MODES),
+    ("surface_pressure", "sp", _IMAGER_MODES),
+    ("surface_geopotential", "z", _IMAGER_MODES),
+    ("forecast_albedo", "fal", _IMAGER_MODES),
 )
 
 
@@ -87,7 +89,7 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
     # step interval from every staged step gets no ERA5 samples (coverage 0, flagged).
     MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(1, "h")
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+    def __init__(self, file_paths: Sequence[Path]) -> None:
         super().__init__(file_paths)
         # (granule path, index along that granule's time dimension) per global step,
         # filled by _step_times in ascending time order.
@@ -198,15 +200,13 @@ class ERA5SurfaceReader(ERA5ReaderBase):
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
         Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
-        are unrestricted (``required_mode=CAM``); the five additional single-level
-        fields carry per-spec ``required_mode=IMAGER`` gating, so they appear only in
-        the FMATCH-IMAGER-family products. This per-spec latency split is why ``era5_surface``
-        serves every product yet contributes a different variable subset to the CAM vs
-        IMAGER products.
+        are carried by every product; the five additional single-level fields only
+        by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME. So ``era5_surface`` feeds every
+        product but contributes a different variable subset to each.
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The ERA5 single-levels NetCDF4 granule(s) covering the processing period, each
         containing all the variables in ``_ERA5_SURFACE_VARIABLES`` and an hourly
         time axis.
@@ -224,10 +224,10 @@ class ERA5SurfaceReader(ERA5ReaderBase):
             name=name,
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=mode,
+            modes=modes,
             n_categories=None,
         )
-        for name, _, mode in _ERA5_SURFACE_VARIABLES
+        for name, _, modes in _ERA5_SURFACE_VARIABLES
     )
 
     def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
