@@ -273,8 +273,8 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     for file_record in input_manifest.files:
         filename = file_record.filename
         try:
-            libera_filename = LiberaDataProductFilename.from_file_path(filename)
-        except Exception:
+            libera_filename = LiberaDataProductFilename(filename)
+        except ValueError:
             # Not a Libera product name. In placeholder mode that is exactly the CERES SSF input we want; in
             # Libera-product mode it cannot be an FMATCH input, so skip it.
             # TODO[LIBSDC-794]: the non-Libera "placeholder" branch exists only because SCENE-ID-CAM currently reads

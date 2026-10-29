@@ -280,19 +280,22 @@ metadata and data availability records — exactly as it does for files produced
 command returns once the files are staged and the event is emitted; the ingest itself runs asynchronously, so it may
 take a few minutes for files to appear in their archive bucket.
 
-Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
+Each path must be a properly named L0, ground CCSDS, Libera data product or external ancillary product file
+(manifests and other filename types are rejected).
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
-record and (for non-L0 data products) a Data Availability record. Verification needs only read permissions. Use
-`--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command
-logs a per-file summary and exits with an error.
+record and (for Libera and daily external ancillary data products) a Data Availability record. A static ancillary
+product such as the land/ocean mask has no applicable date and cannot be verified. Verification needs only read
+permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested
+by then the command logs a per-file summary and exits with an error.
 
 ```shell
 usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]
 
 positional arguments:
-  file_path          Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file.
+  file_path          Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data
+                     product or external ancillary product file.
 
 options:
   -h, --help         show this help message and exit

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Filename classes for external ancillary products, parsing the names their upstream providers give them: `CeresFilename` (CERES SSF and CLDPIX), `ViirsL3Filename` (VIIRS aerosol, cloud properties and BRDF), `ViirsSdrFilename` (VIIRS M-band SDR radiances and geolocation), `NsidcNiseFilename`, `NsidcLandOceanMaskFilename` and `Era5Filename`, on the bases `AncillaryDataProductFilename` and `DailyAncillaryDataProductFilename`. Each gives its `DataProductIdentifier`, upstream version and, for dated products, its applicable date; a dated product archives under `<ProductID>/YYYY/MM/DD` and the land/ocean mask under `<ProductID>/<version>`. `Era5Filename.from_filename_parts` builds the SDC's ERA5 name, `ECMWF_<ProductID>_<ERA5|ERA5T>_<utc_start>_<utc_end>_<revision>.nc`.
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept external ancillary filenames. `--verify` checks a dated ancillary file's product File Metadata and Data Availability records, as for a Libera data product, and refuses the static land/ocean mask.
+
+### Changed
+
+- `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file.
+
 ### Removed
 
 - **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). FLASHFlux files are the CERES SSF format, named `CER_SSF_...`, and are identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`).
