@@ -1,5 +1,6 @@
 """Tests for smart_open module"""
 
+import errno
 import os
 import warnings
 from pathlib import Path
@@ -10,7 +11,7 @@ import pytest
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.aws.s3_utilities import s3_copy_file
-from libera_utils.io.smart_open import is_gzip, is_s3, smart_copy_file, smart_open
+from libera_utils.io.smart_open import is_gzip, is_resource_exhaustion, is_s3, smart_copy_file, smart_open
 from tests.marks import strict_warnings
 
 
@@ -468,3 +469,33 @@ def test_smart_copy_file_remote_to_remote_file(test_txt, wrapper, create_mock_bu
     source_path = S3Path(source_file_uri)
     smart_copy_file(source_file_path, dest_file_path, delete=True)
     assert not source_path.exists()
+
+
+def _raised_from_enospc() -> RuntimeError:
+    try:
+        try:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        except OSError as cause:
+            raise RuntimeError("wrapped") from cause
+    except RuntimeError as error:
+        return error
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (MemoryError(), True),
+        (OSError(errno.ENOSPC, "No space left on device"), True),
+        (OSError(errno.EDQUOT, "Disk quota exceeded"), True),
+        (OSError(errno.EMFILE, "Too many open files"), True),
+        (OSError(errno.ENFILE, "Too many open files in system"), True),
+        (OSError(errno.ENOENT, "No such file or directory"), False),
+        (OSError("no errno"), False),
+        (ValueError("bad packet"), False),
+        (_raised_from_enospc(), False),
+    ],
+    ids=["memory", "enospc", "edquot", "emfile", "enfile", "enoent", "no-errno", "value-error", "cause-not-walked"],
+)
+def test_is_resource_exhaustion(error, expected):
+    """Only the error itself is classified; a wrapper around an exhausted resource is not."""
+    assert is_resource_exhaustion(error) is expected

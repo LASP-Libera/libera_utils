@@ -1,15 +1,20 @@
 """Module for reading packet data using Space Packet Parser"""
 
 import logging
+import multiprocessing as mp
+import traceback
 import warnings
+from collections.abc import Iterator
+from contextlib import closing
 from os import PathLike
 from typing import cast
 
 import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath
-from space_packet_parser.generators.ccsds import CCSDSPacketBytes
+from space_packet_parser import load_xtce
 from space_packet_parser.xarr import create_dataset
+from space_packet_parser.xtce.definitions import XtcePacketDefinition
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
@@ -35,6 +40,10 @@ SDC_PACKET_DIMENSION = "PACKET"
 SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
+
+# Pinned rather than taken from the platform, whose default is spawn on macOS and changed from fork to
+# forkserver on Linux in Python 3.14. fork needs no ``if __name__ == "__main__":`` guard in the caller.
+_WORKER_START_METHOD = "fork"
 
 
 def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
@@ -102,53 +111,334 @@ def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> n
     return filtered
 
 
+class _PacketAxisAccumulator:
+    """Concatenate packet datasets along the packet axis by filling preallocated arrays.
+
+    ``xr.concat`` allocates its result while every input is still referenced, so peak memory is
+    roughly 2.9 times the concatenated size (measured on a day of APID 1040). Copying each
+    dataset into a buffer and releasing it immediately holds the buffer plus one input instead.
+
+    Buffers start at ``capacity`` packets and grow geometrically, so a file carrying more packets
+    than the estimate costs one reallocation rather than a failure. A variable whose dtype is
+    wider in a later file (``space_packet_parser`` sizes string columns to the widest label it
+    actually saw, so a file containing ``SINGLE`` yields ``<U6`` where others yield ``<U3``)
+    widens the buffer, matching what ``xr.concat`` would have promoted it to.
+    """
+
+    def __init__(self, template: xr.Dataset, apid: int, capacity: int):
+        self._apid = apid
+        self._dims = {name: var.dims for name, var in template.data_vars.items()}
+        self._buffers = {
+            name: np.empty((capacity, *var.shape[1:]), dtype=var.dtype) for name, var in template.data_vars.items()
+        }
+        self._n = 0
+
+    @property
+    def capacity(self) -> int:
+        """Packets the buffers can hold before they must grow."""
+        return len(next(iter(self._buffers.values())))
+
+    def _reallocate(self, capacity: int, dtypes: dict[str, np.dtype]) -> None:
+        # One variable at a time: the transient is a single column, not a second full copy.
+        for name, buffer in self._buffers.items():
+            grown = np.empty((capacity, *buffer.shape[1:]), dtype=dtypes[name])
+            grown[: self._n] = buffer[: self._n]
+            self._buffers[name] = grown
+
+    def append(self, packet_file: PathLike | str, file_ds: xr.Dataset) -> None:
+        """Copy one parsed file onto the end of the packet axis.
+
+        Raises
+        ------
+        ValueError
+            If ``file_ds`` does not carry exactly the variables the accumulator was built with.
+            Concatenating datasets whose variable sets differ fills the missing side with NaN,
+            which would silently manufacture data; the XTCE is flat per APID, so a mismatch means
+            a file is not what it claims to be.
+        """
+        if set(file_ds.data_vars) != set(self._buffers):
+            raise ValueError(
+                f"Variables parsed from {packet_file} for APID {self._apid} do not match the other files: "
+                f"missing {sorted(set(self._buffers) - set(file_ds.data_vars))}, "
+                f"unexpected {sorted(set(file_ds.data_vars) - set(self._buffers))}."
+            )
+
+        n = file_ds.sizes[SDC_PACKET_DIMENSION]
+        promoted = {name: np.promote_types(buffer.dtype, file_ds[name].dtype) for name, buffer in self._buffers.items()}
+        needs_widening = any(promoted[name] != buffer.dtype for name, buffer in self._buffers.items())
+        if self._n + n > self.capacity:
+            self._reallocate(max(self._n + n, self.capacity * 2), promoted)
+        elif needs_widening:
+            self._reallocate(self.capacity, promoted)
+
+        for name, buffer in self._buffers.items():
+            buffer[self._n : self._n + n] = file_ds[name].values
+        self._n += n
+
+    def to_dataset(self) -> xr.Dataset:
+        """Build the concatenated Dataset.
+
+        Trims the buffers to the appended packets, one variable at a time, and returns arrays that
+        are views onto them.
+        """
+        if self._n < self.capacity:
+            self._reallocate(self._n, {name: buffer.dtype for name, buffer in self._buffers.items()})
+        return xr.Dataset({name: (self._dims[name], buffer[: self._n]) for name, buffer in self._buffers.items()})
+
+
+def _parse_one_file(
+    packet_file: PathLike | str,
+    packet_definition: XtcePacketDefinition,
+    apid: int,
+    generator_kwargs: dict,
+) -> xr.Dataset | None:
+    """Parse a single file to a packet Dataset, or None when it holds no packet of ``apid``.
+
+    Raises
+    ------
+    ValueError
+        If the file yields any APID other than ``apid``.
+    """
+    dataset_dict = create_dataset(
+        packet_files=[AnyPath(packet_file)],
+        xtce_packet_definition=packet_definition,
+        generator_kwargs=generator_kwargs,
+        packet_filter=lambda packet_bytes: packet_bytes.apid == apid,
+    )
+    if not dataset_dict:
+        return None
+    if set(dataset_dict.keys()) != {apid}:
+        raise ValueError(
+            f"Expected only APID {apid} in parsed dataset, but found APIDs: {list(dataset_dict.keys())}. "
+            f"This probably means the packet filter function is not working."
+        )
+    file_ds = dataset_dict[apid]
+    # Swap standard SPP "packet" dimension to uppercase "PACKET" to align with config naming
+    if SPP_PACKET_DIMENSION in file_ds.dims:
+        file_ds = file_ds.swap_dims({SPP_PACKET_DIMENSION: SDC_PACKET_DIMENSION})
+    return file_ds
+
+
+def _parse_file_in_subprocess(
+    connection,
+    packet_file: str,
+    packet_definition_path: str,
+    apid: int,
+    generator_kwargs: dict,
+) -> None:
+    """Worker entry point: parse one file and send the Dataset, or the exception, to the parent.
+
+    Takes the XTCE path rather than a loaded definition so that the entry point does not depend on
+    the start method: ``XtcePacketDefinition`` is not picklable, which ``spawn`` and ``forkserver``
+    would require. Loading it here costs ~0.2 s against a parse of tens of seconds.
+
+    Pickling drops an exception's traceback, so the worker's traceback is attached as a note.
+    """
+    try:
+        definition = load_xtce(packet_definition_path)
+        connection.send((None, _parse_one_file(packet_file, definition, apid, generator_kwargs)))
+    except Exception as exc:  # noqa: BLE001 - re-raised in the parent with this traceback as a note
+        exc.add_note(traceback.format_exc())
+        connection.send((exc, None))
+    finally:
+        connection.close()
+
+
+def _worker_context() -> mp.context.BaseContext:
+    """Return the multiprocessing context workers start from, using ``_WORKER_START_METHOD``."""
+    return mp.get_context(_WORKER_START_METHOD)
+
+
+def _iter_parsed_files_concurrently(
+    packet_files: list[PathLike | str],
+    packet_definition_path: str,
+    apid: int,
+    max_workers: int,
+    generator_kwargs: dict,
+) -> Iterator[tuple[PathLike | str, xr.Dataset | None]]:
+    """Parse files in worker processes, yielding results in the order given.
+
+    Parsing is CPU-bound single-threaded Python, so a container sized for several vCPUs leaves
+    all but one idle. Files are independent, so they parse concurrently; results are yielded in the
+    order given, which ``parse_packets_to_dataset`` promises and which decides the packet
+    ``parse_packets_to_l1a_dataset`` keeps among repeated counters when ``ground_data=True``.
+
+    Workers run ``max_workers`` at a time. Each holds a parse in flight, ``create_dataset``'s
+    per-field Python objects and then the parsed file until the parent reads it, so peak memory is
+    the accumulated axis plus ``max_workers`` in-flight parses, which is what bounds a useful worker
+    count rather than the available cores.
+
+    Closing the generator terminates and joins any worker still running in the current batch.
+    """
+    context = _worker_context()
+    for start in range(0, len(packet_files), max_workers):
+        workers = []
+        # Closing the generator early, on a worker error or a consumer error, must not leave the
+        # rest of the batch running or holding pipe handles.
+        try:
+            for packet_file in packet_files[start : start + max_workers]:
+                receive, send = context.Pipe(duplex=False)
+                process = context.Process(
+                    target=_parse_file_in_subprocess,
+                    args=(send, str(packet_file), packet_definition_path, apid, generator_kwargs),
+                )
+                process.start()
+                send.close()  # the parent must drop its copy or the pipe never reports EOF
+                workers.append((packet_file, process, receive))
+
+            for packet_file, process, receive in workers:
+                try:
+                    error, file_ds = receive.recv()
+                except EOFError:
+                    process.join()
+                    raise RuntimeError(
+                        f"Worker parsing {packet_file} for APID {apid} exited without a result "
+                        f"(exit code {process.exitcode}). A negative code is a signal, of which -9 is the "
+                        f"container running out of memory; a positive code means the worker died before it "
+                        f"could report, and its traceback is on stderr."
+                    ) from None
+                process.join()
+                if error is not None:
+                    raise error
+                yield packet_file, file_ds
+        finally:
+            for _, process, receive in workers:
+                receive.close()
+                if process.is_alive():
+                    process.terminate()
+                process.join()
+
+
 def parse_packets_to_dataset(
-    packet_files: list[PathLike | str], packet_definition: str | PathLike, apid: int, **generator_kwargs
+    packet_files: list[PathLike | str],
+    packet_definition: str | PathLike | XtcePacketDefinition,
+    apid: int,
+    *,
+    max_workers: int = 1,
+    **generator_kwargs,
 ) -> xr.Dataset:
     """Parse packets from files into an xarray Dataset using specified packet definition.
 
     This function does not make any changes to the packet data other than filtering by a single APID.
 
+    Files are parsed one at a time and concatenated, rather than handed to
+    ``create_dataset`` together. ``create_dataset`` retains a Python object per parsed field
+    until it converts the whole batch to numpy, which costs roughly 800 MiB per two-hour
+    NOM-HK file; a full day of files in one batch exhausts an 8 GiB container partway through.
+    Parsing per file bounds that at one file's worth.
+
+    Parsed files are copied onto a preallocated packet axis and released one at a time, rather
+    than held and handed to ``xr.concat``, which allocates its result while every input is still
+    referenced.
+
+    A file holding no packets of ``apid`` is skipped with a warning.
+
     Parameters
     ----------
     packet_files : list[PathLike | str]
         List of filepaths to packet files.
-    packet_definition : str | PathLike
-        Path to the XTCE packet definition file.
+    packet_definition : str | PathLike | space_packet_parser.xtce.definitions.XtcePacketDefinition
+        Path to the XTCE packet definition file, or an already loaded definition. Pass a loaded
+        definition to avoid re-parsing the XTCE once per file. ``max_workers`` above 1 with more
+        than one file requires a path, which each worker loads, so that workers do not depend on
+        the start method.
     apid : int
         Application Process Identifier to filter for.
+    max_workers : int, optional
+        Files to parse concurrently, in worker processes. Default 1 (in-process). Parsing is
+        CPU-bound single-threaded Python, so concurrency is the only way to use a container
+        sized for more than one vCPU. Peak memory rises by one in-flight parse per worker (about
+        800 MiB for a two-hour NOM-HK file), which is the practical limit rather than the core
+        count. Must be at least 1. Workers start with ``fork``, which Windows does not provide, so
+        the caller needs no ``if __name__ == "__main__":`` guard; a caller that already runs
+        threads risks a worker inheriting a held lock (Python 3.12+ warns with
+        ``DeprecationWarning``).
     **generator_kwargs
         Additional keyword arguments passed to the packet generator.
 
     Returns
     -------
     xr.Dataset
-        xarray Dataset containing parsed packet data.
+        xarray Dataset containing parsed packet data, with files concatenated in the order
+        given.
+
+    Raises
+    ------
+    ValueError
+        If no file holds any packet of ``apid``, if a file yields an APID other than ``apid``,
+        if the files do not all carry the same set of variables, if ``max_workers`` is below 1,
+        or if ``max_workers`` above 1 with more than one file is combined with an already-loaded
+        packet definition or with a platform that has no ``fork`` start method.
+    RuntimeError
+        If a worker process exits without reporting a result, such as when it is killed for
+        running out of memory.
+    Exception
+        Any exception raised while parsing a file in a worker process is re-raised in the caller,
+        with the worker's traceback attached as a note.
     """
-    logger.info("Parsing packets (APID %d) from %d file(s)", apid, len(packet_files))
+    if max_workers < 1:
+        raise ValueError(f"max_workers must be at least 1, got {max_workers}; pass 1 to parse in process.")
+    n_workers = max(1, min(max_workers, len(packet_files)))
+    logger.info("Parsing packets (APID %d) from %d file(s) with %d worker(s)", apid, len(packet_files), n_workers)
 
-    def _packet_filter(packet_bytes: CCSDSPacketBytes) -> bool:
-        return packet_bytes.apid == apid
-
-    # Parse packets using space_packet_parser
-    dataset_dict = create_dataset(
-        packet_files=[AnyPath(f) for f in packet_files],
-        xtce_packet_definition=packet_definition,
-        generator_kwargs=generator_kwargs,
-        packet_filter=_packet_filter,
-    )
-
-    if set(dataset_dict.keys()) != {apid}:
-        raise ValueError(
-            f"Expected only APID {apid} in parsed dataset, but found APIDs: {list(dataset_dict.keys())}. "
-            f"This probably means the packet filter function is not working."
+    if n_workers > 1:
+        if _WORKER_START_METHOD not in mp.get_all_start_methods():
+            raise ValueError(
+                f"max_workers above 1 needs the {_WORKER_START_METHOD!r} start method, which this platform "
+                f"does not provide; pass max_workers=1."
+            )
+        if isinstance(packet_definition, XtcePacketDefinition):
+            raise ValueError(
+                "max_workers above 1 requires the XTCE path rather than a loaded definition, so that workers "
+                "do not depend on the start method; pass the path to the XTCE file."
+            )
+        parsed_files = _iter_parsed_files_concurrently(
+            packet_files, str(packet_definition), apid, n_workers, generator_kwargs
+        )
+    else:
+        if not isinstance(packet_definition, XtcePacketDefinition):
+            packet_definition = load_xtce(packet_definition)
+        parsed_files = (
+            (packet_file, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs))
+            for packet_file in packet_files
         )
 
-    # Swap standard SPP "packet" dimension to uppercase "PACKET" to align with config naming
-    if SPP_PACKET_DIMENSION in dataset_dict[apid].dims:
-        dataset_dict[apid] = dataset_dict[apid].swap_dims({SPP_PACKET_DIMENSION: SDC_PACKET_DIMENSION})
+    # The first contributing file is held whole until a second one arrives: a single-file parse
+    # then returns it untouched, with no buffer allocated and nothing copied.
+    first: tuple[PathLike | str, xr.Dataset] | None = None
+    accumulator: _PacketAxisAccumulator | None = None
 
-    return dataset_dict[apid]
+    # Closed explicitly so that an error raised here stops the workers now, rather than when the
+    # traceback that references the generator is released.
+    with closing(parsed_files):
+        for packet_file, file_ds in parsed_files:
+            if file_ds is None:
+                logger.warning("No APID %d packets in %s; excluded from the parsed dataset.", apid, packet_file)
+                continue
+
+            if first is None and accumulator is None:
+                first = (packet_file, file_ds)
+                continue
+
+            if accumulator is None:
+                first_file, first_ds = first
+                accumulator = _PacketAxisAccumulator(
+                    first_ds, apid, capacity=first_ds.sizes[SDC_PACKET_DIMENSION] * len(packet_files)
+                )
+                accumulator.append(first_file, first_ds)
+                # Release the first file before the next one is copied in, so the peak is the buffer
+                # plus a single file rather than the buffer plus every file parsed so far.
+                first = None
+                del first_ds
+
+            accumulator.append(packet_file, file_ds)
+            del file_ds
+
+    if accumulator is not None:
+        return accumulator.to_dataset()
+    if first is not None:
+        return first[1]
+    raise ValueError(f"No APID {apid} packets found in any of the {len(packet_files)} file(s) given.")
 
 
 def parse_packets_to_l1a_dataset(
@@ -158,6 +448,7 @@ def parse_packets_to_l1a_dataset(
     ground_data: bool = False,
     verbose: bool = False,
     skip_header_bytes: int | None = None,
+    max_workers: int = 1,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -183,6 +474,10 @@ def parse_packets_to_l1a_dataset(
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
         carry a per-packet record header need ``8``).
+    max_workers : int, optional
+        Files to parse concurrently, in worker processes. Default 1 (in-process); must be at
+        least 1. See ``parse_packets_to_dataset``; peak memory rises by one in-flight parse per
+        worker, and workers start with ``fork``, which Windows does not provide.
 
     Returns
     -------
@@ -197,9 +492,16 @@ def parse_packets_to_l1a_dataset(
     ValueError
         If the decoded packets have no ``SRC_SEQ_CTR``; if packets adjacent in an input file with
         consecutive ``SRC_SEQ_CTR`` would be placed a counter wrap apart; if ``ground_data`` is False and
-        packets with the same ``SRC_SEQ_CTR`` differ; or as ``_drop_duplicates`` raises for samples.
+        packets with the same ``SRC_SEQ_CTR`` differ; as ``_drop_duplicates`` raises for samples; or as
+        ``parse_packets_to_dataset`` raises, including for ``max_workers`` below 1 or a platform without
+        ``fork``.
     OSError
         If a packet file cannot be opened or read.
+    RuntimeError
+        If a worker process exits without reporting a result (``max_workers`` above 1).
+    Exception
+        Any exception raised while parsing a file in a worker process is re-raised in the caller, with the
+        worker's traceback attached as a note.
 
     Notes
     -----
@@ -222,7 +524,7 @@ def parse_packets_to_l1a_dataset(
     if skip_header_bytes is None:
         skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
     packet_ds = parse_packets_to_dataset(
-        _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
+        _packet_files, packet_definition_path, apid, max_workers=max_workers, skip_header_bytes=skip_header_bytes
     )
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
     packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)

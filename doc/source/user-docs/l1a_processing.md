@@ -117,7 +117,11 @@ span.degraded_reason                             # why data times are absent, el
 
 It returns `None`, logging the reason, when no packet-time span can be produced at all: the APID
 has no `LiberaApid` member, has no L1A packet configuration, the file holds nothing parseable for
-it, or every packet time is implausible. Several APIDs present in ground captures
+it, or every packet time is implausible. A `MemoryError`, or an `OSError` for a full disk, an
+exceeded disk quota or an open-file limit (`libera_utils.io.smart_open.is_resource_exhaustion`),
+propagates instead.
+
+Several APIDs present in ground captures
 (`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`, `icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`)
 currently have no packet configuration, so they archive but yield no searchable times.
 
@@ -158,7 +162,8 @@ applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_dat
   own timestamp rather than being derived from an epoch plus a fixed period.
 - **`jpss_sc_pos` (APID 11):** the extent of both of its sample groups (see below).
 - Raises `DataTimeUndeterminedError` when the span cannot be determined, and returns `None` for a
-  WFOV file with no in-window `SOP` packet.
+  WFOV file with no in-window `SOP` packet. A `MemoryError`, or an `OSError` for which
+  `is_resource_exhaustion` is true, propagates unwrapped.
 - `extract_data_time_range_from_dataset` takes an already-parsed packet dataset, so a caller that
   has parsed the APID once (as `scan_ground_ccsds_file` does) need not re-read the file.
 - Demuxed ground CCSDS files need no header skip; the default `SKIP_PACKET_HEADER_BYTES` of `0` is correct.
@@ -571,6 +576,44 @@ icie_nom_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 ```
+
+## Parsing many files
+
+`parse_packets_to_dataset` hands `create_dataset` one file at a time. `create_dataset` keeps a
+Python object per parsed field until it converts the batch to numpy, about 800 MiB per two-hour
+NOM-HK file, so passing a day of files in one batch exhausts an 8 GiB container. Each parsed file
+is copied onto a preallocated packet axis and released before the next one is parsed. `xr.concat`
+would instead peak at about 2.9× its output, because it allocates the result while every input is
+still referenced. The packet axis keeps the order of the files given.
+
+- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`.
+  `parse_packets_to_l1a_dataset` passes the path: an in-process parse loads the XTCE once per
+  call, and with `max_workers` above 1 each worker loads it from the path.
+- A file with no packets of the APID is skipped with a warning. `ValueError` is raised when no
+  file has any, or when files parse to different sets of variables (concatenating them would
+  fill the gaps with NaN).
+- A string column that is wider in a later file (a file containing `SINGLE` parses to `<U6`
+  where the others give `<U3`) is widened rather than truncated.
+
+`max_workers` (on both `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, default 1)
+parses files concurrently in worker processes, `max_workers` at a time. Parsing is single-threaded
+Python, so this is the only way to use more than one vCPU. Results are appended in the order given,
+so the packet axis is the same as for an in-process parse.
+
+- Peak memory is the accumulated axis plus one in-flight parse per worker, about 800 MiB for a
+  two-hour NOM-HK file. Memory, not core count, limits a useful worker count.
+- `max_workers` below 1 raises `ValueError`.
+- Workers start with `fork`, so the caller needs no `if __name__ == "__main__":` guard. `fork` is
+  not available on Windows, where `max_workers > 1` with more than one file raises `ValueError`. On macOS it is available but not the default, and some system frameworks are not
+  fork-safe. A caller that already runs threads risks a worker inheriting a held lock; Python 3.12+
+  warns with `DeprecationWarning`.
+- Workers load the XTCE from its path, so that they do not depend on the start method (a loaded
+  `XtcePacketDefinition` is not picklable, which `spawn` and `forkserver` would require). `parse_packets_to_dataset` raises `ValueError` for
+  `max_workers > 1` with a loaded definition and more than one file.
+  A single file is always parsed in process.
+- An exception in a worker is re-raised in the caller, with the worker's traceback attached as a
+  note. A worker that exits without reporting raises `RuntimeError` with its exit code; `-9` means
+  the container ran out of memory.
 
 ## L1A Product Structure
 

@@ -1,5 +1,6 @@
 """Module for smart_open"""
 
+import errno
 import shutil
 import typing
 import warnings
@@ -51,6 +52,29 @@ def is_gzip(path: str | Path | S3Path):
     if isinstance(path, str):
         return path.endswith(".gz")
     return path.name.endswith(".gz")
+
+
+def is_resource_exhaustion(error: BaseException) -> bool:
+    """Determine if an error is the host running out of a resource every file read needs.
+
+    Such an error says nothing about the file being read: retrying it, or reading another file in the
+    same process, fails the same way.
+
+    Parameters
+    ----------
+    error : BaseException
+        Any exception. Only ``error`` itself is examined, not its ``__cause__`` or ``__context__``.
+
+    Returns
+    -------
+    : bool
+        True for ``MemoryError``, and for an ``OSError`` whose ``errno`` is one of the POSIX codes
+        ``ENOSPC`` (no space left on device), ``EDQUOT`` (disk quota exceeded), ``EMFILE`` (per-process
+        open-file limit reached) or ``ENFILE`` (system-wide open-file limit reached). False otherwise.
+    """
+    if isinstance(error, MemoryError):
+        return True
+    return isinstance(error, OSError) and error.errno in (errno.ENOSPC, errno.EDQUOT, errno.EMFILE, errno.ENFILE)
 
 
 def smart_open(path: str | Path | S3Path, mode: str | None = "rb", enable_gzip: bool | None = True):
