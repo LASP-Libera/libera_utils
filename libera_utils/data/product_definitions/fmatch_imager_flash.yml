@@ -99,6 +99,82 @@ variables:
     attributes:
       long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
+  # --- source reader: flashflux (resolution 20.0 km) ---
+  flashflux_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth (CERES FLASHFlux) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  flashflux_clear_coverage:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Clear-sky areal coverage (NOAA20)
+      units: "percent"
+  flashflux_clear_coverage_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Clear-sky areal coverage (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  flashflux_cloud_optical_depth_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (CERES FLASHFlux imager lower layer) (NOAA20)
+      units: "1"
+  flashflux_cloud_optical_depth_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (CERES FLASHFlux imager lower layer) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  flashflux_cloud_water_particle_radius_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      units: "um"
+  flashflux_cloud_water_particle_radius_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um (FLASHFlux lower layer) (within-footprint standard deviation) (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer) (within-footprint standard deviation) (NOAA20)
+      units: "um"
+  flashflux_cloud_classification:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES cloud classification code (encoded) (NOAA20)
+  flashflux_shortwave_adm_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES shortwave ADM scene type (encoded) (NOAA20)
+  flashflux_longwave_adm_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES longwave ADM scene type (encoded) (NOAA20)
   # --- source reader: igbp (resolution 1.0 km) ---
   igbp_surface_type:
     dtype: int16
@@ -181,82 +257,6 @@ variables:
     attributes:
       long_name: Fraction of footprint covered by ocean (NISE code 255) (within-footprint standard deviation) (AMSR2)
       units: "1"
-  # --- source reader: ssf (resolution 20.0 km) ---
-  ssf_aerosol_optical_depth:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Aerosol optical depth (CERES SSF) (NOAA20)
-      units: "1"
-  ssf_aerosol_optical_depth_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Aerosol optical depth (CERES SSF) (within-footprint standard deviation) (NOAA20)
-      units: "1"
-  ssf_clear_coverage:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Clear-sky areal coverage (NOAA20)
-      units: "percent"
-  ssf_clear_coverage_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Clear-sky areal coverage (within-footprint standard deviation) (NOAA20)
-      units: "percent"
-  ssf_cloud_optical_depth_lower:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (CERES SSF imager lower layer) (NOAA20)
-      units: "1"
-  ssf_cloud_optical_depth_lower_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (CERES SSF imager lower layer) (within-footprint standard deviation) (NOAA20)
-      units: "1"
-  ssf_cloud_water_particle_radius_lower:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (NOAA20)
-      units: "um"
-  ssf_cloud_water_particle_radius_lower_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation) (NOAA20)
-      units: "um"
-  ssf_cloud_ice_particle_radius_lower:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer) (NOAA20)
-      units: "um"
-  ssf_cloud_ice_particle_radius_lower_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation) (NOAA20)
-      units: "um"
-  ssf_cloud_classification:
-    dtype: int16
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES cloud classification code (encoded) (NOAA20)
-  ssf_shortwave_adm_type:
-    dtype: int16
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES shortwave ADM scene type (encoded) (NOAA20)
-  ssf_longwave_adm_type:
-    dtype: int16
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES longwave ADM scene type (encoded) (NOAA20)
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
   viirs_brdf_brdf_shortwave_fiso:
     dtype: float32
