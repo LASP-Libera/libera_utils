@@ -852,7 +852,7 @@ def make_ssf_fixture(
 
     All arrays default to a small deterministic set of footprints clustered near
     lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
-    tests can verify longitude normalization and rasterization. Pass explicit
+    tests can verify longitude normalization and the box query. Pass explicit
     arrays to override any field.
 
     Parameters

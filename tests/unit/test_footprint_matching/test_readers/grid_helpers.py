@@ -1,11 +1,14 @@
-"""Helpers shared by the native-grid reader tests.
+"""Helpers shared by the reader tests.
 
 A grid reader serves a :class:`~libera_utils.footprint_matching.types.SampleSet` of
 the grid points inside a box, flattened row-major. :func:`region` folds that back into
 the ``(data, lats, lons)`` grid view the value assertions are written against;
-:func:`sample_at` picks out the one sample served at a given location.
+:func:`sample_at` picks out the one sample served at a given location. For the
+real-granule tests of the swath readers, :func:`raw_and_usable` reads a variable as
+the file stores it and :func:`served_at` finds the samples served at one footprint.
 """
 
+import netCDF4
 import numpy as np
 
 from libera_utils.footprint_matching.readers.base import AncillaryReader
@@ -31,3 +34,19 @@ def sample_at(samples: SampleSet, lat: float, lon: float) -> np.ndarray:
     match = np.flatnonzero(np.isclose(samples.lats, lat, atol=1e-6) & np.isclose(samples.lons, lon, atol=1e-6))
     assert match.size == 1, f"expected one sample at ({lat}, {lon}), found {match.size}"
     return samples.values[:, match[0]]
+
+
+def raw_and_usable(path, group: str | None, name: str) -> tuple[np.ndarray, np.ndarray]:
+    """A variable's raw stored values and a mask of the entries that are neither fill nor outside ``valid_range``."""
+    with netCDF4.Dataset(str(path)) as ds:
+        ds.set_auto_mask(False)
+        var = (ds.groups[group] if group else ds).variables[name]
+        raw = np.asarray(var[:])
+        low, high = sorted(float(v) for v in var.valid_range)
+        usable = (raw != var._FillValue) & (raw >= low) & (raw <= high)
+    return raw, usable
+
+
+def served_at(samples: SampleSet, lat: float, lon: float, time: np.datetime64) -> np.ndarray:
+    """Indices of the served samples at exactly ``(lat, lon, time)``."""
+    return np.flatnonzero((samples.lats == lat) & (samples.lons == lon) & (samples.times == time))

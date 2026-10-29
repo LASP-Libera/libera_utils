@@ -138,6 +138,37 @@ def _bad_data_flags(variable: netCDF4.Variable, *, source: str) -> tuple[int, ..
     return tuple(int(v) for v, m in zip(values, meanings, strict=True) if m.lower() == _BAD_DATA_FLAG_MEANING)
 
 
+def _cldpix_variable(ds: netCDF4.Dataset, name: str, *, source: str) -> netCDF4.Variable:
+    """Return the variable ``name`` from an open CLDPIX granule, rejecting a granule laid out otherwise.
+
+    Parameters
+    ----------
+    ds : netCDF4.Dataset
+        The open granule.
+    name : str
+        Variable name in the granule's root group.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    netCDF4.Variable
+        The variable.
+
+    Raises
+    ------
+    ValueError
+        If the granule has no such variable.
+    """
+    if name not in ds.variables:
+        raise ValueError(
+            f"{source}: no variable {name!r} in this granule (product_version "
+            f"{getattr(ds, 'product_version', None)!r}). Stage a CER_CLDPIX granule in the layout this reader reads, "
+            "or update the reader's CLDPIX field table for this product version."
+        )
+    return ds.variables[name]
+
+
 class _CLDPIXField(NamedTuple):
     """Mapping from an output variable to its source variable and decoding rules.
 
@@ -266,8 +297,9 @@ class CLDPIXReader(PassReader):
         Raises
         ------
         ValueError
-            If the granule lacks the ``time_coverage_start`` attribute that dates its
-            fractional-hour times, if its time variable is not in hours, if the
+            If the granule has no variable the reader reads, if it lacks the
+            ``time_coverage_start`` attribute that dates its fractional-hour times,
+            if its time variable is not in hours, if the
             time variable is not one value per scanline (or per pixel), if
             ``Latitude`` does not declare the colatitude ``valid_range`` of [0, 180],
             if a field read (geolocation and ``Observation_Time`` included) has no
@@ -288,7 +320,7 @@ class CLDPIXReader(PassReader):
             # downstream consumer sees ordinary latitudes. See the module docstring
             # for the evidence that this field really is colatitude.
             source = f"cldpix {path.name}"
-            lat_var = ds.variables[_LAT_VAR]
+            lat_var = _cldpix_variable(ds, _LAT_VAR, source=source)
             declared_range = field_valid_range(lat_var, source=source)
             if declared_range != _COLATITUDE_VALID_RANGE:
                 raise ValueError(
@@ -301,7 +333,7 @@ class CLDPIXReader(PassReader):
             )
             shape = colatitudes_2d.shape
             lats_2d = _NORTH_POLE_COLATITUDE - colatitudes_2d
-            lon_var = ds.variables[_LON_VAR]
+            lon_var = _cldpix_variable(ds, _LON_VAR, source=source)
             lons_2d = normalize_longitude(
                 apply_fill_and_valid_range(
                     lon_var[:],
@@ -317,7 +349,9 @@ class CLDPIXReader(PassReader):
             lons = lons_2d.ravel()
 
             start, _ = granule_time_coverage(ds, source=source)
-            times = decode_hours_of_day(ds.variables[_TIME_VAR], start, source=f"{source} {_TIME_VAR}")
+            times = decode_hours_of_day(
+                _cldpix_variable(ds, _TIME_VAR, source=source), start, source=f"{source} {_TIME_VAR}"
+            )
             if times.shape == shape[:1]:
                 # One time per scanline: broadcast across the pixels of the line.
                 times = np.repeat(times, shape[1])
@@ -333,7 +367,7 @@ class CLDPIXReader(PassReader):
             # of only one field is alive at a time; a granule is several million pixels.
             values = np.empty((len(_CLDPIX_FIELDS), lats.size), dtype=np.float32)
             for i, f in enumerate(_CLDPIX_FIELDS):
-                var = ds.variables[f.var]
+                var = _cldpix_variable(ds, f.var, source=source)
                 row = apply_fill_and_valid_range(
                     var[:],
                     fill_value=field_fill_value(var, source=source),

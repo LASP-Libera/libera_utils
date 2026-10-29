@@ -15,8 +15,9 @@ FLASHFlux
 The RBSP-produced FLASHFlux product shares the SSF file format, so this reader
 serves both. The two differ only in latency / processing stream
 (FLASHFlux → FMATCH-IMAGER-FLASH; SSF → FMATCH-IMAGER); the caller supplies the
-appropriate file for the active mode. This reader belongs to the Flash, Imager, and
-Imager-camera-time product sets, declared in ``readers/registry.py``.
+appropriate file for the active mode. This reader feeds the products its fields name
+in ``modes``: FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME (see
+Variable set).
 
 Native footprints, matched by time
 ----------------------------------

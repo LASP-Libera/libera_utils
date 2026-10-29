@@ -265,6 +265,21 @@ class TestDecodeHoursOfDay:
         finally:
             ds.close()
 
+    def test_missing_units_raise(self, tmp_path):
+        """``decode_hours_of_day`` raises ``ValueError`` when the variable has no ``units`` attribute.
+
+        Without units the values could be any time encoding; reading them as hours of day would place every sample at
+        a guessed time, so the variable is rejected as ``decode_cf_times`` rejects it.
+
+        Builds the variable with no ``units`` and asserts a ``ValueError`` that says fractional hours were expected.
+        """
+        ds, var = self._variable(tmp_path, [1.0], units=None)
+        try:
+            with pytest.raises(ValueError, match="fractional hours.*found units None"):
+                decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
+        finally:
+            ds.close()
+
     @pytest.mark.parametrize(
         ("fill", "valid_range", "match"),
         [

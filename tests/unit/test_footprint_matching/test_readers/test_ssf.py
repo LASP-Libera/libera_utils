@@ -15,6 +15,7 @@ import pytest
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_ssf_fixture
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import raw_and_usable, served_at
 
 # Box that contains the default footprint cluster (lon −10° == 350°).
 _BBOX = BoundingBox(10.0, 12.0, -11.0, -9.0)
@@ -273,3 +274,75 @@ class TestSSFReaderLayoutChecks:
         path = make_ssf_fixture(tmp_path, omit_variables=omit)
         with pytest.raises(ValueError, match="no group 'Auxillary_Properties'"):
             SSFReader([path]).samples_in(_BBOX, _T)
+
+
+class TestSSFReaderRealSubset:
+    """A real CER_SSF_NOAA20-FM6-VIIRS alpha4 granule (2020-04-01 15 UTC), cut to three blocks of footprints.
+
+    The blocks are spread across the hour (start, middle, end) with their values unchanged; see
+    tests/test_data/footprint_matching/README.md. The tests pin the file conventions the reader relies on: the time
+    variable and its encoding, the geolocation conventions, and that a query at a footprint's own time serves its pass
+    with the values the file holds there.
+    """
+
+    @pytest.fixture
+    def ssf_path(self, fmatch_real_data_path):
+        return fmatch_real_data_path / "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc"
+
+    def test_every_footprint_has_a_time_and_the_times_span_one_hour(self, ssf_path):
+        """``SSFReader._load_granule`` decodes a time for every footprint of a real SSF granule, spanning the hour.
+
+        The pass matching selects SSF footprints by their observation time, so a footprint with an undecoded time would
+        never match, and a time variable decoded with the wrong encoding would place the whole granule at the wrong
+        hour.
+
+        Loads the real SSF cut and asserts every time is set (no NaT), the times span between 55 min and 1 h, the values
+        array holds one row per declared variable and one column per footprint, and every longitude lies in [-180, 180).
+        """
+        reader = SSFReader([ssf_path])
+        points = reader._load_granule(ssf_path)
+        assert points.times is not None
+        assert np.isnat(points.times).sum() == 0
+        span = points.times.max() - points.times.min()
+        assert np.timedelta64(55, "m") < span <= np.timedelta64(1, "h")
+        assert points.values.shape == (len(SSFReader.VARIABLES), points.lats.size)
+        assert np.all((points.lons >= -180.0) & (points.lons < 180.0))
+
+    def test_query_at_a_footprint_time_serves_its_pass(self, ssf_path):
+        """``SSFReader.samples_in`` serves a real SSF footprint's own pass when queried at its time and place.
+
+        This is the end-to-end path a Libera footprint takes: if the geolocation or time conventions of the file were
+        read wrong, a query at a known SSF footprint would find nothing, or a pass from the wrong time, and the matched
+        footprint would carry no or wrong SSF values.
+
+        Takes the first footprint from the middle of the real SSF cut whose layer coverages, clear coverage and type-2
+        aerosol percentage are all valid in the file, queries a 1-degree box around it at its time and asserts samples
+        are served, all within ``PASS_WINDOW`` of that time; that the sample at that footprint serves the lower and
+        upper ``layers_coverages``, ``clear_coverage`` and ``aerosol_type_percentage[:, 2]`` the file stores for it, so
+        a wrong group, layer or type index fails; and that the same box four hours later serves none.
+        """
+        reader = SSFReader([ssf_path])
+        points = reader._load_granule(ssf_path)
+        layers, layers_ok = raw_and_usable(ssf_path, "Cloudy_Imager_Footprint_Layer", "layers_coverages")
+        clear, clear_ok = raw_and_usable(ssf_path, "Clear_Footprint_Area", "clear_coverage")
+        aerosol, aerosol_ok = raw_and_usable(ssf_path, "Assimilated_Aerosol_Properties", "aerosol_type_percentage")
+        usable = layers_ok.all(axis=1) & clear_ok & aerosol_ok[:, 2] & ~np.isnat(points.times)
+        middle = points.lats.size // 2
+        i = middle + int(np.flatnonzero(usable[middle:])[0])
+        box = BoundingBox(points.lats[i] - 0.5, points.lats[i] + 0.5, points.lons[i] - 0.5, points.lons[i] + 0.5)
+        samples = reader.samples_in(box, points.times[i])
+        assert samples.n_samples > 0
+        assert np.all(np.abs(samples.times - points.times[i]) <= SSFReader.PASS_WINDOW)
+        at_i = served_at(samples, points.lats[i], points.lons[i], points.times[i])
+        assert at_i.size > 0
+        names = [v.name for v in SSFReader.VARIABLES]
+        expected = {
+            "layer_coverage_lower": layers[i, 0],
+            "layer_coverage_upper": layers[i, 1],
+            "clear_coverage": clear[i],
+            "aerosol_type_percentage_type2": aerosol[i, 2],
+        }
+        for name, value in expected.items():
+            assert np.allclose(samples.values[names.index(name), at_i], value), name
+        # Four hours away nothing is served.
+        assert reader.samples_in(box, points.times[i] + np.timedelta64(4, "h")).n_samples == 0

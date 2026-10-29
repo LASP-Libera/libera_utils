@@ -18,25 +18,17 @@ from typing import Any
 import netCDF4
 import numpy as np
 
-from libera_utils.io.netcdf import field_fill_value, field_valid_range, fill_in_dtype
+from libera_utils.io.netcdf import apply_fill_and_valid_range, field_fill_value, field_valid_range
 
 
-def _invalid_time_mask(variable: netCDF4.Variable, data: np.ndarray, mask: np.ndarray, *, source: str) -> np.ndarray:
-    """Mark fill (``_FillValue``) and out-of-``valid_range`` entries of a time variable, both read from the file."""
-    invalid = mask.copy()
-    fill = fill_in_dtype(field_fill_value(variable, source=source), data.dtype)
-    if fill is not None:
-        invalid |= data == fill
-    low, high = sorted(field_valid_range(variable, source=source))
-    invalid |= (data < low) | (data > high)
-    return invalid
-
-
-def _raw_and_mask(variable: netCDF4.Variable) -> tuple[np.ndarray, np.ndarray]:
-    raw = variable[:]
-    if isinstance(raw, np.ma.MaskedArray):
-        return np.ma.getdata(raw), np.ma.getmaskarray(raw)
-    return np.asarray(raw), np.zeros(np.shape(raw), dtype=bool)
+def _read_time_values(variable: netCDF4.Variable, *, source: str) -> tuple[np.ndarray, np.ndarray]:
+    """Read a time variable as float64 and mark its masked, fill and out-of-``valid_range`` entries."""
+    values = apply_fill_and_valid_range(
+        variable[:],
+        fill_value=field_fill_value(variable, source=source),
+        valid_range=field_valid_range(variable, source=source),
+    )
+    return values, np.isnan(values)
 
 
 def decode_cf_times(variable: netCDF4.Variable, *, source: str) -> np.ndarray:
@@ -72,8 +64,7 @@ def decode_cf_times(variable: netCDF4.Variable, *, source: str) -> np.ndarray:
             f"{source}: the time variable has no 'units' attribute, so its values cannot be decoded. "
             "The reader needs a CF time unit such as 'seconds since 1970-01-01'."
         )
-    data, mask = _raw_and_mask(variable)
-    invalid = _invalid_time_mask(variable, data, mask, source=source)
+    data, invalid = _read_time_values(variable, source=source)
     calendar = getattr(variable, "calendar", "standard")
     # Decode a safe stand-in where the value is invalid, then overwrite with NaT: the
     # fill sentinel (1e308 days) would overflow the calendar arithmetic.
@@ -123,15 +114,17 @@ def decode_hours_of_day(variable: netCDF4.Variable, reference: np.datetime64, *,
     Raises
     ------
     ValueError
-        If the variable's ``units`` attribute is present and is not ``hours``; if it has
-        no ``_FillValue`` or ``valid_range`` attribute, or its ``valid_range`` is not a
+        If the variable has no ``units`` attribute, or its units are not ``hours``; if
+        it has no ``_FillValue`` or ``valid_range`` attribute, or its ``valid_range`` is not a
         (low, high) pair.
     """
     units = getattr(variable, "units", None)
-    if units is not None and str(units).strip().lower() not in ("hours", "hour", "h"):
-        raise ValueError(f"{source}: expected a time variable in fractional hours of the day, found units {units!r}.")
-    data, mask = _raw_and_mask(variable)
-    invalid = _invalid_time_mask(variable, data, mask, source=source)
+    if units is None or str(units).strip().lower() not in ("hours", "hour", "h"):
+        raise ValueError(
+            f"{source}: expected a time variable in fractional hours of the day, found units {units!r}. "
+            "The reader needs a 'units' attribute of 'hours'."
+        )
+    data, invalid = _read_time_values(variable, source=source)
     reference = np.datetime64(reference, "ns")
     midnight = reference.astype("datetime64[D]").astype("datetime64[ns]")
     hours = np.where(invalid, 0.0, data).astype(np.float64)

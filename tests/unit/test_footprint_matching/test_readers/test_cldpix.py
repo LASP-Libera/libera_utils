@@ -10,12 +10,14 @@ Real CLDPIX files come from NASA CERES, e.g.
 ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc``.
 """
 
+import netCDF4
 import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader, _bad_data_flags
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_cldpix_fixture
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import raw_and_usable, served_at
 
 # Box containing the default pixel cluster (lon −15° == 345°).
 _BBOX = BoundingBox(39.0, 41.0, -16.0, -14.0)
@@ -303,6 +305,23 @@ class TestCLDPIXReaderTimeShape:
             CLDPIXReader([path]).samples_in(_BBOX, _T)
 
 
+class TestCLDPIXReaderLayoutChecks:
+    def test_missing_variable_raises(self, tmp_path):
+        """``CLDPIXReader`` raises ``ValueError``, not ``KeyError``, naming a variable the granule lacks.
+
+        A granule in another layout should fail with a message saying what is missing and what to do, as the SSF reader
+        does, rather than an opaque ``KeyError`` from inside the netCDF library.
+
+        Builds the fixture, renames ``Cld_Radius`` so the granule lacks it, and asserts a ``ValueError`` naming
+        ``Cld_Radius`` and saying to stage a granule in the layout the reader reads.
+        """
+        path = make_cldpix_fixture(tmp_path)
+        with netCDF4.Dataset(str(path), "a") as ds:
+            ds.renameVariable("Cld_Radius", "Cld_Radius_renamed")
+        with pytest.raises(ValueError, match=r"no variable 'Cld_Radius' in this granule.*Stage a CER_CLDPIX granule"):
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
+
+
 class TestCLDPIXReaderGeolocationChecks:
     def test_latitude_valid_range_other_than_colatitude_raises(self, tmp_path):
         """``CLDPIXReader`` raises ``ValueError`` when ``Latitude`` declares a valid range other than colatitude [0, 180].
@@ -457,3 +476,100 @@ class TestBadDataFlags:
                 _bad_data_flags(var, source="test")
         finally:
             ds.close()
+
+
+class TestCLDPIXReaderRealSubset:
+    """A real CER_CLDPIX_NOAA20-VIIRS 1P9test granule (2020-04-10 15 UTC), cut to three blocks of scanlines.
+
+    The blocks are spread across the hour (start, middle, end) with their values unchanged; see
+    tests/test_data/footprint_matching/README.md. The tests pin the file conventions the reader relies on: the
+    fractional-hour time variable, the colatitude geolocation, the hourly granule span, and that a query at a pixel's
+    own time serves its pass with the values the file holds there.
+    """
+
+    @pytest.fixture
+    def cldpix_path(self, fmatch_real_data_path):
+        return fmatch_real_data_path / "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc"
+
+    def test_times_are_dated_fractional_hours_spanning_one_hour(self, cldpix_path):
+        """``CLDPIXReader._load_granule`` dates a real granule's fractional-hour ``Observation_Time`` onto its day.
+
+        CLDPIX stores times as hours of the day with the date only in a global attribute, so a decoding that dropped or
+        misread the date would put every pixel on the wrong day and no Libera footprint would ever match it.
+
+        Loads the real CLDPIX cut and asserts it has set times spanning between 55 min and 1 h, and that they fall
+        within 10 s of the granule's ``time_coverage_start``/``time_coverage_end`` as read by ``_granule_span``.
+        """
+        reader = CLDPIXReader([cldpix_path])
+        points = reader._load_granule(cldpix_path)
+        assert points.times is not None
+        finite = points.times[~np.isnat(points.times)]
+        assert finite.size > 0
+        span = finite.max() - finite.min()
+        assert np.timedelta64(55, "m") < span <= np.timedelta64(1, "h")
+        # The granule's own coverage attributes bracket every decoded time to within a few
+        # seconds: the first scanlines precede the declared start by about two seconds in the
+        # source granule, which is why each hour is dated to the day nearest the start.
+        start, end = reader._granule_span(cldpix_path)
+        assert finite.min() >= start - np.timedelta64(10, "s")
+        assert finite.max() <= end + np.timedelta64(10, "s")
+
+    def test_latitudes_are_true_latitudes_in_both_hemispheres(self, cldpix_path):
+        """``CLDPIXReader._load_granule`` returns latitudes converted from the file's colatitude, within [-90, 90].
+
+        CLDPIX stores colatitude (0 at the North Pole to 180 at the South Pole); read as latitude, the southern
+        hemisphere would fall outside the valid range and be discarded and the rest would be misplaced, so cloud values
+        would land on the wrong footprints.
+
+        Loads the real CLDPIX cut, which crosses the equator, and asserts every latitude lies in [-90, 90], that some
+        are south and some north of the equator, and every longitude lies in [-180, 180).
+        """
+        reader = CLDPIXReader([cldpix_path])
+        points = reader._load_granule(cldpix_path)
+        assert np.nanmin(points.lats) >= -90.0
+        assert np.nanmax(points.lats) <= 90.0
+        assert np.nanmin(points.lats) < 0.0 < np.nanmax(points.lats)
+        assert np.all((points.lons >= -180.0) & (points.lons < 180.0))
+
+    def test_query_at_a_pixel_time_serves_its_pass(self, cldpix_path):
+        """``CLDPIXReader.samples_in`` serves a real CLDPIX pixel's own pass when queried at its time and place.
+
+        This is the end-to-end path a Libera footprint takes through the cloud reader: a wrong geolocation or time
+        convention would leave a footprint over a known pixel with no cloud values, or with values from another pass.
+
+        Takes the first pixel from the middle of the real CLDPIX cut whose ``Cld_Radius`` is valid in the file, queries
+        a 0.6-degree box around it at its time and asserts samples are served, all within ``PASS_WINDOW`` of that time,
+        with one value row per declared variable, and that the sample at that pixel serves the ``Cld_Radius`` the file
+        stores for it.
+        """
+        reader = CLDPIXReader([cldpix_path])
+        points = reader._load_granule(cldpix_path)
+        radius, radius_ok = raw_and_usable(cldpix_path, None, "Cld_Radius")
+        usable = radius_ok.ravel() & np.isfinite(points.lats) & ~np.isnat(points.times)
+        middle = points.lats.size // 2
+        i = middle + int(np.flatnonzero(usable[middle:])[0])
+        box = BoundingBox(points.lats[i] - 0.3, points.lats[i] + 0.3, points.lons[i] - 0.3, points.lons[i] + 0.3)
+        samples = reader.samples_in(box, points.times[i])
+        assert samples.n_samples > 0
+        assert np.all(np.abs(samples.times - points.times[i]) <= CLDPIXReader.PASS_WINDOW)
+        assert samples.values.shape == (len(CLDPIXReader.VARIABLES), samples.n_samples)
+        at_i = served_at(samples, points.lats[i], points.lons[i], points.times[i])
+        assert at_i.size > 0
+        row = [v.name for v in CLDPIXReader.VARIABLES].index("cloud_particle_radius")
+        assert np.allclose(samples.values[row, at_i], radius.ravel()[i])
+
+    def test_granule_span_matches_the_coverage_attributes(self, cldpix_path):
+        """``CLDPIXReader._granule_span`` reads an hour-long span from a real granule that ``granules_in_window`` uses.
+
+        The span decides which granules are held for a footprint; a misread span would drop the granule a footprint
+        falls in, losing its cloud values, or hold granules a day away.
+
+        Reads the real CLDPIX cut's span, asserts it lasts between 55 min and 1 h, and asserts ``granules_in_window``
+        returns the granule for a time 30 min into the span and nothing for a time 24 h later.
+        """
+        reader = CLDPIXReader([cldpix_path])
+        start, end = reader._granule_span(cldpix_path)
+        assert np.timedelta64(55, "m") < end - start <= np.timedelta64(1, "h")
+        # A footprint inside the hour has the granule in its window; one a day away does not.
+        assert reader.granules_in_window(start + np.timedelta64(30, "m")) == [cldpix_path]
+        assert reader.granules_in_window(start + np.timedelta64(24, "h")) == []
