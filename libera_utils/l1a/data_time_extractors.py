@@ -17,6 +17,7 @@ from cloudpathlib import AnyPath
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
+from libera_utils.io.smart_open import is_resource_exhaustion
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.l1a.packets import (
     DATETIME_USEC_DTYPE,
@@ -106,8 +107,14 @@ def extract_data_time_range(
     Raises
     ------
     DataTimeUndeterminedError
-        As ``extract_data_time_range_from_dataset``, and additionally if the file cannot be
-        parsed or holds no packets for ``apid``.
+        As ``extract_data_time_range_from_dataset``, and additionally if the file holds no packets
+        for ``apid`` or cannot be parsed for a reason other than those below.
+    MemoryError
+        If memory runs out while the file is read or parsed. It is not wrapped.
+    OSError
+        If reading the file, including downloading a cloud file to the local cache, fails with
+        ``ENOSPC``, ``EDQUOT``, ``EMFILE`` or ``ENFILE`` (see
+        ``libera_utils.io.smart_open.is_resource_exhaustion``). It is not wrapped.
     """
     libera_apid = LiberaApid(apid)
     if libera_apid not in DATA_TIME_INDEXED_APIDS:
@@ -128,6 +135,8 @@ def extract_data_time_range(
             skip_header_bytes=skip_header_bytes,
         )
     except Exception as exc:
+        if is_resource_exhaustion(exc):
+            raise
         raise DataTimeUndeterminedError(f"Failed to parse packets for APID {apid} from {packet_file}: {exc}") from exc
 
     if packet_ds.sizes.get("PACKET", 0) == 0:

@@ -197,3 +197,16 @@ def l1a_test_product(
     product_definition.check_dataset_conformance(ds, strict=True)
 
     return ds
+
+
+@pytest.fixture
+def parse_packets_raises(monkeypatch):
+    """Return a function that makes ``parse_packets_to_dataset`` in the given module raise ``error``."""
+
+    def patch(module, error: BaseException) -> None:
+        def raise_error(*args, **kwargs):
+            raise error
+
+        monkeypatch.setattr(module, "parse_packets_to_dataset", raise_error)
+
+    return patch
