@@ -25,8 +25,8 @@ for filename in input_manifest.files:
 # Create an output manifest named according to the input manifest (the ULID matches for traceability)
 output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
 
-# Add files. This will raise a credentials error because it checks that the file exists but can't access S3
-# without credentials provided (your Docker images will have proper credentials attached).
+# Add files. This will raise a credentials error because it checks that the file exists and is a file but can't
+# access S3 without credentials provided (your Docker images will have proper credentials attached).
 output_manifest.add_files(
     "s3://some-dropbox/LIBERA_L2_CF-CAM_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc"
 )

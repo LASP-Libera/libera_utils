@@ -331,10 +331,10 @@ class TestFiles:
         assert m.files == []
 
     def test_add_listed_s3_file_sends_no_existence_request(self):
-        """A repeated path raises before any existence check, so S3 is not queried"""
+        """A repeated path raises before any file check, so S3 is not queried"""
         listed = "s3://some-bucket/listed.nc"
         m = Manifest(manifest_type=ManifestType.INPUT, files=[listed])
-        with patch.object(S3Path(listed).client, "_exists", side_effect=AssertionError("existence was checked")):
+        with patch.object(S3Path(listed).client, "_s3_file_query", side_effect=AssertionError("existence was checked")):
             with pytest.raises(ValueError, match="already listed in the manifest"):
                 m.add_files(listed)
 
@@ -392,6 +392,27 @@ class TestFiles:
         present.write_text("present")
         with pytest.raises(FileNotFoundError):
             m.add_files(present, missing)
+        assert m.files == before
+
+    @pytest.mark.parametrize("location", ["local", "s3_prefix", "s3_bucket"])
+    def test_add_directory_raises(self, tmp_path, test_txt, create_mock_bucket, write_file_to_s3, location):
+        """Adding a directory, S3 prefix or S3 bucket root raises IsADirectoryError and leaves the files unchanged"""
+        if location == "local":
+            directory = str(tmp_path)
+        else:
+            bucket = create_mock_bucket().name
+            write_file_to_s3(test_txt, f"s3://{bucket}/prefix/a.txt")
+            directory = f"s3://{bucket}/prefix" if location == "s3_prefix" else f"s3://{bucket}"
+        m = Manifest(manifest_type=ManifestType.INPUT, files=[test_txt])
+        before = list(m.files)
+        with pytest.raises(IsADirectoryError, match="not a file"):
+            m.add_files(directory)
+        assert m.files == before
+        # A valid file passed in the same call is not added either
+        present = tmp_path / "present.nc"
+        present.write_text("present")
+        with pytest.raises(IsADirectoryError):
+            m.add_files(present, directory)
         assert m.files == before
 
     def test_constructor_with_missing_file(self, tmp_path):
