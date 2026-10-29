@@ -215,86 +215,86 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: CERES cloud mask (NOAA20)
-  # --- source reader: era5_single_level (resolution 25.0 km) ---
-  era5_single_level_wind_u10:
+  # --- source reader: era5_surface (resolution 28.0 km) ---
+  era5_surface_wind_u10:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_single_level_wind_u10_standard_deviation:
+  era5_surface_wind_u10_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
-  era5_single_level_wind_v10:
+  era5_surface_wind_v10:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Northward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_single_level_wind_v10_standard_deviation:
+  era5_surface_wind_v10_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
-  era5_single_level_temperature_2m:
+  era5_surface_temperature_2m:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Air temperature at 2 m (ECMWF)
       units: "K"
-  era5_single_level_temperature_2m_standard_deviation:
+  era5_surface_temperature_2m_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Air temperature at 2 m (within-footprint standard deviation) (ECMWF)
       units: "K"
-  era5_single_level_dew_point_temperature_2m:
+  era5_surface_dew_point_temperature_2m:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Dewpoint temperature at 2 m (ECMWF)
       units: "K"
-  era5_single_level_dew_point_temperature_2m_standard_deviation:
+  era5_surface_dew_point_temperature_2m_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Dewpoint temperature at 2 m (within-footprint standard deviation) (ECMWF)
       units: "K"
-  era5_single_level_surface_pressure:
+  era5_surface_surface_pressure:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Surface pressure (ECMWF)
       units: "Pa"
-  era5_single_level_surface_pressure_standard_deviation:
+  era5_surface_surface_pressure_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Surface pressure (within-footprint standard deviation) (ECMWF)
       units: "Pa"
-  era5_single_level_surface_geopotential:
+  era5_surface_surface_geopotential:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Surface geopotential (orography x standard gravity) (ECMWF)
       units: "m^2/s^2"
-  era5_single_level_surface_geopotential_standard_deviation:
+  era5_surface_surface_geopotential_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Surface geopotential (orography x standard gravity) (within-footprint standard deviation) (ECMWF)
       units: "m^2/s^2"
-  era5_single_level_forecast_albedo:
+  era5_surface_forecast_albedo:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Forecast albedo (broadband surface albedo) (ECMWF)
       units: "1"
-  era5_single_level_forecast_albedo_standard_deviation:
+  era5_surface_forecast_albedo_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
@@ -376,7 +376,7 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: CERES longwave ADM scene type (encoded) (NOAA20)
-  # --- source reader: igbp (resolution 1.0 km) ---
+  # --- source reader: igbp (resolution 0.463 km) ---
   igbp_surface_type:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
