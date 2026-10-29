@@ -27,7 +27,6 @@ from libera_utils.l1a.wfov_image_metadata import (
     PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
     WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
     WFOV_COMPRESSED_IMAGE_VAR,
-    WFOV_HEADER_PARSE_VALID_VAR,
 )
 from libera_utils.time import dt64_to_utc_datetime, multipart_to_dt64
 from tests.marks import strict_warnings
@@ -198,7 +197,6 @@ def test_process_packets_to_l1a_product(
         assert BLOB_BYTE_COORD in dataset.dims
         assert "CAMERA_PACKET_INDEX" in dataset.data_vars
         assert "PACKET_IMAGE_ID" in dataset.data_vars
-        assert WFOV_HEADER_PARSE_VALID_VAR in dataset.data_vars
         assert WFOV_COMPRESSED_IMAGE_VAR in dataset.data_vars
         assert WFOV_COMPRESSED_IMAGE_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0

@@ -4,15 +4,21 @@ from datetime import timedelta
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from libera_utils.constants import LiberaApid
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import l1a_packet_configs
 from libera_utils.l1a.l1a_packet_configs import (
+    CoverageMode,
+    DayCoveragePolicy,
     SampleTimeSource,
+    configured_apids,
     get_l1a_product_definition_path,
     get_packet_config,
 )
+
+_PRESENCE = DayCoveragePolicy(mode=CoverageMode.PRESENCE)
 
 
 class TestPacketConfiguration:
@@ -22,6 +28,7 @@ class TestPacketConfiguration:
         """Test that PacketConfiguration can be instantiated with required fields."""
         config = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_axis_sample,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(
                 day_field="TM_DAY",
                 ms_field="TM_MS",
@@ -82,6 +89,7 @@ class TestPacketConfiguration:
         """Test that packet_time_coordinate derives its name from packet_time_source."""
         config_icie = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_nom_hk,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
             packet_time_source=l1a_packet_configs.SampleTimeSource.ICIE,
         )
@@ -89,10 +97,77 @@ class TestPacketConfiguration:
 
         config_jpss = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.jpss_sc_pos,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
             packet_time_source=l1a_packet_configs.SampleTimeSource.JPSS,
         )
         assert config_jpss.packet_time_coordinate == "PACKET_JPSS_TIME"
+
+    def test_packet_configuration_requires_day_coverage(self):
+        """A configuration without a day_coverage policy fails validation."""
+        with pytest.raises(ValidationError, match="day_coverage"):
+            l1a_packet_configs.PacketConfiguration(
+                packet_apid=LiberaApid.icie_nom_hk,
+                packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
+            )
+
+
+def test_configured_apids_loads_every_yaml_entry(monkeypatch):
+    """Every YAML entry, each with its required day_coverage, loads; APIDs without an entry are absent."""
+    monkeypatch.setattr(l1a_packet_configs, "_PACKET_CONFIG_REGISTRY", {})
+    assert set(configured_apids()) == {
+        LiberaApid.jpss_sc_pos,
+        LiberaApid.pev_sw_stat,
+        LiberaApid.pec_sw_stat,
+        LiberaApid.icie_rad_full,
+        LiberaApid.icie_rad_sample,
+        LiberaApid.icie_wfov_sci,
+        LiberaApid.icie_cal_full,
+        LiberaApid.icie_cal_sample,
+        LiberaApid.icie_axis_sample,
+        LiberaApid.icie_crit_hk,
+        LiberaApid.icie_nom_hk,
+        LiberaApid.icie_temp_hk,
+    }
+
+
+@pytest.mark.parametrize(
+    ("apid", "mode", "day_frac", "buffer_frac"),
+    [
+        (LiberaApid.icie_nom_hk, CoverageMode.FRACTION, 0.99, 0.99),
+        (LiberaApid.icie_rad_sample, CoverageMode.FRACTION, 0.90, 0.95),
+        (LiberaApid.icie_wfov_sci, CoverageMode.FRACTION, 0.60, 0.60),
+        (LiberaApid.icie_rad_full, CoverageMode.PRESENCE, None, None),
+        (LiberaApid.icie_cal_sample, CoverageMode.PRESENCE, None, None),
+    ],
+)
+def test_day_coverage_loaded_from_yaml(apid, mode, day_frac, buffer_frac):
+    """The YAML day_coverage blocks load into the expected policies."""
+    policy = get_packet_config(apid).day_coverage
+    assert policy.mode is mode
+    assert policy.day_coverage_frac == day_frac
+    assert policy.buffer_coverage_frac == buffer_frac
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"mode": CoverageMode.FRACTION}, "requires day_coverage_frac, buffer_coverage_frac"),
+        ({"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.9}, "requires buffer_coverage_frac"),
+        (
+            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 1.5, "buffer_coverage_frac": 0.9},
+            r"day_coverage_frac must be in \(0, 1\], got 1.5",
+        ),
+        (
+            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.0, "buffer_coverage_frac": 0.9},
+            r"day_coverage_frac must be in \(0, 1\], got 0.0",
+        ),
+        ({"mode": CoverageMode.PRESENCE, "day_coverage_frac": 0.9}, "drop day_coverage_frac"),
+    ],
+)
+def test_malformed_policies_rejected(kwargs, match):
+    with pytest.raises(ValidationError, match=match):
+        DayCoveragePolicy(**kwargs)
 
 
 class TestL1aConfigYaml:

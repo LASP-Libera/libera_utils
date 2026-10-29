@@ -6,8 +6,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.l1a import packet_slicing
 from libera_utils.l1a.packet_slicing import (
+    data_time_axes,
     find_sample_dims,
+    packet_time_coordinate,
     sample_to_packet_index,
     select_packets,
     slice_l1a_dataset_to_time_window,
@@ -78,7 +81,7 @@ def _packet_only_product(n_packets: int = 5, *, start: str = "2028-02-13T02:00:0
     packet_times = np.datetime64(start) + np.arange(n_packets) * np.timedelta64(1, "s")
     return xr.Dataset(
         {
-            "PKT_APID": ("PACKET", np.full(n_packets, 1300, dtype=np.uint16)),
+            "PKT_APID": ("PACKET", np.full(n_packets, 1002, dtype=np.uint16)),
             "SOME_ARRAY": (("PACKET", "ARRAY_8"), np.zeros((n_packets, 8), dtype=np.int32)),
         },
         coords={
@@ -86,6 +89,148 @@ def _packet_only_product(n_packets: int = 5, *, start: str = "2028-02-13T02:00:0
             "ARRAY_8": ("ARRAY_8", np.arange(8, dtype=np.int64)),
         },
     )
+
+
+def _wfov_product() -> xr.Dataset:
+    """Build a WFOV SCI-shaped Dataset: three 3-packet images with one unowned packet between images 0 and 1.
+
+    Packets are 1 s apart from 02:00:00. Camera times are 10 s after each image's SOP packet time.
+    """
+    packet_image_id = np.array([0, 0, 0, -1, 1, 1, 1, 2, 2, 2], dtype=np.int32)
+    sop_index = np.array([0, 4, 7], dtype=np.int32)
+    packet_times = np.datetime64("2028-02-13T02:00:00", "us") + np.arange(10) * np.timedelta64(1, "s")
+    return xr.Dataset(
+        {
+            "PKT_APID": ("PACKET", np.full(10, 1040, dtype=np.uint16)),
+            "SRC_SEQ_CTR": ("PACKET", np.arange(10, dtype=np.uint16)),
+            "PACKET_IMAGE_ID": ("PACKET", packet_image_id),
+            "CAMERA_PACKET_INDEX": ("CAMERA_TIME", sop_index, {"long_name": "SOP packet"}),
+            "WFOV_COMPRESSED_IMAGE": (("CAMERA_TIME", "BLOB_BYTE"), np.zeros((3, 4), dtype=np.uint8)),
+        },
+        coords={
+            "PACKET_ICIE_TIME": ("PACKET", packet_times),
+            "CAMERA_TIME": ("CAMERA_TIME", packet_times[sop_index] + np.timedelta64(10, "s")),
+            "BLOB_BYTE": ("BLOB_BYTE", np.arange(4)),
+        },
+    )
+
+
+class TestWfovCameraTime:
+    """CAMERA_TIME rows own their SOP..EOP packet range via PACKET_IMAGE_ID."""
+
+    def test_camera_time_is_a_sample_dim_and_blob_byte_is_not(self):
+        assert find_sample_dims(_wfov_product()) == {"CAMERA_TIME"}
+
+    def test_camera_time_found_via_camera_packet_index_when_times_are_not_decoded(self):
+        ds = _wfov_product()
+        ds = ds.assign_coords(CAMERA_TIME=("CAMERA_TIME", ds["CAMERA_TIME"].values.astype(np.int64)))
+        assert find_sample_dims(ds) == {"CAMERA_TIME"}
+
+    def test_sample_to_packet_index_is_the_sop(self):
+        np.testing.assert_array_equal(sample_to_packet_index(_wfov_product(), "CAMERA_TIME"), [0, 4, 7])
+
+    def test_select_packets_renumbers_camera_packet_index(self):
+        out = select_packets(_wfov_product(), np.arange(4, 10))
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0, 3])
+        assert out["CAMERA_PACKET_INDEX"].attrs == {"long_name": "SOP packet"}
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values, [0, 0, 0, 1, 1, 1])
+
+    def test_select_packets_renumbers_packet_image_id_against_camera_time(self):
+        out = select_packets(_wfov_product(), np.arange(4, 10))
+        assert out["PACKET_IMAGE_ID"].dtype == np.int32
+        sop = out["CAMERA_PACKET_INDEX"].values
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values[sop], np.arange(out.sizes["CAMERA_TIME"]))
+
+    def test_select_packets_marks_packets_of_a_dropped_image_unowned(self):
+        """Dropping image 1's SOP packet drops its CAMERA_TIME row, so its kept packets belong to no image."""
+        out = select_packets(_wfov_product(), np.array([0, 1, 2, 5, 6, 7, 8, 9]))
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values, [0, 0, 0, -1, -1, 1, 1, 1])
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0, 5])
+
+    def test_window_trim_keeps_packet_image_id_consistent_with_camera_time(self):
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:14"), np.datetime64("2028-02-13T02:00:20")
+        )
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values, [0, 0, 0, 1, 1, 1])
+        sop = out["CAMERA_PACKET_INDEX"].values
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values[sop], np.arange(out.sizes["CAMERA_TIME"]))
+
+    def test_image_in_window_keeps_all_its_packets(self):
+        """Image 1's camera time (02:00:14) is in the window; its later packets' times are not."""
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:14"), np.datetime64("2028-02-13T02:00:15")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [4, 5, 6])
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0])
+        assert out.sizes["CAMERA_TIME"] == 1
+
+    def test_image_out_of_window_drops_all_its_packets(self):
+        """Packets 4-6 have packet times in the window, but image 1's camera time does not."""
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:04"), np.datetime64("2028-02-13T02:00:06")
+        )
+        assert out.sizes["PACKET"] == 0
+        assert out.sizes["CAMERA_TIME"] == 0
+
+    def test_unowned_packet_is_never_selected(self):
+        """Packet 3 belongs to no image, so it has no data time even though its packet time is in the window."""
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:20")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2, 4, 5, 6, 7, 8, 9])
+
+    def test_missing_packet_image_id_raises(self):
+        with pytest.raises(ValueError, match="no 'PACKET_IMAGE_ID'"):
+            slice_l1a_dataset_to_time_window(
+                _wfov_product().drop_vars("PACKET_IMAGE_ID"),
+                np.datetime64("2028-02-13T02:00:00"),
+                np.datetime64("2028-02-13T02:00:20"),
+            )
+
+
+class TestPacketTimeCoordinate:
+    """The packet time coordinate comes from the packet configuration of the dataset's APID."""
+
+    @pytest.mark.parametrize(("apid", "expected"), [(1002, "PACKET_ICIE_TIME"), (11, "PACKET_JPSS_TIME")])
+    def test_named_by_apid(self, apid, expected):
+        ds = _packet_only_product(n_packets=2)
+        ds["PKT_APID"] = ("PACKET", np.full(2, apid, dtype=np.uint16))
+        assert packet_time_coordinate(ds) == expected
+
+    def test_unconfigured_apid_raises(self):
+        with pytest.raises(ValueError, match="APID 1408 has no entry"):
+            packet_time_coordinate(_sample_product())
+
+    def test_no_apid_raises(self):
+        with pytest.raises(ValueError, match="no 'PKT_APID' variable"):
+            packet_time_coordinate(_packet_only_product().drop_vars("PKT_APID"))
+
+    def test_no_packets_raises(self):
+        with pytest.raises(ValueError, match="has no packets"):
+            packet_time_coordinate(_packet_only_product(n_packets=0))
+
+
+class TestDataTimeAxes:
+    """Sample axes place packets in time; a product with none is placed by its packet time."""
+
+    def test_sample_axes_sorted(self):
+        ds = _sample_product()
+        ds = ds.assign_coords(ADCFA_SC_TIME=("ADCFA_SC_TIME", ds["RAD_SAMPLE_FPE_TIME"].values))
+        assert data_time_axes(ds) == ["ADCFA_SC_TIME", "RAD_SAMPLE_FPE_TIME"]
+
+    def test_packet_only_product_uses_packet_time(self):
+        assert data_time_axes(_packet_only_product()) == ["PACKET_ICIE_TIME"]
+
+    def test_packet_only_product_without_packets_has_none(self):
+        assert data_time_axes(_packet_only_product(n_packets=0).drop_vars("PKT_APID")) == []
+
+    def test_missing_packet_dimension_raises(self):
+        with pytest.raises(ValueError, match="missing required dimension 'PACKET'"):
+            data_time_axes(xr.Dataset({"X": ("OTHER", np.arange(2))}))
+
+    def test_packet_only_product_missing_its_time_variable_raises(self):
+        with pytest.raises(ValueError, match="no sample axis and is missing 'PACKET_ICIE_TIME'"):
+            data_time_axes(_packet_only_product().drop_vars("PACKET_ICIE_TIME"))
 
 
 class TestFindSampleDims:
@@ -219,6 +364,14 @@ class TestSelectPackets:
         out = select_packets(ds, slice(0, 2))
         assert out["RAD_SAMPLE_packet_index"].attrs["long_name"] == "Packet index for radiometer sample data"
 
+    def test_preserves_packet_index_dtype(self):
+        """A product definition fixes the index dtype (int32 for CAMERA_PACKET_INDEX), so renumbering keeps it."""
+        ds = _sample_product(n_packets=4, samples_per_packet=2)
+        ds["RAD_SAMPLE_packet_index"] = ds["RAD_SAMPLE_packet_index"].astype(np.int32)
+        out = select_packets(ds, slice(1, 3))
+        assert out["RAD_SAMPLE_packet_index"].dtype == np.int32
+        np.testing.assert_array_equal(out["RAD_SAMPLE_packet_index"].values, [0, 0, 1, 1])
+
 
 class TestSliceL1aDatasetToTimeWindow:
     """Time-window selection semantics."""
@@ -271,10 +424,32 @@ class TestSliceL1aDatasetToTimeWindow:
 
     def test_packet_only_product_missing_time_variable_raises(self):
         ds = _packet_only_product(n_packets=3).drop_vars("PACKET_ICIE_TIME")
-        with pytest.raises(ValueError, match="no sample dimensions and is missing"):
+        with pytest.raises(ValueError, match="no sample axis and is missing"):
             slice_l1a_dataset_to_time_window(
                 ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:01")
             )
+
+    def test_maps_each_sample_axis_to_packets_once(self, monkeypatch):
+        ds = _interleave_packet_pair(_sample_product(n_packets=8, samples_per_packet=4), 0, 4)
+        calls = []
+        original = packet_slicing.sample_to_packet_index
+        monkeypatch.setattr(
+            packet_slicing, "sample_to_packet_index", lambda d, dim: calls.append(dim) or original(d, dim)
+        )
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:03")
+        )
+        assert calls == ["RAD_SAMPLE_FPE_TIME"]
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2, 3])
+        np.testing.assert_array_equal(np.unique(out["RAD_SAMPLE_packet_index"].values), [0, 1, 2, 3])
+
+    def test_empty_packet_axis_returns_empty(self):
+        """No packets means no APID to resolve, and nothing to select."""
+        ds = _packet_only_product(n_packets=0).drop_vars("PKT_APID")
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:05")
+        )
+        assert out.sizes["PACKET"] == 0
 
     def test_window_outside_data_returns_empty(self):
         ds = _sample_product(n_packets=4, samples_per_packet=2)
