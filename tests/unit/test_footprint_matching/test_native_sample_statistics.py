@@ -18,7 +18,6 @@ import pytest
 
 from libera_utils.footprint_matching.product import aggregate_external_variables
 from libera_utils.footprint_matching.readers.base import StaticReader
-from libera_utils.footprint_matching.sources import AncillarySources
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     OperationalMode,
@@ -52,9 +51,9 @@ class _PixelReader(StaticReader):
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
-        VariableSpec(name="texture", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+        VariableSpec(name="texture", dtype="float32", aggregation="weighted_mean", modes=frozenset(OperationalMode)),
         VariableSpec(
-            name="scene", dtype="int16", aggregation="weighted_mode", required_mode=OperationalMode.CAM, n_categories=20
+            name="scene", dtype="int16", aggregation="weighted_mode", modes=frozenset(OperationalMode), n_categories=20
         ),
     )
     ADDITIONAL_PRODUCT_VARIABLES = (
@@ -62,14 +61,14 @@ class _PixelReader(StaticReader):
             name="scene_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset(OperationalMode),
             n_categories=20,
         ),
         VariableSpec(
             name="scene_secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset(OperationalMode),
             n_categories=20,
         ),
     )
@@ -83,7 +82,9 @@ class _PixelReader(StaticReader):
 def pixel_run(tmp_path):
     """Aggregate one footprint in the middle of the field and return (result, weigher, footprint)."""
     footprint = FakeFootprint(BoundingBox(_LAT0 + 0.2, _LAT0 + 0.8, _LON0 + 0.2, _LON0 + 0.8), _LAT0 + 0.5, _LON0 + 0.5)
-    sources = AncillarySources({_PixelReader.READER_KEY: _PixelReader(tmp_path / "unused")}, OperationalMode.CAM)
+    granule = tmp_path / "pixels.bin"
+    granule.touch()
+    sources = {_PixelReader.READER_KEY: _PixelReader([granule])}
     weigher = RadialWeigher()
     result, coverage = aggregate_external_variables(
         OperationalMode.CAM, [footprint], sources, weigher=weigher, return_coverage=True
@@ -93,7 +94,7 @@ def pixel_run(tmp_path):
 
 def _reference(weigher, footprint, sources):
     """The same statistics computed directly on the pixels with the same weights."""
-    samples = sources.query(_PixelReader.READER_KEY, footprint.bbox, footprint.time)
+    samples = sources[_PixelReader.READER_KEY].samples_in(footprint.bbox, footprint.time)
     weights = weigher.weight_field(
         samples,
         footprint.latitude,

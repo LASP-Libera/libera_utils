@@ -58,6 +58,7 @@ from libera_utils.footprint_matching.aggregation import (
     ACCEPT_COVERAGE_THRESHOLD,
     PARTIAL_COVERAGE_THRESHOLD,
     aggregate_sample_variables,
+    stack_product_values,
 )
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
@@ -66,12 +67,11 @@ from libera_utils.footprint_matching.geometry import (
     compute_viewing_frames,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.sources import AncillarySources, build_sources
+from libera_utils.footprint_matching.sources import build_sources
 from libera_utils.footprint_matching.types import (
     FmatchCoverageFlag,
     OperationalMode,
     RadiometerFootprint,
-    spec_active_in_mode,
 )
 from libera_utils.footprint_matching.weighting import (
     AngularPSFWeigher,
@@ -88,7 +88,8 @@ if TYPE_CHECKING:
     from xarray import Dataset
 
     from libera_utils.footprint_matching.geometry import ViewingFrame
-    from libera_utils.footprint_matching.types import PseudoFootprint
+    from libera_utils.footprint_matching.readers.base import AncillaryReader
+    from libera_utils.footprint_matching.types import PseudoFootprint, VariableSpec
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
 logger = logging.getLogger(__name__)
@@ -185,10 +186,10 @@ _MIN_FOOTPRINTS_PER_WORKER: int = 50
 # _aggregate_in_parallel right before the pool starts, cleared after. A worker started by
 # spawn sees None here and builds its own sources from the staged paths (see
 # _worker_sources).
-_FORK_SOURCES: AncillarySources | None = None
+_FORK_SOURCES: dict[str, AncillaryReader] | None = None
 # Sources a spawned worker built, kept for the next chunk it is handed. Keyed by the mode
 # and the staged paths so a worker reused for another run never serves stale readers.
-_WORKER_SOURCES_CACHE: dict[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], AncillarySources] = {}
+_WORKER_SOURCES_CACHE: dict[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], dict[str, AncillaryReader]] = {}
 
 # The radiometer-timescale counterpart of _CAMTIME_SEGMENTATION_VARIABLES: the product columns copied straight from L1B.
 _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
@@ -390,9 +391,9 @@ def _batch_viewing_frames(geoms: Sequence[_FootprintGeometry]) -> ViewingFrame:
 def aggregate_external_variables(
     mode: OperationalMode,
     footprints: Sequence[Any],
-    sources: AncillarySources | None = None,
+    sources: dict[str, AncillaryReader] | None = None,
     *,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
+    source_file_paths: dict[str, Sequence[Path]] | None = None,
     weigher: PixelWeigher | None = None,
     return_coverage: bool = False,
     n_workers: int | None = None,
@@ -401,24 +402,23 @@ def aggregate_external_variables(
 
     For the given operational mode this selects the active readers via
     ``ReaderRegistry.get_readers_for_mode(mode)``, and for each footprint asks each
-    source (:class:`~libera_utils.footprint_matching.sources.AncillarySources`) for
-    the native samples inside the footprint's bounding box matched to its time,
+    active reader (:meth:`~libera_utils.footprint_matching.readers.base.AncillaryReader.samples_in`)
+    for the native samples inside the footprint's bounding box matched to its time,
     weights each sample with the PSF ``weigher`` at the sample's own location, and
     applies each variable's aggregation strategy (weighted mean / mode / log-mean /
     std / ranked scene) to collapse the samples to a single value per footprint. No
     sample is averaged, binned or interpolated before the weigher sees it. The active
     reader set - and therefore the keys of the returned dict - grows with the mode's
-    latency (e.g. CAM has era5_single_level, igbp, nise, viirs_brdf, viirs_cldprop_d3; IMAGER
+    latency (e.g. CAM has era5_surface, igbp, nise, viirs_brdf, viirs_cldprop_d3; IMAGER
     additionally has era5_pressure, viirs_aod, and the RBSP flashflux and cldpix fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<source_key>_<spec_name>`` (e.g.
-    ``era5_single_level_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
+    ``era5_surface_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
     product definition variable names. The reader's ``INSTRUMENT`` is recorded in
-    each variable's ``long_name`` rather than in the name. Per-spec gating uses
-    :func:`~libera_utils.footprint_matching.types.spec_active_in_mode`: a spec's
-    ``required_mode`` rank rule, or an exact ``only_modes`` pin (e.g. the extended
-    FLASHFlux cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
+    each variable's ``long_name`` rather than in the name. A spec is aggregated only
+    when ``mode`` is in its ``modes`` (e.g. the extended FLASHFlux
+    cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
     Processing is done one footprint at a time, so only the current footprint's
     samples are held beyond what each reader holds of its source. With ``n_workers``
@@ -459,10 +459,11 @@ def aggregate_external_variables(
         ``longitude``, ``viewing_zenith_angle`` and, for the angular weigher, the
         ephemeris). Pass them in time order: a stepped source reloads its grid
         whenever the nearest step changes.
-    sources : AncillarySources, optional
-        Pre-built sources to query. If ``None``, they are constructed from
-        ``source_file_paths`` via :func:`~libera_utils.footprint_matching.sources.build_sources`.
-    source_file_paths : dict[str, Sequence[Path] | Path], optional
+    sources : dict[str, AncillaryReader], optional
+        Reader registry key to an instantiated reader, as
+        :func:`~libera_utils.footprint_matching.sources.build_sources` returns them. If
+        ``None``, they are built from ``source_file_paths``.
+    source_file_paths : dict[str, Sequence[Path]], optional
         Reader-key -> staged granule(s) map used to build the sources when none are
         supplied. Required in that case.
     weigher : PixelWeigher, optional
@@ -524,7 +525,7 @@ def aggregate_external_variables(
 def _aggregate_footprints(
     mode: OperationalMode,
     footprints: list[Any],
-    sources: AncillarySources,
+    sources: dict[str, AncillaryReader],
     weigher: PixelWeigher,
     return_coverage: bool,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
@@ -550,36 +551,52 @@ def _aggregate_footprints(
             frames = _batch_viewing_frames([geoms[i] for i in on_earth])
             frame_rows = {i: row for row, i in enumerate(on_earth)}
 
-    # Drive the loop off the sources' *active* readers rather than re-deriving the
-    # registry set for the mode: the sources are constructed with only the readers
-    # active for their mode, and this also lets a caller pass a subset of sources. Each
-    # source's reader *class* (needed for product_variable_specs() and the INSTRUMENT
-    # token) is resolved from the registry by key.
-    reader_classes = {key: ReaderRegistry.get(key) for key in sources.sources}
+    # Drive the loop off the readers passed in rather than re-deriving the registry set
+    # for the mode: build_sources builds only the readers active for the mode, and this
+    # also lets a caller pass a subset of them. Each reader's *class* (needed for
+    # product_variable_specs() and the INSTRUMENT token) is resolved from the registry by key.
+    reader_classes = {key: ReaderRegistry.get(key) for key in sorted(sources)}
 
-    # Pre-allocate one NaN-filled output array per product variable. Integer
+    # Pre-allocate one NaN-filled output array per product variable: 1-D for a spec, and
+    # (footprint, coordinate) for a stack of specs (e.g. ERA5 pressure levels). Integer
     # (categorical) variables are held as float64 so a footprint with no usable data
     # stays NaN; the integer fill from _fill_value_for replaces it when the column is placed.
-    # Cache the per-reader spec name plan so we do not recompute it for every footprint.
+    # Cache the per-reader name plan so we do not recompute it for every footprint.
     outputs: dict[str, np.ndarray] = {}
     plan: dict[str, list[tuple[str, str]]] = {}
     for key, reader_cls in reader_classes.items():
+        specs = {spec.name: spec for spec in reader_cls.product_variable_specs()}
+        stacks = reader_cls.product_stacks()
+        stacked_members = {member for stack in stacks for member in stack.members}
+        columns: list[tuple[str, VariableSpec, int | None]] = [
+            (name, spec, None) for name, spec in specs.items() if name not in stacked_members
+        ]
+        for stack in stacks:
+            in_mode = {mode in specs[member].modes for member in stack.members}
+            if len(in_mode) > 1:
+                raise ValueError(
+                    f"Reader {key!r}: ProductStack {stack.name!r} has members carried by {mode.value} and members "
+                    "that are not, so its product variable would be partly empty. Give every member of a stack "
+                    "the same modes."
+                )
+            columns.append((stack.name, specs[stack.members[0]], len(stack.members)))
         entries: list[tuple[str, str]] = []
-        for spec in reader_cls.product_variable_specs():
-            # Per-spec mode gating: a reader may declare variables that only belong to
-            # higher-latency modes (e.g. the extended FLASHFlux cloud/aerosol/albedo fields
-            # are FMATCH-IMAGER only), so skip specs not active in this mode.
-            if not spec_active_in_mode(spec, mode):
+        for name, spec, width in columns:
+            # Per-spec mode gating: a reader may declare variables that only some of its
+            # products carry (e.g. the extended FLASHFlux cloud/aerosol/albedo fields are
+            # FMATCH-IMAGER only), so skip specs whose modes exclude this one.
+            if mode not in spec.modes:
                 continue
-            # Product variable name is ``<source_key>_<spec_name>`` (no instrument
+            # Product variable name is ``<source_key>_<name>`` (no instrument
             # token); the reader's INSTRUMENT is carried in the variable's long_name
             # by the product definition, per the FMATCH naming contract.
-            product_name = f"{key}_{spec.name}"
+            product_name = f"{key}_{name}"
             dtype = np.dtype(spec.dtype)
             if not np.issubdtype(dtype, np.floating):
                 dtype = np.dtype(np.float64)
-            outputs[product_name] = np.full(n_footprints, np.nan, dtype=dtype)
-            entries.append((product_name, spec.name))
+            shape = n_footprints if width is None else (n_footprints, width)
+            outputs[product_name] = np.full(shape, np.nan, dtype=dtype)
+            entries.append((product_name, name))
         plan[key] = entries
 
     # Per-footprint coverage accumulator: track the minimum across sources. Start at
@@ -600,7 +617,7 @@ def _aggregate_footprints(
         for key, reader_cls in reader_classes.items():
             # The source's native samples inside this footprint's PSF bounding box,
             # matched to the footprint time by the reader's TimeMatch policy.
-            samples = sources.query(key, footprint.bbox, footprint.time)
+            samples = sources[key].samples_in(footprint.bbox, footprint.time)
             weight_field = weigher.weight_field(
                 samples,
                 geom.boresight_lat_deg,
@@ -615,10 +632,12 @@ def _aggregate_footprints(
             )
             if return_coverage:
                 coverage_min[i] = min(coverage_min[i], weight_field.coverage)
-            # One scalar per product variable, keyed by the bare spec name.
+            # One scalar per spec, then one value (or one row, for a stack) per product
+            # variable, keyed by the bare spec or stack name.
             scalars = aggregate_sample_variables(reader_cls, samples, weight_field)
-            for product_name, spec_name in plan[key]:
-                outputs[product_name][i] = scalars[spec_name]
+            values = stack_product_values(reader_cls, scalars)
+            for product_name, name in plan[key]:
+                outputs[product_name][i] = values[name]
 
     if not return_coverage:
         return outputs
@@ -629,21 +648,18 @@ def _aggregate_footprints(
 
 
 def _source_paths_key(
-    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path] | Path]
+    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path]]
 ) -> tuple[str, tuple[tuple[str, tuple[str, ...]], ...]]:
     """A hashable identity of a run's staged inputs, for the spawned workers' source cache."""
     entries = []
     for key in sorted(source_file_paths):
-        paths = source_file_paths[key]
-        if isinstance(paths, (str, Path)):
-            paths = [paths]
-        entries.append((key, tuple(str(p) for p in paths)))
+        entries.append((key, tuple(str(p) for p in source_file_paths[key])))
     return mode.value, tuple(entries)
 
 
 def _worker_sources(
-    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path] | Path] | None
-) -> AncillarySources:
+    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path]] | None
+) -> dict[str, AncillaryReader]:
     """The sources a worker process aggregates with.
 
     A forked worker inherits the parent's loaded sources through :data:`_FORK_SOURCES`
@@ -669,7 +685,7 @@ def _worker_sources(
 def _aggregate_chunk(
     mode: OperationalMode,
     footprints: list[Any],
-    source_file_paths: dict[str, Sequence[Path] | Path] | None,
+    source_file_paths: dict[str, Sequence[Path]] | None,
     weigher: PixelWeigher,
     return_coverage: bool,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
@@ -681,8 +697,8 @@ def _aggregate_chunk(
 def _aggregate_in_parallel(
     mode: OperationalMode,
     footprints: list[Any],
-    sources: AncillarySources,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None,
+    sources: dict[str, AncillaryReader],
+    source_file_paths: dict[str, Sequence[Path]] | None,
     weigher: PixelWeigher,
     return_coverage: bool,
     n_workers: int,
@@ -712,8 +728,7 @@ def _aggregate_in_parallel(
     if start_method == "fork":
         # Load every static source now, so the workers inherit the indexed data rather than
         # each loading it; a stepped source loads its first step on its first query.
-        for key in sources.sources:
-            reader = sources.reader(key)
+        for reader in sources.values():
             if hasattr(reader, "_native"):
                 _ = reader._native  # noqa: SLF001 - warming the reader's own cache before the fork.
         _FORK_SOURCES = sources
@@ -887,8 +902,8 @@ def _merge_computed_variables(
     solar_zenith_angle: np.ndarray,
     viewing_zenith_angle: np.ndarray,
     relative_azimuth_angle: np.ndarray,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None,
-    sources: AncillarySources | None,
+    source_file_paths: dict[str, Sequence[Path]] | None,
+    sources: dict[str, AncillaryReader] | None,
     weigher: PixelWeigher | None,
     allow_placeholders: bool = False,
     to_grid: Callable[[Any, np.dtype, Any], np.ndarray] | None = None,
@@ -923,11 +938,11 @@ def _merge_computed_variables(
         exposing ``bbox`` and the geometry the weigher reads.
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : np.ndarray
         Per-footprint geolocation angles (degrees) for the sun-glint calculation.
-    source_file_paths : dict[str, Sequence[Path] | Path] or None
+    source_file_paths : dict[str, Sequence[Path]] or None
         Reader-key -> staged granule(s) map used to build the sources when ``sources`` is not
         given.
-    sources : AncillarySources or None
-        A pre-built manager to aggregate from. Takes precedence over
+    sources : dict[str, AncillaryReader] or None
+        Pre-built readers to aggregate from, keyed by reader registry key. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher or None
         PSF weigher for the aggregation (defaults to the radial stand-in downstream).
@@ -1057,8 +1072,8 @@ def assemble_fmatch_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
-    sources: AncillarySources | None = None,
+    source_file_paths: dict[str, Sequence[Path]] | None = None,
+    sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1116,11 +1131,11 @@ def assemble_fmatch_dataset(
         variable rather than going through :func:`aggregate_external_variables`.
         Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
         ``None`` for the IMAGER modes.
-    source_file_paths : dict[str, Sequence[Path] | Path], optional
+    source_file_paths : dict[str, Sequence[Path]], optional
         Reader-key -> staged ancillary granule(s) map, used to build the sources when
         ``sources`` is not given.
-    sources : AncillarySources, optional
-        A pre-built manager to aggregate from. Takes precedence over
+    sources : dict[str, AncillaryReader], optional
+        Pre-built readers to aggregate from, keyed by reader registry key. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher, optional
         PSF weigher for the aggregation. The radiometer-timescale modes default to
@@ -1194,6 +1209,36 @@ def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
     return dtype, FMATCH_INTEGER_FILL_VALUE
 
 
+def _stack_coordinates(mode: OperationalMode, definition: LiberaDataProductDefinition) -> dict[str, np.ndarray]:
+    """Return the coordinate values of every stacked product dimension ``mode``'s readers declare.
+
+    A reader's ``ProductStack`` names the product dimension it stacks its specs along and the
+    coordinate value of each member (e.g. ERA5's pressure levels in hPa). Those values are the
+    product's coordinate on that dimension, so they are taken from the stacks rather than
+    repeated here, and they are written whether or not the reader's inputs were staged.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        Operational mode whose active readers' stacks to collect.
+    definition : LiberaDataProductDefinition
+        The product definition, which gives each coordinate its dtype.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Dimension name to its coordinate values, for every stacked dimension the definition
+        declares as a coordinate.
+    """
+    coordinates: dict[str, np.ndarray] = {}
+    for reader_cls in ReaderRegistry.get_readers_for_mode(mode).values():
+        for stack in reader_cls.product_stacks():
+            if stack.dimension in definition.coordinates:
+                dtype = np.dtype(definition.coordinates[stack.dimension].dtype)
+                coordinates[stack.dimension] = np.asarray(stack.coordinate_values, dtype=dtype)
+    return coordinates
+
+
 def _placeholder_variable_array(variable_definition: Any, shape: int | tuple[int, ...]) -> np.ndarray:
     """Build a conformant placeholder array for a declared variable no input produced.
 
@@ -1244,13 +1289,17 @@ def _fill_placeholder_variables(
     definition : LiberaDataProductDefinition
         The product definition naming every variable the file must contain.
     shape : int or tuple of int
-        Shape each placeholder array is built at: the 1-D record-axis length for the
-        radiometer-timescale products, or the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid shape for
-        the camera-timescale products.
+        Shape of the record axes each placeholder array is built over: the 1-D record-axis
+        length for the radiometer-timescale products, or the ``(CAMERA_TIME, PSEUDOFOOTPRINT)``
+        grid shape for the camera-timescale products. A variable declared on a further
+        dimension (e.g. ``PRESSURE_LEVEL``) is as long on it as that coordinate in ``data``.
     """
+    record_shape = (shape,) if isinstance(shape, int) else tuple(shape)
     for name, variable_definition in definition.variables.items():
         if name not in data:
-            data[name] = _placeholder_variable_array(variable_definition, shape)
+            further = variable_definition.dimensions[len(record_shape) :]
+            placeholder_shape = record_shape + tuple(len(data[dimension]) for dimension in further)
+            data[name] = _placeholder_variable_array(variable_definition, placeholder_shape)
 
 
 def _finalize_product_dataset(
@@ -1313,8 +1362,8 @@ def _assemble_camtime_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
-    sources: AncillarySources | None = None,
+    source_file_paths: dict[str, Sequence[Path]] | None = None,
+    sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1535,8 +1584,8 @@ def _assemble_radiometer_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
-    sources: AncillarySources | None = None,
+    source_file_paths: dict[str, Sequence[Path]] | None = None,
+    sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1619,6 +1668,7 @@ def _assemble_radiometer_dataset(
     # dtype the definition declares.
     data: dict[str, np.ndarray] = {
         time_variable: np.asarray(l1b_inputs[time_variable], dtype="datetime64[ns]"),
+        **_stack_coordinates(mode, definition),
     }
     for name in sorted(_RADIOMETER_L1B_VARIABLES):
         data[name] = np.asarray(l1b_inputs[name], dtype=np.dtype(definition.variables[name].dtype))
@@ -1672,8 +1722,8 @@ def write_fmatch_product(
     algorithm_version: str,
     input_files: str,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
-    sources: AncillarySources | None = None,
+    source_file_paths: dict[str, Sequence[Path]] | None = None,
+    sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
     strict: bool = True,
@@ -1703,11 +1753,11 @@ def write_fmatch_product(
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
         CAM modes declare this variable.
-    source_file_paths : dict[str, Sequence[Path] | Path], optional
+    source_file_paths : dict[str, Sequence[Path]], optional
         Reader-key -> staged ancillary granule(s) map, used to build the sources when
         ``sources`` is not given.
-    sources : AncillarySources, optional
-        A pre-built manager to aggregate from. Takes precedence over
+    sources : dict[str, AncillaryReader], optional
+        Pre-built readers to aggregate from, keyed by reader registry key. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher, optional
         PSF weigher used by the aggregation path (defaults to the radial stand-in).
