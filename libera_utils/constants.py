@@ -345,7 +345,7 @@ class DataProductIdentifier(StrEnum):
     anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
     anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC)
-    # NSIDC, Near-real-time Ice and Snow Extent from SSM/I-SSMIS (NISE) and from AMSR2 (NISE-A2)
+    # NSIDC, Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2)
     anc_nsidc_ice_snow = ("NSIDC-ICE-SNOW", DataLevel.ANC)
     # LP DAAC, MODIS land cover type with the IGBP classification (MCD12Q1)
     anc_modis_igbp = ("MODIS-IGBP", DataLevel.ANC)
