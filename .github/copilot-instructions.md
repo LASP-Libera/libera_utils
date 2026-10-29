@@ -9,5 +9,5 @@ Detailed coding rules, package layout, testing conventions, key patterns, and AI
 restrictions are defined in `.github/instructions/libera-utils.instructions.md`. Copilot
 applies that file automatically to all files in this repository.
 
-The Review Rules section of that file holds the team's review conventions, and
-`standards/review-rules.md` holds each rule's status and evidence.
+`.github/instructions/review-rules.instructions.md` holds the team's review conventions, and
+`LASP-Libera/libera_standards`, the Libera standard, holds each rule's status and evidence.
