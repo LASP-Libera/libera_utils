@@ -16,8 +16,12 @@ testing that components function together cohesively. Integration test modules c
 `pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests with
 
 ```
-pytest -m "not integration" tests
+pytest -m "not integration and not e2e" tests
 ```
+
+End-to-end tests (`e2e`) are deselected by default through `addopts = "-m 'not e2e'"` in `pyproject.toml`.
+A `-m` given on the command line replaces that one rather than combining with it, so any command-line `-m`
+must exclude `e2e` itself, as above.
 
 Unit tests heavily utilize pytest parameterization in order to
 run a single test against many sets of inputs and outputs without duplicating code (see
@@ -32,6 +36,140 @@ pytest in `conftest.py`, the main test configuration file for pytest.
 In order to better ensure test independence, we use `pytest-randomly` to randomize the order of tests.
 The random seed used to set the order is printed at the beginning of a test run. You
 can re-run the tests with a specific random seed by running `pytest --randomly-seed=<seed>`.
+
+## End-to-End Tests
+
+End-to-end tests live in `tests/e2e` and carry the `e2e` mark, which the default `pytest` run deselects. They run the
+library on golden input too large for the repository. The L1A test parses, trims and writes the daily L1A product of
+every APID in the DITL2 golden day 2026-07-12, and checks each product's day window and data-time coverage. A full run
+takes about 20 minutes and peaks near 8 GiB of memory, for the WFOV APID.
+
+### When to run them
+
+Run them on your branch before asking for review of a change to any of:
+
+- packet parsing, the XTCE definitions or `l1a_processing_configs.yml`;
+- packet ordering, slicing, the day-window trim or day coverage;
+- the L1A product definitions or NetCDF product writing.
+
+Unit tests cover the logic on small synthetic data; the E2E tests are what catch a change that only fails at the scale
+and on the quirks of real telemetry, such as duplicate times or a packet clock that steps backward. Other changes do
+not need them. GitHub Actions also runs them daily on `main`, so a failure there points at a change merged since the
+last passing run.
+
+### Run them locally
+
+Run them on their own, never in the same `pytest` session as other tests: the unit tests' AWS mocks replace real
+credentials for the whole session, and the E2E fixtures fail fast when they find them.
+
+| Variable                 | Meaning                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `LIBERA_E2E_GOLDEN_ROOT` | The golden root: an `s3://` URI, or a local directory with the same layout |
+| `LIBERA_E2E_OUTPUT_DIR`  | A new or empty local directory for the run's products, logs and report     |
+
+With a local copy of the golden input (see Golden input, below):
+
+```bash
+export LIBERA_E2E_GOLDEN_ROOT=~/libera-e2e-golden
+LIBERA_E2E_OUTPUT_DIR=~/libera-e2e-output/$(date +%Y%m%dT%H%M%S) pytest -m e2e -p no:randomly tests/e2e
+```
+
+With the golden input in S3, also set a profile that can read it, and its region. Each object is downloaded to a
+temporary directory first, so the run needs free disk for the whole golden input:
+
+```bash
+export AWS_PROFILE=<profile> AWS_REGION=us-west-2
+export LIBERA_E2E_GOLDEN_ROOT=s3://<golden bucket>/golden
+LIBERA_E2E_OUTPUT_DIR=~/libera-e2e-output/$(date +%Y%m%dT%H%M%S) pytest -m e2e -p no:randomly tests/e2e
+```
+
+Run one APID with `-k`, e.g. `-k icie_nom_hk`. Missing golden objects fail the run, naming each missing key; they are
+not skipped. A run's results are in `$LIBERA_E2E_OUTPUT_DIR/reports/run_report.json`, which Outputs and the run report,
+below, describes.
+
+To share a local run, upload its outputs to the output root, which needs `s3:PutObject` and `s3:PutObjectTagging` there:
+
+```bash
+python -m tests.e2e.upload_outputs "$LIBERA_E2E_OUTPUT_DIR" s3://<golden bucket>/test_run_output
+```
+
+It files the run under `libera_utils/<commit>/local-<output directory name>/`, taking the commit from the run report.
+
+### Run them in CI
+
+`.github/workflows/e2e-tests.yml` runs the E2E tests against the golden input in S3 and uploads the outputs. It runs
+daily on `main` and on demand on any branch, never on pull requests, so a fork cannot request its AWS role. To run it on
+your branch, open the repository's **Actions** tab, select **E2E Tests**, choose **Run workflow** and pick the branch,
+or:
+
+```bash
+gh workflow run e2e-tests.yml --ref <branch>
+gh run watch
+```
+
+Anyone with write access to the repository can start it. The run's summary page shows a table of each APID's status,
+packet counts, peak memory, run time, day coverage and warning count, followed by each APID's log findings. The full
+outputs are in S3 under `<output root>/libera_utils/<commit>/<run id>-<attempt>/`.
+
+The job runs in the `libera-utils-e2e` GitHub Environment, the only place its AWS role trusts. The environment holds
+three secrets, so that no bucket name appears in the public logs:
+
+| Secret            | Value                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| `E2E_ROLE_ARN`    | The role the job assumes through GitHub's OIDC provider                  |
+| `E2E_GOLDEN_ROOT` | `s3://` URI of the golden root                                           |
+| `E2E_OUTPUT_ROOT` | `s3://` URI of the output root, shared with other repositories' E2E runs |
+
+The role reads the golden root and writes, with tags, under the output root.
+
+### What the L1A test checks
+
+The L1A test checks each daily product's day window, and checks the coverage of its data-time axis against the APID's
+`day_coverage` policy in `l1a_processing_configs.yml`. The window checks compare the product with the parsed input, so
+only the coverage check fails when the golden input lacks files whose data reach the day.
+
+### Golden input
+
+The golden root holds the keys listed in `tests/e2e/l1a_ditl2_golden_manifest.csv`, each with its SHA-256. The L1A
+test's keys are `l1a/ditl2/<ground CCSDS name>`: the demuxed DITL2 2-hour files of each L1A APID with a product
+definition whose data times reach the golden day 2026-07-12 or its 10-minute day buffer. The files are named by
+capture time, which for most APIDs matches their data time, so their set is the day's files plus one either side. WFOV
+SCI images reach the capture hours after their camera time, so its set runs from `2026_193_00` to `2026_194_10`. A local
+copy only needs that layout, for example a symlink:
+
+```bash
+mkdir -p ~/libera-e2e-golden/l1a
+ln -s /path/to/2hr_demux ~/libera-e2e-golden/l1a/ditl2
+export LIBERA_E2E_GOLDEN_ROOT=~/libera-e2e-golden
+```
+
+A local root is read in place. Each file's SHA-256 is checked against the manifest, so a changed golden object fails
+the run.
+
+### Outputs and the run report
+
+`LIBERA_E2E_OUTPUT_DIR` must be a new or empty directory; a run refuses one that already holds files, so its outputs
+are only its own. Set it on the command line, as above, so each run gets its own.
+
+Each run writes, under `LIBERA_E2E_OUTPUT_DIR`:
+
+- `products/`: the daily L1A product of each APID;
+- `logs/`: one DEBUG log per APID;
+- `reports/run_report.json`: the golden day, the manifest's SHA-256, the `libera_utils` and Python versions, the
+  commit (`GITHUB_SHA` in CI, else the local `HEAD`, suffixed `-dirty` when the tree has uncommitted changes), the
+  workflow run ID in CI, the defined L1A APIDs the golden input lacks, and per APID the input file and packet
+  counts, the parse, trim and write times in seconds, the peak resident memory in bytes, the time-axis coverage
+  of the daily product, and `log_findings`: every `libera_utils` WARNING the run logged, such as duplicate data times
+  and packet-time inversions along `SRC_SEQ_CTR`, plus the INFO packet-order summary from `packet_ordering` and
+  `packet_slicing`, each as its level, logger and message.
+
+Peak memory is this process's resident set size, sampled every 50 ms. The parse runs in-process, so this is the
+whole parse's memory.
+
+`python -m tests.e2e.upload_outputs` uploads a run to `<output root>/libera_utils/<commit>/<run id>/`, keeping the
+`products/`, `logs/` and `reports/` subdirectories; the repository name leads so that other repositories can share the
+output root. Each object is tagged `kind=products`, `kind=logs` or `kind=reports`. Lifecycle rules on the bucket, set
+outside this repository, filter on that tag to expire products after 14 days and logs after 6 months; reports are kept.
 
 ## Generating Coverage and Test Reports
 

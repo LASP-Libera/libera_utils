@@ -123,8 +123,11 @@ sphinx = { version = ">=9.1", python = ">=3.12,<4" }
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: mark a test as an integration test. Skip these tests with `pytest -m 'not integration' tests`"
+    "integration: mark a test as an integration test. Skip these tests with `pytest -m 'not integration and not e2e' tests`",
+    "e2e: end-to-end test against golden input; deselected by default, run with `pytest -m e2e tests/e2e`",
 ]
+# A -m on the command line replaces this one, so a command-line -m must exclude e2e itself.
+addopts = "-m 'not e2e'"
 minversion = "6.0"
 xfail_strict = true
 

@@ -1,0 +1,63 @@
+name: E2E Tests
+
+# Runs the e2e-marked tests against the golden input in S3: daily on the default branch and on
+# demand on any branch. Never on pull requests, so a fork cannot request the role.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  e2e:
+    if: github.repository == 'LASP-Libera/libera_utils'
+    runs-on: ubuntu-latest
+    # The role trusts only this environment; it holds the role ARN and the golden and output roots.
+    environment: libera-utils-e2e
+    timeout-minutes: 300
+    env:
+      AWS_REGION: us-west-2
+      LIBERA_E2E_GOLDEN_ROOT: ${{ secrets.E2E_GOLDEN_ROOT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+        with:
+          lfs: "false"
+
+      - name: Assume the E2E role
+        # v6.3.0. Pinned by commit because this action handles the role's credentials.
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ secrets.E2E_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 3600
+
+      - name: Run E2E tests
+        env:
+          LIBERA_E2E_OUTPUT_DIR: ${{ runner.temp }}/e2e-output
+        run: poetry run pytest tests/e2e -m e2e -p no:randomly
+
+      - name: Assume the E2E role for the upload
+        # The tests can outlast the first session, so the upload gets its own.
+        if: ${{ !cancelled() }}
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ secrets.E2E_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload products, logs and report
+        # One prefix per run, products/, logs/ and reports/ inside it; each object is tagged
+        # kind=<kind> so that S3 lifecycle rules can expire each kind on its own schedule.
+        if: ${{ !cancelled() }}
+        env:
+          E2E_OUTPUT_ROOT: ${{ secrets.E2E_OUTPUT_ROOT }}
+        run: >-
+          poetry run python -m tests.e2e.upload_outputs "${{ runner.temp }}/e2e-output" "$E2E_OUTPUT_ROOT"
+          --run-id "${{ github.run_id }}-${{ github.run_attempt }}"
