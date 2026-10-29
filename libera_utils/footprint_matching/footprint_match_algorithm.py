@@ -487,7 +487,7 @@ def resolve_ancillary_inputs(
     subdirectory per reader, named by the reader's registry key**::
 
         $FMATCH_ANCILLARY_PATH/
-            era5_single_level/  ERA5 single-level granules
+            era5_surface/       ERA5 single-level granules
             era5_pressure/      ERA5 pressure-level granules
             igbp/               MCD12Q1 land-cover granules
             nise/               NISE snow/ice granules
@@ -875,8 +875,7 @@ def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataPr
     wanted = set(product_ids)
     wanted_labels = ", ".join(sorted(product_id.value for product_id in wanted))
     selected: list[str] = []
-    for file_record in manifest.files:
-        filename = file_record.filename
+    for filename in manifest.files:
         try:
             libera_filename = LiberaDataProductFilename.from_file_path(filename)
         except Exception:

@@ -19,7 +19,7 @@ from libera_utils.footprint_matching.product import (
     L1B_PASSTHROUGH_VARIABLES,
     L1B_SCAN_REFERENCE_VARIABLES,
 )
-from tests.test_data.footprint_matching.fixtures import make_l1b_radiometer_fixture
+from tests.plugins.footprint_matching_fixtures import make_l1b_radiometer_fixture
 
 
 class TestRadiometerPassthrough:

@@ -14,7 +14,7 @@ from libera_utils.footprint_matching.footprint_match_algorithm import (
     resolve_runner_config_from_env,
 )
 from libera_utils.footprint_matching.product import MissingCamtimeVariablesError
-from tests.test_data.footprint_matching.fixtures import make_cf_cam_camtime_dataset, make_cf_cam_camtime_fixture
+from tests.plugins.footprint_matching_fixtures import make_cf_cam_camtime_dataset, make_cf_cam_camtime_fixture
 
 
 class TestResolveRunnerConfigFromEnv:

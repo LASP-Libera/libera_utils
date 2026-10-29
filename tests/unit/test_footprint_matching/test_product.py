@@ -11,8 +11,9 @@ imager fields. These tests confirm, for every shipped definition, that:
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
   VariableSpec definitions for the mode. Every reader-sourced variable is named
-  `<source_key>_<spec_name>` (e.g. era5_single_level_wind_u10, igbp_surface_type,
-  cldpix_cloud_mask); the reader's instrument is recorded in each variable's
+  `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type,
+  cldpix_cloud_mask), or `<source_key>_<stack_name>` for a reader's stacked specs
+  (e.g. era5_pressure_temperature on PRESSURE_LEVEL); the reader's instrument is recorded in each variable's
   ``long_name`` instead (e.g. "... (ECMWF)").
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
@@ -50,26 +51,23 @@ from libera_utils.footprint_matching.product import (
     pseudofootprints_from_camtime_dataset,
     write_fmatch_product,
 )
+from libera_utils.footprint_matching.readers.base import AncillaryReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.sources import AncillarySources
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     CameraFootprintQualityFlag,
     FmatchCoverageFlag,
     OperationalMode,
-    VariableSpec,
-    spec_active_in_mode,
-    with_standard_deviation_companions,
 )
-from libera_utils.io.product_definition import LiberaDataProductDefinition
-from tests.test_data.footprint_matching.fixtures import make_cf_cam_camtime_dataset, make_era5_netcdf_fixture
+from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
+from tests.plugins.footprint_matching_fixtures import make_cf_cam_camtime_dataset, make_era5_surface_netcdf_fixture
 
 # The production reader keys. Intersecting with these makes the cross-check robust
 # against throwaway readers other tests register into the shared ReaderRegistry
 # (e.g. _FakeReader in test_base.py).
 PRODUCTION_READER_KEYS = frozenset(
     {
-        "era5_single_level",
+        "era5_surface",
         "era5_pressure",
         "igbp",
         "nise",
@@ -101,29 +99,35 @@ def _production_readers_for_mode(mode: OperationalMode) -> dict:
     return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
 
 
-def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
-    """{output_variable_name: dtype} for every active production reader variable.
+def _expected_external_variables(mode: OperationalMode) -> dict[str, tuple[str, str | None]]:
+    """{output_variable_name: (dtype, stack dimension or None)} for every active production reader variable.
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
-    named `<source_key>_<spec_name>` (e.g. era5_single_level_wind_u10, igbp_surface_type). The
-    reader's instrument is not part of the name -- it is recorded in the
-    variable's ``long_name`` instead (see
-    ``test_reader_instrument_is_recorded_in_long_name``). Specs are gated by
-    ``spec_active_in_mode`` -- the ``required_mode`` rank rule (e.g. the ERA5
-    single-level fields carry ``required_mode=IMAGER`` and so appear in the
-    FMATCH-IMAGER-family products), or an exact ``only_modes`` pin (e.g. the extended
-    FLASHFlux cloud/aerosol/albedo fields appear in FMATCH-IMAGER only).
+    named `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type), or
+    `<source_key>_<stack_name>` for specs a reader stacks along a further dimension (e.g.
+    era5_pressure_temperature on PRESSURE_LEVEL). The reader's instrument is not part of the
+    name -- it is recorded in the variable's ``long_name`` instead (see
+    ``test_reader_instrument_is_recorded_in_long_name``). A spec is carried when ``mode`` is in
+    its ``modes`` (e.g. the extended FLASHFlux cloud/aerosol/albedo fields appear in
+    FMATCH-IMAGER only).
     """
-    expected: dict[str, str] = {}
+    expected: dict[str, tuple[str, str | None]] = {}
     for key, cls in _production_readers_for_mode(mode).items():
         # product_variable_specs() == the read VARIABLES plus derived outputs
         # (per-continuous-variable standard-deviation companions and reader-specific
-        # extras such as IGBP's ranked scenes). It is the full set that appears in
-        # the product definition, so this is what the YAMLs must match.
-        for spec in cls.product_variable_specs():
-            if not spec_active_in_mode(spec, mode):
-                continue
-            expected[f"{key}_{spec.name}"] = spec.dtype
+        # extras such as IGBP's ranked scenes). Less the stacked members plus the stacks,
+        # it is the full set that appears in the product definition, so this is what the
+        # YAMLs must match.
+        specs = {spec.name: spec for spec in cls.product_variable_specs()}
+        stacks = cls.product_stacks()
+        stacked_members = {member for stack in stacks for member in stack.members}
+        for name, spec in specs.items():
+            if name not in stacked_members and mode in spec.modes:
+                expected[f"{key}_{name}"] = (spec.dtype, None)
+        for stack in stacks:
+            member = specs[stack.members[0]]
+            if mode in member.modes:
+                expected[f"{key}_{stack.name}"] = (member.dtype, stack.dimension)
     return expected
 
 
@@ -160,15 +164,15 @@ class TestImagerContent:
         # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
         # (spot-check one per family; full sync is covered by
         # test_external_variables_match_readers).
-        assert "era5_single_level_wind_u10" in definition.variables
-        assert "era5_single_level_temperature_2m" in definition.variables
-        assert "era5_single_level_forecast_albedo" in definition.variables
-        assert "era5_pressure_temperature_500hPa" in definition.variables
-        assert "era5_pressure_relative_humidity_1000hPa_standard_deviation" in definition.variables
+        assert "era5_surface_wind_u10" in definition.variables
+        assert "era5_surface_temperature_2m" in definition.variables
+        assert "era5_surface_forecast_albedo" in definition.variables
+        assert "era5_pressure_temperature" in definition.variables
+        assert "era5_pressure_relative_humidity_standard_deviation" in definition.variables
 
     def test_extended_flashflux_fields_are_imager_only(self, definitions):
-        # The extended FLASHFlux cloud-layer / aerosol / albedo fields are pinned to
-        # FMATCH-IMAGER via only_modes and must NOT leak into the other products that
+        # The extended FLASHFlux cloud-layer / aerosol / albedo fields are carried by
+        # FMATCH-IMAGER alone (their modes) and must NOT leak into the other products that
         # also activate the flashflux reader (FLASH, IMAGER-CAMTIME). Spot-check one field
         # per secondary axis (layer, aerosol type, albedo band) plus a std companion.
         extended = (
@@ -217,7 +221,7 @@ class TestFmatchDefinitions:
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_external_variables_match_readers(self, mode, definitions):
         definition = definitions[mode]
-        for name, dtype in _expected_external_variables(mode).items():
+        for name, (dtype, _) in _expected_external_variables(mode).items():
             assert name in definition.variables, f"{mode.value} missing external variable {name}"
             assert definition.variables[name].dtype == dtype, (
                 f"{mode.value} dtype drift for {name}: definition has "
@@ -227,28 +231,28 @@ class TestFmatchDefinitions:
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
         # The instrument token is carried in the variable's long_name rather than the
-        # variable name (e.g. era5_single_level_wind_u10 has long_name "... (ECMWF)"). Guard that every
+        # variable name (e.g. era5_surface_wind_u10 has long_name "... (ECMWF)"). Guard that every
         # reader-sourced variable's long_name carries its reader's INSTRUMENT, so
         # provenance is not silently lost from the ~hundreds of hand-written long_names.
         definition = definitions[mode]
-        for key, cls in _production_readers_for_mode(mode).items():
-            for spec in cls.product_variable_specs():
-                if not spec_active_in_mode(spec, mode):
-                    continue
-                name = f"{key}_{spec.name}"
-                long_name = definition.variables[name].attributes.get("long_name", "")
-                assert cls.INSTRUMENT in long_name, (
-                    f"{mode.value}/{name}: long_name {long_name!r} is missing the reader instrument {cls.INSTRUMENT!r}"
-                )
+        readers = _production_readers_for_mode(mode)
+        for name in _expected_external_variables(mode):
+            instrument = next(cls.INSTRUMENT for key, cls in readers.items() if name.startswith(f"{key}_"))
+            long_name = definition.variables[name].attributes.get("long_name", "")
+            assert instrument in long_name, (
+                f"{mode.value}/{name}: long_name {long_name!r} is missing the reader instrument {instrument!r}"
+            )
 
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_all_variables_use_mode_record_dimension(self, mode, definitions):
         # Radiometer modes hang variables on the 1-D RADIOMETER_TIME axis; camera-timescale modes hang every variable
-        # on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
+        # on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. A reader's stacked variable adds its stack's dimension.
         time_var = fmatch_time_variable(mode)
         expected_dims = ["CAMERA_TIME", "PSEUDOFOOTPRINT"] if time_var == "CAMERA_TIME" else [time_var]
+        stacked = {name: dim for name, (_, dim) in _expected_external_variables(mode).items() if dim is not None}
         for name, var_def in definitions[mode].variables.items():
-            assert var_def.dimensions == expected_dims, f"{mode.value}/{name} wrong dimension"
+            dims = expected_dims + [stacked[name]] if name in stacked else expected_dims
+            assert var_def.dimensions == dims, f"{mode.value}/{name} wrong dimension"
 
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_no_duplicate_variable_names(self, mode, definitions):
@@ -276,7 +280,7 @@ class TestDerivedProductVariables:
     def test_continuous_variable_gets_standard_deviation_companion(self):
         # ERA5 winds are mean-aggregated (continuous), so each must gain a
         # `<name>_standard_deviation` companion in the product variable list.
-        era5 = ReaderRegistry.get("era5_single_level")
+        era5 = ReaderRegistry.get("era5_surface")
         names = {spec.name for spec in era5.product_variable_specs()}
         assert "wind_u10" in names
         assert "wind_u10_standard_deviation" in names
@@ -306,47 +310,6 @@ class TestDerivedProductVariables:
         assert "surface_type_standard_deviation" not in names
 
 
-class TestSpecActiveInMode:
-    """The per-spec product gate: required_mode rank rule vs. exact only_modes pin."""
-
-    def test_rank_rule_when_only_modes_unset(self):
-        # required_mode=IMAGER (rank 3) -> carried by IMAGER and the higher-ranked
-        # IMAGER-CAMTIME, but not the lower-ranked FLASH.
-        spec = VariableSpec(
-            name="x", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.IMAGER
-        )
-        assert spec_active_in_mode(spec, OperationalMode.IMAGER)
-        assert spec_active_in_mode(spec, OperationalMode.IMAGER_CAMTIME)
-        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_FLASH)
-
-    def test_only_modes_pins_to_exact_products(self):
-        # only_modes bypasses the rank rule: IMAGER only, even though IMAGER-CAMTIME
-        # outranks it.
-        spec = VariableSpec(
-            name="x",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            only_modes=(OperationalMode.IMAGER,),
-        )
-        assert spec_active_in_mode(spec, OperationalMode.IMAGER)
-        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_CAMTIME)
-        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_FLASH)
-
-    def test_standard_deviation_companion_inherits_only_modes(self):
-        # A continuous spec's std companion must stay scoped to the same product(s).
-        parent = VariableSpec(
-            name="cloud_top_pressure_lower",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            only_modes=(OperationalMode.IMAGER,),
-        )
-        expanded = with_standard_deviation_companions((parent,))
-        companion = next(s for s in expanded if s.name.endswith("_standard_deviation"))
-        assert companion.only_modes == (OperationalMode.IMAGER,)
-
-
 class TestFmatchConformance:
     """A dummy dataset must round-trip through create/enforce/check for every definition."""
 
@@ -359,13 +322,15 @@ class TestFmatchConformance:
             ["2026-06-11T00:00:00", "2026-06-11T00:00:01", "2026-06-11T00:00:02", "2026-06-11T00:00:03"],
             dtype="datetime64[ns]",
         )
-        # Sizes for every dimension a coordinate/variable may reference: the radiometer record axis (RADIOMETER_TIME)
-        # and the camera-timescale grid axes (CAMERA_TIME, PSEUDOFOOTPRINT). CAMERA_TIME must match the length of the times
-        # array below (it is the 1-D camera-timescale dimension coordinate).
+        # Sizes for every dimension a coordinate/variable may reference: the radiometer record axis (RADIOMETER_TIME),
+        # the camera-timescale grid axes (CAMERA_TIME, PSEUDOFOOTPRINT) and the fixed-size PRESSURE_LEVEL axis of the
+        # stacked ERA5 variables. CAMERA_TIME must match the length of the times array below (it is the 1-D
+        # camera-timescale dimension coordinate).
         dimension_sizes = {
             "RADIOMETER_TIME": n_footprints,
             "CAMERA_TIME": n_footprints,
             "PSEUDOFOOTPRINT": n_footprints,
+            "PRESSURE_LEVEL": LiberaVariableDefinition._get_standard_dimensions()["PRESSURE_LEVEL"].size,
         }
 
         def _zeros(var_def):
@@ -828,22 +793,23 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
         "subsatellite_latitude": np.array([lat + 0.5], dtype=np.float64),
         "subsatellite_longitude": np.array([lon], dtype=np.float64),
         "satellite_radius_km": np.array([_SATELLITE_RADIUS_KM]),
+        "cone_angle_rate": np.array([-1.0]),
     }
 
 
 class TestAssemblyWithAggregation:
-    """Supplying AncillarySources makes the external columns carry real aggregated values."""
+    """Supplying readers makes the external columns carry real aggregated values."""
 
-    def _era5_sources(self, tmp_path) -> AncillarySources:
-        """CAM-mode sources holding only the real ERA5 reader over a constant-wind grid.
+    def _era5_sources(self, tmp_path) -> dict[str, AncillaryReader]:
+        """CAM-mode readers holding only the real ERA5 surface reader over a constant-wind grid.
 
         The grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
         (~26 km) of the test boresight; u10 == 2.5 and v10 == -1.5 everywhere, so the
         PSF-weighted mean is exactly those constants regardless of the weight kernel. The
         fixture's one hourly step is the L1B time of ``_l1b_at``, so the step matches.
         """
-        era5_cls = ReaderRegistry.get("era5_single_level")
-        era5_file = make_era5_netcdf_fixture(
+        era5_cls = ReaderRegistry.get("era5_surface")
+        era5_file = make_era5_surface_netcdf_fixture(
             tmp_path,
             lat_min=0.0,
             lat_max=2.0,
@@ -853,7 +819,7 @@ class TestAssemblyWithAggregation:
             n_lon=21,
             times=[np.datetime64("2026-06-11T00:00:00", "ns")],
         )
-        return AncillarySources({"era5_single_level": era5_cls(era5_file)}, OperationalMode.CAM)
+        return {"era5_surface": era5_cls([era5_file])}
 
     def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
         # Footprint sits inside the ERA5 grid so every PSF cell has data.
@@ -867,10 +833,10 @@ class TestAssemblyWithAggregation:
         )
 
         # Weighted mean of a constant field is that constant.
-        np.testing.assert_allclose(dataset["era5_single_level_wind_u10"].values, [2.5], rtol=1e-4)
-        np.testing.assert_allclose(dataset["era5_single_level_wind_v10"].values, [-1.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_surface_wind_u10"].values, [2.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_surface_wind_v10"].values, [-1.5], rtol=1e-4)
         # A constant field has zero within-footprint spread.
-        np.testing.assert_allclose(dataset["era5_single_level_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
+        np.testing.assert_allclose(dataset["era5_surface_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
         # Fully covered -> coverage ~1 and no coverage QA bits set.
         assert dataset["psf_coverage_fraction"].values[0] > 0.99
         assert int(dataset["q_flags"].values[0]) == 0
@@ -884,7 +850,7 @@ class TestAssemblyWithAggregation:
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(OperationalMode.CAM, l1b, sources=self._era5_sources(tmp_path))
 
-        assert np.isnan(dataset["era5_single_level_wind_u10"].values[0])
+        assert np.isnan(dataset["era5_surface_wind_u10"].values[0])
         np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
         assert int(dataset["q_flags"].values[0]) & int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
 

@@ -283,20 +283,22 @@ unaffected unless step 3 changes a variable.
 1. Add the field to the reader's table: `_CLDPIX_FIELDS` in `cldpix.py`,
    `_FLASHFLUX_BASE_FIELDS` or `_IMAGER_FLASHFLUX_SOURCES` in `flashflux.py`, `_D3_GROUP_MAP` and
    `VARIABLES` in `viirs.py`, or the reader's `VARIABLES` elsewhere. Give it its
-   aggregation, `required_mode` (or `only_modes`), its valid range with the document it
+   aggregation, the products that carry it in `modes`, its valid range with the document it
    comes from, and for a mode-aggregated code `n_categories` and an `int16` dtype.
 2. Add the product variable `<reader key>_<variable name>` to each product definition
    whose mode carries it, with a `long_name` ending in `(<INSTRUMENT>)` and its units. A
    continuous variable also gets a `<reader key>_<variable name>_standard_deviation`
-   companion.
-3. Extend the reader's synthetic fixture in `tests/test_data/footprint_matching/fixtures.py`
+   companion. A variable the reader stacks in `PRODUCT_STACKS` (ERA5's pressure levels) is
+   published as its stack instead, `<reader key>_<stack name>` on the stack's dimension.
+3. Extend the reader's synthetic fixture in `tests/plugins/footprint_matching_fixtures.py`
    and its tests, and record the change under `## [Unreleased]` in `CHANGELOG.md`.
 
 ### Add a reader or change which products a reader feeds
 
 1. Write the reader as a subclass of `StaticReader`, `SteppedGridReader` or `PassReader`
    with a unique `READER_KEY`; importing it in `readers/__init__.py` registers it.
-2. Add its key to the products it feeds in `FMATCH_MODE_READERS` in `readers/registry.py`.
+2. Name the products it feeds in each of its variables' `modes`; `FMATCH_MODE_READERS` in
+   `readers/registry.py` is derived from them.
 3. Add its variables to those products' definitions, as above.
 4. Stage its granules under `$FMATCH_ANCILLARY_PATH/<reader key>/`; the runner derives the
    directories it reads from the registry.
