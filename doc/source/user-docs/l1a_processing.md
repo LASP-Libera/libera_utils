@@ -597,6 +597,42 @@ This varies by packet but there is some consistent behavior:
   positions. Consumers must use it as an element-wise mapping and must not assume that each
   packet's samples form one contiguous block.
 
+### Packet axis order
+
+The `PACKET` axis is in **`SRC_SEQ_CTR` order**, whatever the order of the input files. It is
+**not** sorted by packet time, which can step backward while `SRC_SEQ_CTR` advances. The counter is
+14 bits and wraps from 16383 to 0; packet time only tells which wrap a packet falls in:
+
+- Packets in packet-time order are cut into segments wherever packet time jumps by more than 60 s.
+  Within a segment each counter step is read modulo 16384, so `16383 -> 0` is one step and
+  `16380 -> 2` counts 5 missing packets. This holds while packet time is right to within about 96 s,
+  the time WFOV SCI takes to send half the counter's range.
+- Across a jump over 60 s the counter may have wrapped unseen or restarted, so segments go in
+  packet-time order.
+- A packet received twice, such as in two overlapping files, has the same counter and is kept once,
+  with a `UserWarning`. Packets that share a counter but differ raise `ValueError`, or keep the first
+  with `ground_data=True`. Packets that share a packet time but not a counter are all kept.
+- Where packets next to each other in a file with consecutive counters land a wrap apart, their packet
+  times are wrong by more than the counter can resolve, and this raises `ValueError`.
+
+Input files are parsed in file name order, which `input_files` lists. Two packets adjacent across a
+file join are then neighbours in time, so the wrong-wrap check above does not pair the end of a later
+file with the start of an earlier one. Flight PDS names carry the file's creation time, so a PDS file
+re-delivered later with earlier data still sorts out of time order.
+
+`parse_packets_to_l1a_dataset` then calls `packet_ordering.check_packet_order`. Where packet time steps
+backward along the counter order it emits a `UserWarning` with the count, the largest step and the first
+one's counters and times; the packets stay in counter order, and a backward step raises nothing. A dataset without
+`SRC_SEQ_CTR` or its packet time variable raises `ValueError`. `nom_hk_trim.find_obsid_runs` raises
+`ValueError` on a NOM-HK product whose packet counter repeats or steps backward between packets within
+60 s of each other, as that indicates a previous bad run of the L1A preprocessor.
+
+**For consumers.** `{group}_packet_index` and `CAMERA_PACKET_INDEX` index the `PACKET` axis by
+position. `PACKET_IMAGE_ID` lies on `PACKET` but its values index `CAMERA_TIME`, with `-1` for a packet
+in no image. Anything that needs packet times in ascending order sorts them first:
+`numpy.searchsorted` and `numpy.interp` return wrong values without raising on an unsorted axis. The
+granule filename's start and end are the minimum and maximum of its time variable.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing
@@ -631,7 +667,7 @@ truncated at all.
 WFOV science packets carry two independent time sources:
 
 - **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every
-  packet. This coordinate is used for packet ordering and deduplication.
+  packet. It is not monotonic along `PACKET`; see [Packet axis order](#packet-axis-order).
 - **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
   valid offsets). One row is added per successfully stitched image in **packet stream order**.
 
@@ -712,8 +748,7 @@ Decoded metadata on the `CAMERA_TIME` dimension:
 - FPGA status fields: `WFOV_FPGA_STATUS_*` (7 single-bit error flags from the FPGA status word)
 
 When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
-`write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
-packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+`write_libera_data_product()` so the filename reflects the earliest and latest complete image FSW times.
 
 #### Dual exposure and VIDEO timing
 
