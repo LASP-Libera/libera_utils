@@ -1010,3 +1010,321 @@ def test_hash_changes_when_path_is_reassigned():
     fn.path = Path("/tmp/elsewhere") / fn.path.name
     assert hash(fn) != before
     assert hash(fn) == hash(fn.path)
+
+
+# Each external ancillary sample in tests/test_data/footprint_matching, with what its upstream name (the sample
+# name without "_subset") parses to: class, product, version, applicable date and archive prefix.
+ANCILLARY_SAMPLES = [
+    pytest.param(
+        "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc",
+        filenaming.CeresFilename,
+        DataProductIdentifier.anc_ceres_noaa20_cldpix,
+        "1P9test",
+        dt.date(2020, 4, 10),
+        "CERES-NOAA20-CLDPIX/2020/04/10",
+        id="cldpix",
+    ),
+    pytest.param(
+        "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc",
+        filenaming.CeresFilename,
+        DataProductIdentifier.anc_ceres_noaa20_ssf,
+        "alpha4",
+        dt.date(2020, 4, 1),
+        "CERES-NOAA20-SSF/2020/04/01",
+        id="ssf",
+    ),
+    pytest.param(
+        "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
+        filenaming.ViirsL3Filename,
+        DataProductIdentifier.anc_viirs_noaa20_aod,
+        "021",
+        dt.date(2026, 9, 27),
+        "VIIRS-NOAA20-AOD/2026/09/27",
+        id="aod",
+    ),
+    pytest.param(
+        "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc",
+        filenaming.ViirsL3Filename,
+        DataProductIdentifier.anc_viirs_noaa20_cloud_properties,
+        "011",
+        dt.date(2026, 5, 27),
+        "VIIRS-NOAA20-CLOUD-PROPERTIES/2026/05/27",
+        id="cloud-properties",
+    ),
+    pytest.param(
+        "VJ143C1.A2026153.002.2026161161054_subset.h5",
+        filenaming.ViirsL3Filename,
+        DataProductIdentifier.anc_viirs_noaa20_brdf,
+        "002",
+        dt.date(2026, 6, 2),
+        "VIIRS-NOAA20-BRDF/2026/06/02",
+        id="brdf",
+    ),
+    pytest.param(
+        "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5",
+        filenaming.ViirsSdrFilename,
+        DataProductIdentifier.anc_viirs_noaa20_m4_sdr,
+        "20241004192414197049",
+        dt.date(2024, 10, 2),
+        "VIIRS-NOAA20-M4-SDR/2024/10/02",
+        id="sdr-radiance",
+    ),
+    pytest.param(
+        "ICDBG_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5",
+        filenaming.ViirsSdrFilename,
+        DataProductIdentifier.anc_viirs_noaa20_m4_sdr,
+        "20241004192414197049",
+        dt.date(2024, 10, 2),
+        "VIIRS-NOAA20-M4-SDR/2024/10/02",
+        id="sdr-geolocation",
+    ),
+    pytest.param(
+        "NISE_AMSR2_20260610_subset.HDFEOS",
+        filenaming.NsidcNiseFilename,
+        DataProductIdentifier.anc_nsidc_ice_snow,
+        "1",
+        dt.date(2026, 6, 10),
+        "NSIDC-ICE-SNOW/2026/06/10",
+        id="nise",
+    ),
+    pytest.param(
+        "EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin",
+        filenaming.NsidcLandOceanMaskFilename,
+        DataProductIdentifier.anc_nsidc_land_ocean_mask,
+        "1",
+        None,
+        "NSIDC-LAND-OCEAN-MASK/1",
+        id="land-ocean-mask",
+    ),
+]
+
+# Every concrete filename class, to check that each ancillary name is accepted by exactly one of them.
+ALL_FILENAME_CLASSES = (
+    filenaming.L0Filename,
+    filenaming.LiberaGroundCcsdsFilename,
+    filenaming.LiberaDataProductFilename,
+    filenaming.ManifestFilename,
+    filenaming.CeresFilename,
+    filenaming.ViirsL3Filename,
+    filenaming.ViirsSdrFilename,
+    filenaming.NsidcNiseFilename,
+    filenaming.NsidcLandOceanMaskFilename,
+    filenaming.Era5Filename,
+)
+
+
+def _accepting_classes(name):
+    """The filename classes whose constructor accepts the name."""
+    accepted = []
+    for filename_class in ALL_FILENAME_CLASSES:
+        try:
+            filename_class(name)
+        except ValueError:
+            continue
+        accepted.append(filename_class)
+    return accepted
+
+
+@pytest.mark.parametrize(
+    ("sample", "filename_class", "product", "version", "applicable_date", "archive_prefix"), ANCILLARY_SAMPLES
+)
+def test_ancillary_sample_upstream_names_parse(
+    fmatch_real_data_path, sample, filename_class, product, version, applicable_date, archive_prefix
+):
+    """Each sample's upstream name resolves to its one class, product, version, date and archive prefix."""
+    sample_path = fmatch_real_data_path / sample
+    assert sample_path.exists()
+    upstream_path = sample_path.with_name(sample.replace("_subset", ""))
+
+    fn = filenaming.AbstractValidFilename.from_file_path(upstream_path)
+
+    assert type(fn) is filename_class
+    assert _accepting_classes(upstream_path.name) == [filename_class]
+    assert fn.data_product_id is product
+    assert fn.filename_parts.version == version
+    assert getattr(fn, "applicable_date", None) == applicable_date
+    assert fn.archive_prefix == archive_prefix
+
+
+@pytest.mark.parametrize(
+    ("sample", "product"),
+    [
+        ("era5_single_levels_20250101T00_subset.nc", DataProductIdentifier.anc_era5_single_level),
+        ("era5_pressure_levels_20250101T00_subset.nc", DataProductIdentifier.anc_era5_pressure_level),
+    ],
+)
+def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, product):
+    """An ERA5 name built by the SDC scheme from a sample's own times parses back to the same parts."""
+    xr = pytest.importorskip("xarray")
+    with xr.open_dataset(fmatch_real_data_path / sample) as ds:
+        valid_times = ds["valid_time"].values
+        assert str(ds["expver"].values) == "0001"  # expver 0001 is the final ERA5 stream
+    utc_start = dt.datetime.fromisoformat(str(valid_times.min())[:19])
+    utc_end = dt.datetime.fromisoformat(str(valid_times.max())[:19])
+    revision = dt.datetime(2026, 8, 12, 16, 11, tzinfo=dt.UTC)
+
+    fn = filenaming.Era5Filename.from_filename_parts(
+        product_name=product, version="ERA5", utc_start=utc_start, utc_end=utc_end, revision=revision
+    )
+
+    assert fn.path.name == f"ECMWF_{product}_ERA5_20250101T000000_20250101T000000_R20260812T161100000000.nc"
+    assert _accepting_classes(fn.path.name) == [filenaming.Era5Filename]
+    parsed = filenaming.AbstractValidFilename.from_file_path(fn.path.name)
+    assert parsed.data_product_id is product
+    assert parsed.filename_parts.version == "ERA5"
+    assert parsed.filename_parts.utc_start == utc_start.replace(tzinfo=dt.UTC)
+    assert parsed.filename_parts.revision == revision
+    assert parsed.applicable_date == dt.date(2025, 1, 1)
+    assert parsed.archive_prefix == f"{product}/2025/01/01"
+
+
+@pytest.mark.parametrize(
+    ("name", "filename_class", "expected"),
+    [
+        pytest.param(
+            "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc",
+            filenaming.CeresFilename,
+            {"version": "Edition1C", "configuration_code": "101103", "applicable_date": dt.date(2023, 1, 1)},
+            id="ssf-edition",
+        ),
+        pytest.param(
+            "ICDBG_j01_d20240201_t0107372_e0113176_b63541_c20240201023927745000_oeac_ops.h5",
+            filenaming.ViirsSdrFilename,
+            {
+                "utc_start": dt.datetime(2024, 2, 1, 1, 7, 37, 200000, tzinfo=dt.UTC),
+                "utc_end": dt.datetime(2024, 2, 1, 1, 13, 17, 600000, tzinfo=dt.UTC),
+                "applicable_date": dt.date(2024, 2, 1),
+            },
+            id="sdr-aggregate",
+        ),
+        pytest.param(
+            "IVCDB_j01_d20241231_t2359372_e0001014_b71000_c20250101064435679611_oebc_ops.h5",
+            filenaming.ViirsSdrFilename,
+            {
+                "utc_end": dt.datetime(2025, 1, 1, 0, 1, 1, 400000, tzinfo=dt.UTC),
+                "applicable_date": dt.date(2024, 12, 31),
+            },
+            id="sdr-crossing-midnight",
+        ),
+        pytest.param(
+            "EASE2_M03km.LOCImask_land50_coast0km.11568x4872.bin",
+            filenaming.NsidcLandOceanMaskFilename,
+            {"resolution_km": 3.0, "columns": 11568, "rows": 4872},
+            id="mask-3km",
+        ),
+        pytest.param(
+            "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            filenaming.Era5Filename,
+            {"version": "ERA5T", "applicable_date": dt.date(2025, 1, 1)},
+            id="era5-day",
+        ),
+        pytest.param(
+            "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20250101T120000_20250102T110000_R20251028T120000000000.nc",
+            filenaming.Era5Filename,
+            {"applicable_date": dt.date(2025, 1, 1)},
+            id="era5-crossing-midnight",
+        ),
+    ],
+)
+def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
+    """Real name forms the samples do not show parse to the expected parts."""
+    fn = filenaming.AbstractValidFilename.from_file_path(name)
+
+    assert type(fn) is filename_class
+    for part, value in expected.items():
+        assert getattr(fn.filename_parts, part) == value
+
+
+@pytest.mark.parametrize(
+    ("name", "filename_class"),
+    [
+        pytest.param(
+            "CER_SSF_Aqua-FM3-MODIS_Edition4A_403406.2020040115.nc", filenaming.CeresFilename, id="ceres-platform"
+        ),
+        pytest.param(
+            "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020041024.nc", filenaming.CeresFilename, id="ceres-hour-24"
+        ),
+        pytest.param(
+            "AERDB_D3_VIIRS_SNPP.A2026270.021.2026274001051.nc", filenaming.ViirsL3Filename, id="viirs-l3-platform"
+        ),
+        pytest.param(
+            "AERDB_D3_VIIRS_NOAA20.A2025366.021.2026274001051.nc", filenaming.ViirsL3Filename, id="viirs-l3-doy-366"
+        ),
+        pytest.param(
+            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.h5", filenaming.ViirsL3Filename, id="viirs-l3-extension"
+        ),
+        pytest.param(
+            "IVCDB_npp_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+            filenaming.ViirsSdrFilename,
+            id="sdr-npp",
+        ),
+        pytest.param(
+            "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_dev.h5",
+            filenaming.ViirsSdrFilename,
+            id="sdr-domain",
+        ),
+        pytest.param(
+            "ICDBG_j01_d20240231_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+            filenaming.ViirsSdrFilename,
+            id="sdr-date",
+        ),
+        pytest.param("NISE_SSMISF18_20260610.HDFEOS", filenaming.NsidcNiseFilename, id="nise-sensor"),
+        pytest.param("NISE_AMSR2_20260231.HDFEOS", filenaming.NsidcNiseFilename, id="nise-date"),
+        pytest.param(
+            "EASE2_T6.25km.LOCImask_land50_coast0km.5552x2160.bin",
+            filenaming.NsidcLandOceanMaskFilename,
+            id="mask-temperate-grid",
+        ),
+        pytest.param(
+            "EASE2_M36km.LOCImask_land50_coast0km.964x406.png",
+            filenaming.NsidcLandOceanMaskFilename,
+            id="mask-browse-image",
+        ),
+        pytest.param(
+            "ECMWF_ERA5-SINGLE-LEVEL_ERA5X_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            filenaming.Era5Filename,
+            id="era5-stream",
+        ),
+        pytest.param(
+            "ECMWF_CERES-NOAA20-SSF_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            filenaming.Era5Filename,
+            id="era5-product",
+        ),
+        pytest.param(
+            "ECMWF_ERA5-SINGLE-LEVEL_ERA5_20250102T000000_20250101T000000_R20251028T120000000000.nc",
+            filenaming.Era5Filename,
+            id="era5-end-before-start",
+        ),
+    ],
+)
+def test_ancillary_malformed_names_rejected(name, filename_class):
+    """A malformed name is rejected by its class at construction, and no class accepts it."""
+    with pytest.raises(ValueError, match="failed validation|is not a valid"):
+        filename_class(name)
+
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(name)
+
+
+def test_ancillary_parse_only_class_cannot_build_a_name():
+    """Classes for provider-named files parse names and refuse to build one."""
+    with pytest.raises(NotImplementedError, match="cannot build one"):
+        filenaming.CeresFilename.from_filename_parts()
+
+    with pytest.raises(NotImplementedError, match="cannot build one"):
+        filenaming.CeresFilename._format_filename_parts()
+
+
+def test_era5_name_revision_defaults_to_now():
+    """Without a revision, the ERA5 name records the current UTC time."""
+    before = dt.datetime.now(tz=dt.UTC)
+    fn = filenaming.Era5Filename.from_filename_parts(
+        product_name=DataProductIdentifier.anc_era5_single_level,
+        version="ERA5T",
+        utc_start=dt.datetime(2025, 1, 1),
+        utc_end=dt.datetime(2025, 1, 1, 23),
+    )
+    after = dt.datetime.now(tz=dt.UTC)
+
+    # The revision keeps microseconds, so it lands between the two clock reads.
+    assert before <= fn.filename_parts.revision <= after
