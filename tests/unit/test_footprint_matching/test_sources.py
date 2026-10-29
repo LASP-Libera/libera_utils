@@ -1,7 +1,8 @@
 """Unit tests for build_sources.
 
 Readers check at construction that their granules exist but open none of them, so every
-source except the one a test queries is given an empty placeholder file that is never read.
+active source is given an empty placeholder file; the one test that calls ``samples_in``
+expects it to fail to open.
 """
 
 from pathlib import Path
