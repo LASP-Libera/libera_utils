@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.16.0] - 2026-10-29
+
+### Changed
+
+- **BREAKING:** Manifest files no longer record checksums, input or output. `Manifest.files` is a list of absolute path strings, written as `"files": ["s3://...", ...]`. A manifest in the previous `{"filename": ..., "checksum": ...}` record format raises `ValidationError` when read. A reader on libera_utils 5.15.0 or earlier treats each listed path as a file to checksum, so it downloads every listed file; move readers and writers of a manifest to this version together.
+- `Manifest.add_files()` checks that each file exists and is a file, raising `IsADirectoryError` for a local directory, an S3 bucket root or an S3 prefix, but no longer reads it, so an S3 file is not downloaded and a file larger than local disk can be listed.
+- **BREAKING:** The `Manifest` constructor no longer checks that a listed path exists; only `add_files()` does.
+- **BREAKING:** A path listed twice in a manifest is an error, where it was skipped with a warning: `Manifest.add_files()` raises `ValueError` for a path already listed or given twice, adding nothing, and the constructor and `Manifest.from_file()` raise `ValidationError`.
+- `create_kernels_from_manifest` no longer validates input checksums.
+
+### Removed
+
+- **BREAKING:** `ManifestFileRecord`, `Manifest.validate_checksums()`, `Manifest.check_file_structure()` and `libera_utils.io.manifest.calculate_checksum`.
+
+### Fixed
+
+- A file whose content matched another listed file's was dropped, with a warning, by `Manifest.add_files()`, the constructor and `Manifest.from_file()`. Every file is now listed under its own name.
+
 ## [5.15.0] - 2026-10-28
 
 ### Added
@@ -26,19 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
 - The `dev` dependency group depends on `pyjpegls` instead of `pillow-jpls` for JPEG-LS decoding in the WFOV integration test. `pillow-jpls` 1.3.2, its latest release, publishes wheels only through cp312, so Python 3.13 and 3.14 installs build it from source, which fails on gcc 14 hosts; `pyjpegls` binds the same CharLS codec.
-- **BREAKING:** Manifest files no longer record checksums, input or output. `Manifest.files` is a list of absolute path strings, written as `"files": ["s3://...", ...]`. A manifest in the previous `{"filename": ..., "checksum": ...}` record format raises `ValidationError` when read. A reader on libera_utils 5.14.0 or earlier treats each listed path as a file to checksum, so it downloads every listed file; move readers and writers of a manifest to this version together.
-- `Manifest.add_files()` checks that each file exists but no longer reads it, so an S3 file is not downloaded and a file larger than local disk can be listed.
-- **BREAKING:** The `Manifest` constructor no longer checks that a listed path exists; only `add_files()` does.
-- **BREAKING:** A path listed twice in a manifest is an error, where it was skipped with a warning: `Manifest.add_files()` raises `ValueError` for a path already listed or given twice, adding nothing, and the constructor and `Manifest.from_file()` raise `ValidationError`.
-- `create_kernels_from_manifest` no longer validates input checksums.
-
-### Removed
-
-- **BREAKING:** `ManifestFileRecord`, `Manifest.validate_checksums()`, `Manifest.check_file_structure()` and `libera_utils.io.manifest.calculate_checksum`.
-
-### Fixed
-
-- A file whose content matched another listed file's was dropped, with a warning, by `Manifest.add_files()`, the constructor and `Manifest.from_file()`. Every file is now listed under its own name.
 
 ## [5.14.0] - 2026-10-27
 
@@ -909,7 +914,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...HEAD
+[5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
 [5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
 [5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0
 [5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
