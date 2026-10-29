@@ -22,6 +22,7 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
+from libera_utils.l1a.packet_ordering import check_packet_order, sort_by_sequence_counter
 from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
@@ -32,7 +33,6 @@ logger = logging.getLogger(__name__)
 # This is a constant and is not expected to change in SPP
 SDC_PACKET_DIMENSION = "PACKET"
 SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
-SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variable in the dataset
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
@@ -168,15 +168,17 @@ def parse_packets_to_l1a_dataset(
     Parameters
     ----------
     packet_files : list[PathLike | str]
-        List of filepaths to packet files.
+        List of filepaths to packet files, in any order. They are parsed in file name order, which is time
+        order for ground CCSDS names and creation order for flight PDS names.
     apid : int
         The APID (Application Process Identifier) value for the packet type. Used to select the appropriate
         configuration for generating the L1A Dataset structure.
     ground_data : bool, optional
-        If True, non-identical duplicate timestamps will produce a warning instead of a ValueError. This is useful for ground
-        test data where duplicate timestamps with differing data may be expected. Default is False.
+        If True, packets that repeat a ``SRC_SEQ_CTR`` with differing contents, or samples that repeat a
+        sample time with differing data, produce a warning instead of a ValueError. This is useful for
+        ground test data where such repeats may be expected. Default is False.
     verbose : bool, optional
-        If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
+        If True and ground_data is True, a warning will be issued for each such repeat. Default is False.
     skip_header_bytes : int | None, optional
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
@@ -190,14 +192,31 @@ def parse_packets_to_l1a_dataset(
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
 
+    Raises
+    ------
+    ValueError
+        If the decoded packets have no ``SRC_SEQ_CTR``; if packets adjacent in an input file with
+        consecutive ``SRC_SEQ_CTR`` would be placed a counter wrap apart; if ``ground_data`` is False and
+        packets with the same ``SRC_SEQ_CTR`` differ; or as ``_drop_duplicates`` raises for samples.
+    OSError
+        If a packet file cannot be opened or read.
+
     Notes
     -----
+    The ``PACKET`` axis is in ``SRC_SEQ_CTR`` order, with the counter's wraps resolved by packet time
+    (see :mod:`libera_utils.l1a.packet_ordering`), whatever the order of the input
+    files. A packet received twice is kept once. Packet time is not monotonic along the axis;
+    :func:`~libera_utils.l1a.packet_ordering.check_packet_order` warns where it steps backward.
+    Input files are parsed in file name order, which ``input_files`` lists.
+
     For APID 1040 (ICIE WFOV SCI), the packet dataset is post-processed by
     ``enhance_wfov_l1a_dataset``: complete SOP→EOP images are stitched onto a ``CAMERA_TIME``
     dimension, compressed payloads and decoded header metadata are attached, ``ICIE__WFOV_DATA``
     is dropped, and ``PACKET_IMAGE_ID`` traces packets back to stitched images.
     """
-    _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
+    # The wrong-wrap check in sort_by_sequence_counter reads packets adjacent in the input as built one after the
+    # other, which holds across a file join only when the files are in time order.
+    _packet_files = sorted((cast(filenaming.PathType, AnyPath(f)) for f in packet_files), key=lambda path: path.name)
     packet_config = get_packet_config(LiberaApid(apid))
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
     if skip_header_bytes is None:
@@ -213,15 +232,12 @@ def parse_packets_to_l1a_dataset(
     packet_time_coordinate = packet_config.packet_time_coordinate
     packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us)})
 
-    # Drop duplicates from the packet dataset before we process samples
-    # This drops full duplicate packets based on identical packet timestamps
-    packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
-
-    # Sort the packet axis into its final order before samples are expanded; the
-    # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
-    # TODO[LIBSDC-830]: cross-check packet ordering against SRC_SEQ_CTR rather than relying on
-    # packet time alone, and reconcile packet_index with that ordering.
-    packet_ds = packet_ds.sortby(packet_time_coordinate)
+    # Order the PACKET axis by SRC_SEQ_CTR and drop packets received twice, before samples are expanded:
+    # the "{sample_group}_packet_index" variables enumerate this axis by position, and WFOV image
+    # stitching needs each image's packets in one contiguous run. Packet time can step backward while
+    # the counter advances, so it never orders packets.
+    packet_ds = sort_by_sequence_counter(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
+    check_packet_order(packet_ds, packet_time_coordinate)
     packet_times_us = packet_ds[packet_time_coordinate].values
 
     # Start building the dataset containing expanded sample fields
@@ -354,10 +370,6 @@ def _validate_duplicate_values(
 ) -> None:
     """Validate that duplicate coordinate entries are identical across all data variables.
 
-    Only applies when the coordinate being deduplicated is itself a dimension coordinate
-    (i.e. coordinate_name == dim_name). For non-dimension coordinates,the underlying dimension indices are inherently
-    distinct so value-identity checks are not meaningful.
-
     Parameters
     ----------
     dataset : xr.Dataset
@@ -381,13 +393,8 @@ def _validate_duplicate_values(
         If values have differing data values across any variable (when
         ``ground_data`` is False).
     """
-    # Non-dimension coordinates share a dimension with other variables but
-    # don't index them directly — rows are inherently distinct, so
-    # value-identity validation is not applicable.
     dim_name = dataset[coordinate_name].dims[0]
     coord_values = dataset[coordinate_name].values
-    if coordinate_name != dim_name:
-        return
 
     # Build a boolean mask marking every row whose coord value appears in `duplicates`.
     dup_mask = np.isin(coord_values, duplicates)
@@ -438,8 +445,7 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     dataset : xr.Dataset
         The dataset to deduplicate
     coordinate_name : str
-        The name of the coordinate over which to search for duplicates.
-        Can be either a dimension coordinate or a non-dimension coordinate.
+        The name of the dimension coordinate over which to search for duplicates.
     ground_data : bool, optional
         If True, non-identical duplicates are allowed instead of raising ``ValueError``. Per-duplicate
         ``UserWarning`` messages are emitted only when ``verbose`` is also True. Default is False.

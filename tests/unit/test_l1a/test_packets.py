@@ -106,39 +106,6 @@ def test_drop_duplicates_with_non_identical_duplicates():
         result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
 
 
-def test_drop_duplicates_non_dimension_coordinate():
-    """Test _drop_duplicates with a non-dimension coordinate bound to a dimension"""
-    ds = xr.Dataset({"data": (["PACKET"], [10, 20, 30, 40, 50, 60])})
-    # Add non-dimension coordinate bound to "PACKET" dimension with duplicates
-    ds = ds.assign_coords({"packet_time": (["PACKET"], [1, 2, 5, 8, 8, 8])})
-
-    result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "packet_time")
-
-    # Should drop 2 duplicates (keep first occurrence of value 8)
-    assert n_duplicates == 2
-    # Should have 4 unique values: [1, 2, 5, 8]
-    assert len(result_ds["packet_time"]) == 4
-    assert list(result_ds["packet_time"].values) == [1, 2, 5, 8]
-    # Data should also be reduced accordingly (keep first 4 items)
-    assert len(result_ds["data"]) == 4
-    assert list(result_ds["data"].values) == [10, 20, 30, 40]
-
-
-def test_validate_duplicate_values_non_dimension_coordinate_skips_validation():
-    """Non-dimension coordinates should skip value-identity checks entirely,
-    even when duplicate rows have differing data values."""
-    ds = xr.Dataset({"data": (["PACKET"], [10, 20, 30])})
-    ds = ds.assign_coords({"packet_time": (["PACKET"], [1, 8, 8])})
-
-    coord_values = ds["packet_time"].values
-    unique_values, unique_indices = np.unique(coord_values, return_index=True)
-    _, counts = np.unique(coord_values, return_counts=True)
-    duplicates = unique_values[counts > 1]
-
-    # Should not raise even though duplicate rows [20, 30] differ
-    libera_packets._validate_duplicate_values(ds, "packet_time", duplicates)
-
-
 def test_validate_duplicate_values_dimension_coordinate_identical_rows():
     """Dimension coordinate duplicates with identical data values should pass validation."""
     ds = xr.Dataset(
@@ -873,6 +840,7 @@ def test_parse_packets_to_l1a_dataset_basic(
             "SAMPLE_MS": (["PACKET"], [500, 1500]),
             "SAMPLE_DATA": (["PACKET"], [1.5, 2.5]),
             "OTHER_FIELD": (["PACKET"], [100, 200]),
+            "SRC_SEQ_CTR": (["PACKET"], [7, 8]),
         }
     )
 
@@ -952,6 +920,7 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
             "SAMPLE_MS": (["PACKET"], [500]),
             "SAMPLE_DATA": (["PACKET"], [1.5]),
             "OTHER_FIELD": (["PACKET"], [100]),
+            "SRC_SEQ_CTR": (["PACKET"], [7]),
         }
     )
     mock_parse_packets.return_value = packet_ds
@@ -967,6 +936,108 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
 
     assert mock_parse_packets.call_args.kwargs["skip_header_bytes"] == 8
     assert mock_config_get.call_args_list == [(("LIBERA_PACKET_DEFINITION",),)]
+
+
+@pytest.fixture
+def counter_disordered_parse():
+    """Patch parse_packets_to_l1a_dataset inputs with packets whose packet time disagrees with SRC_SEQ_CTR.
+
+    In SRC_SEQ_CTR order the packets carry PKT_MS 0, 2000, 1000, 3000. OTHER_FIELD and SAMPLE_DATA both carry
+    the packet's identity. Packet and sample times go through the real multipart_to_dt64.
+    """
+    config = PacketConfiguration(
+        packet_apid=LiberaApid.icie_nom_hk,
+        day_coverage=DayCoveragePolicy(mode=CoverageMode.PRESENCE),
+        packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
+        sample_groups=[
+            SampleGroup(
+                name="TEST_SAMPLE",
+                sample_count=1,
+                data_field_patterns=["SAMPLE_DATA"],
+                time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
+                time_source=SampleTimeSource.ICIE,
+            )
+        ],
+    )
+    pkt_ms = np.array([2000, 0, 3000, 1000])
+    packet_ds = xr.Dataset(
+        {
+            "PKT_DAY": (["PACKET"], np.full(4, 24472)),
+            "PKT_MS": (["PACKET"], pkt_ms),
+            "SRC_SEQ_CTR": (["PACKET"], np.array([101, 100, 103, 102], dtype=np.uint16)),
+            "SAMPLE_DAY": (["PACKET"], np.full(4, 24472)),
+            "SAMPLE_MS": (["PACKET"], pkt_ms + 500),
+            "SAMPLE_DATA": (["PACKET"], [30, 10, 40, 20]),
+            "OTHER_FIELD": (["PACKET"], [30, 10, 40, 20]),
+        }
+    )
+    with (
+        mock.patch("libera_utils.config.config.get", side_effect={"LIBERA_PACKET_DEFINITION": "fake.xml"}.get),
+        mock.patch("libera_utils.l1a.packets.get_packet_config", return_value=config),
+        mock.patch(
+            "libera_utils.l1a.packets.parse_packets_to_dataset",
+            side_effect=lambda *args, **kwargs: packet_ds.copy(deep=True),
+        ) as mock_parse,
+    ):
+        yield packet_ds, mock_parse
+
+
+def _parse_counter_disordered(**kwargs):
+    return libera_packets.parse_packets_to_l1a_dataset(
+        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=0, **kwargs
+    )
+
+
+def test_parse_packets_to_l1a_dataset_orders_by_src_seq_ctr(counter_disordered_parse):
+    """The PACKET axis follows SRC_SEQ_CTR, not packet time, and the disagreement warns once."""
+    with pytest.warns(UserWarning, match="steps backward at 1 position") as caught:
+        result = _parse_counter_disordered()
+    assert len(caught) == 1
+    assert result["SRC_SEQ_CTR"].values.tolist() == [100, 101, 102, 103]
+    assert result["OTHER_FIELD"].values.tolist() == [10, 30, 20, 40]
+
+
+def test_parse_packets_to_l1a_dataset_packet_index_under_time_disagreement(counter_disordered_parse):
+    """Each sample's packet_index points at its originating packet when packet time disagrees with the counter."""
+    with pytest.warns(UserWarning, match="steps backward"):
+        result = _parse_counter_disordered()
+    packet_index = result["TEST_SAMPLE_packet_index"].values
+    np.testing.assert_array_equal(result["OTHER_FIELD"].values[packet_index], result["SAMPLE_DATA"].values)
+
+
+def test_parse_packets_to_l1a_dataset_keeps_distinct_packets_sharing_a_packet_time(counter_disordered_parse):
+    """Two packets with the same packet time and different counters are both kept."""
+    packet_ds, _ = counter_disordered_parse
+    packet_ds["PKT_MS"].values[:] = [0, 0, 1000, 2000]
+    result = _parse_counter_disordered()
+    assert result.sizes["PACKET"] == 4
+
+
+@pytest.mark.parametrize("ground_data", [False, True])
+def test_parse_packets_to_l1a_dataset_repeated_counter_with_differing_contents(counter_disordered_parse, ground_data):
+    """A repeated SRC_SEQ_CTR whose packets differ raises, or keeps the first with ground_data."""
+    packet_ds, _ = counter_disordered_parse
+    packet_ds["SRC_SEQ_CTR"].values[:] = [101, 100, 101, 102]
+    packet_ds["PKT_MS"].values[:] = [1000, 0, 1500, 2000]
+    if not ground_data:
+        with pytest.raises(ValueError, match="share SRC_SEQ_CTR 101"):
+            _parse_counter_disordered()
+        return
+    with pytest.warns(UserWarning, match="Detected 1 duplicate SRC_SEQ_CTR packets"):
+        result = _parse_counter_disordered(ground_data=True)
+    assert result["OTHER_FIELD"].values.tolist() == [10, 30, 20]
+
+
+@pytest.mark.parametrize("ground_data", [False, True])
+def test_parse_packets_to_l1a_dataset_packet_a_wrap_away_from_its_counter_neighbours_raises(
+    counter_disordered_parse, ground_data
+):
+    """A packet whose clock puts it a counter wrap from its neighbours in the file raises, ground data or not."""
+    packet_ds, _ = counter_disordered_parse
+    packet_ds["SRC_SEQ_CTR"].values[:] = [100, 101, 102, 103]
+    packet_ds["PKT_MS"].values[:] = [0, 200000, 1000, 2000]
+    with pytest.raises(ValueError, match="placed a counter wrap apart"):
+        _parse_counter_disordered(ground_data=ground_data)
 
 
 def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):
