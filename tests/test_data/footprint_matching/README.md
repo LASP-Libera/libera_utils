@@ -36,5 +36,5 @@ Sources:
 - AERDB_D3_VIIRS_NOAA20: NASA LAADS DAAC, Deep Blue Level 3 daily aerosol.
 - VJ143C1 and MCD12Q1: NASA LP DAAC.
 - NISE: NSIDC, Near-real-time Ice and Snow Extent (NISE), AMSR-2.
-- CERES SSF and CLDPIX: NASA Langley ASDC.
+- CERES FLASHFlux and CLDPIX: NASA Langley ASDC.
 - CLDPROP_D3_VIIRS_NOAA20: NASA LAADS DAAC.

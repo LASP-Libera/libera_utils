@@ -227,12 +227,12 @@ class TestWeightedMode:
     def test_infers_categories_when_count_unknown(self):
         """``weighted_mode`` with ``n_categories=None`` takes the categories from the distinct values present.
 
-        Some categorical sources, such as SSF scene-type codes, declare no fixed number of classes. The mode must still
+        Some categorical sources, such as FLASHFlux scene-type codes, declare no fixed number of classes. The mode must still
         work on them without a preset domain.
 
         Passes codes 3, 3 and 7 with equal weights and no category count, and asserts the mode is 3.
         """
-        # n_categories=None -> categories inferred from the data (SSF scene codes).
+        # n_categories=None -> categories inferred from the data (FLASHFlux scene codes).
         values = np.array([3.0, 3.0, 7.0])
         weights = np.array([1.0, 1.0, 1.0])
         assert agg.weighted_mode(values, weights, n_categories=None)["mode"] == pytest.approx(3.0)

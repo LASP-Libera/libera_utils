@@ -310,7 +310,7 @@ def _weighted_category_weights(
     The categorical strategies all reduce to "sum the PSF weight landing in each
     class, then pick from that histogram". This shared helper builds that histogram
     once. When ``n_categories`` is known (e.g. IGBP's 20 classes) the categories are
-    ``0 .. n_categories-1``; otherwise (e.g. SSF scene-type codes with no declared
+    ``0 .. n_categories-1``; otherwise (e.g. FLASHFlux scene-type codes with no declared
     count) they are inferred from the distinct rounded values present.
     """
     mask = _usable(values, weights)
