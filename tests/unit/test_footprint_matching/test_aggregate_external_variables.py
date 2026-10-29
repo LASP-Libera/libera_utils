@@ -1,7 +1,7 @@
 """Integration tests for product.aggregate_external_variables.
 
-These wire the whole samples -> footprint path together: fake readers behind
-AncillarySources, the RadialWeigher, and the aggregation engine. The fake readers
+These wire the whole samples -> footprint path together: fake readers in the
+readers dict, the RadialWeigher, and the aggregation engine. The fake readers
 serve *uniform* grids so the expected aggregated values are independent of the
 (stand-in) PSF weight kernel and can be asserted exactly:
 
