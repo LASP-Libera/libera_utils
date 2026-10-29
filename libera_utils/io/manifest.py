@@ -50,7 +50,7 @@ class Manifest(BaseModel):
     files : list of str
         Absolute local or S3 paths of the files listed in the manifest. May be given as str, Path or S3Path, and are
         stored as str. Files are never read, so files with identical content are each listed; a path listed twice is
-        a validation error. Only ``add_files`` checks that a file exists.
+        a validation error. Only ``add_files`` checks that a file exists and is a file.
     configuration : dict
         Freeform JSON-compatible configuration items.
     filename : ManifestFilename or None
@@ -352,31 +352,41 @@ class Manifest(BaseModel):
         return cls.model_validate(contents)
 
     def add_files(self, *files: str | Path | S3Path) -> None:
-        """Add files to the manifest after checking that each one exists.
+        """Add files to the manifest after checking that each one exists and is a file.
 
         Files are not read, so an S3 file is not downloaded and a file larger than local disk can be listed.
 
         Parameters
         ----------
         *files : str, Path or S3Path
-            Absolute local or S3 paths of the files to add.
+            Absolute local or S3 paths of the files to add, not directories.
 
         Raises
         ------
         FileNotFoundError
             If a file cannot be found. No file is added.
+        IsADirectoryError
+            If a path exists but is not a file, such as a local directory, an S3 bucket root or an S3 prefix. No
+            file is added.
         ValueError
             If a path is not absolute, or is already listed or given twice. No file is added.
         """
-        # Every path is checked before any existence check, so a relative or repeated path is reported as such,
+        # Every path is checked before any file check, so a relative or repeated path is reported as such,
         # not as missing, and costs no request to S3
         new_files = self._normalize_files(files, set(self.files))
         for file in new_files:
-            if not AnyPath(file).exists():
-                raise FileNotFoundError(
-                    f"File {file} cannot be found. A file must exist when it is added to a manifest; check the path "
-                    "and that the file has been written."
+            path = AnyPath(file)
+            if path.is_file():
+                continue
+            if path.exists():
+                raise IsADirectoryError(
+                    f"{file} is a directory or S3 prefix, not a file. A manifest lists files only; add each file in "
+                    "it by its full path."
                 )
+            raise FileNotFoundError(
+                f"File {file} cannot be found. A file must exist when it is added to a manifest; check the path "
+                "and that the file has been written."
+            )
         # Extended in place: the new paths are already validated against the list, so assignment would only repeat it
         self.files.extend(new_files)
 
