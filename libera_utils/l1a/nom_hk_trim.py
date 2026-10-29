@@ -28,6 +28,7 @@ from libera_utils.io.product_definition import (
     LiberaDataProductDefinition,
 )
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
+from libera_utils.l1a.packet_ordering import out_of_order_positions
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
@@ -68,39 +69,6 @@ def get_trimmed_nom_hk_product_definition(
     return base.model_copy(update={"attributes": updated_attrs})
 
 
-def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
-    """Verify the ``PACKET`` axis is in non-decreasing packet-time order.
-
-    Decoded L1A products are written packet-time sorted, so this is a guard, not a fixup; the
-    positional run indices from :func:`find_obsid_runs` are only meaningful against a
-    time-ordered packet axis. If ``PACKET_ICIE_TIME`` is absent the check is skipped with a
-    warning and the packet axis is trusted as-is.
-
-    Parameters
-    ----------
-    nom_hk : xr.Dataset
-        Decoded NOM-HK Dataset.
-
-    Raises
-    ------
-    ValueError
-        If ``PACKET_ICIE_TIME`` is present but not monotonically non-decreasing.
-    """
-    if DEFAULT_TIME_VARIABLE not in nom_hk:
-        logger.warning(
-            "NOM-HK Dataset has no %s variable; skipping the packet-time ordering check. ObsID run "
-            "slices will be trusted as-is.",
-            DEFAULT_TIME_VARIABLE,
-        )
-        return
-    times = nom_hk[DEFAULT_TIME_VARIABLE].values
-    if times.size and np.any(np.diff(times) < np.timedelta64(0, "ns")):
-        raise ValueError(
-            f"NOM-HK Dataset is not sorted by {DEFAULT_TIME_VARIABLE}. Decoded L1A products are "
-            f"written in packet-time order; re-decode the source product."
-        )
-
-
 def _contiguous_run_slices(mask: np.ndarray) -> list[slice]:
     """Return ``slice(start, end)`` for each contiguous True run in ``mask``."""
     padded = np.concatenate(([False], mask.astype(bool), [False]))
@@ -132,13 +100,31 @@ def find_obsid_runs(
     Raises
     ------
     ValueError
-        If ``nom_hk`` has no ``PACKET`` dimension, or if its ``PACKET_ICIE_TIME`` variable is
-        present but not in non-decreasing order (see ``_check_packet_time_sorted``).
+        If ``nom_hk`` has no ``PACKET`` dimension, or no ``PACKET_ICIE_TIME`` or ``SRC_SEQ_CTR``
+        variable, or if ``SRC_SEQ_CTR`` repeats or steps backward between packets whose packet
+        times are within 60 s.
+
+    Notes
+    -----
+    Run slices are positions on the ``PACKET`` axis, so they are contiguous acquisition only when
+    the axis is in ``SRC_SEQ_CTR`` order, as ``parse_packets_to_l1a_dataset`` writes it. This raises
+    when it is not.
     """
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
 
-    _check_packet_time_sorted(nom_hk)
+    out_of_order = out_of_order_positions(nom_hk, DEFAULT_TIME_VARIABLE)
+    if out_of_order.size:
+        first = int(out_of_order[0])
+        counters = nom_hk["SRC_SEQ_CTR"].values
+        times = nom_hk[DEFAULT_TIME_VARIABLE].values
+        raise ValueError(
+            f"NOM-HK Dataset is not in SRC_SEQ_CTR order: the counter repeats or steps backward at "
+            f"{out_of_order.size} position(s), first SRC_SEQ_CTR {counters[first]} -> {counters[first + 1]} at "
+            f"{times[first]} -> {times[first + 1]}, so ObsID runs would not be contiguous acquisition. "
+            f"Decode its L0 files again with parse_packets_to_l1a_dataset, which writes the PACKET axis in "
+            f"SRC_SEQ_CTR order."
+        )
 
     runs: list[tuple[ObsIdSpec, slice]] = []
     for spec in iter_trim_eligible(source):
@@ -222,6 +208,11 @@ def write_trimmed_nom_hk_products(
     -------
     list of LiberaDataProductFilename
         Paths of written TRIMMED products.
+
+    Raises
+    ------
+    ValueError
+        As :func:`find_obsid_runs` raises it.
     """
     runs = find_obsid_runs(nom_hk, source=source)
     counts: dict[tuple[NomHkObsidSource, int], int] = defaultdict(int)
