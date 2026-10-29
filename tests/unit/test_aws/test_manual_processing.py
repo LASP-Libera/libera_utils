@@ -80,15 +80,16 @@ class TestStartManualProcessing:
     """Tests for the general ``manual-processing`` helper."""
 
     def test_emits_custom_dag_event(self, make_sdc_event_bus, make_event_capturing_session):
-        """A custom DAG round-trips into the event Detail with process_downstream defaulting to True."""
+        """A custom DAG, including optional products, round-trips into the event Detail with process_downstream
+        defaulting to True."""
         session, captured = make_event_capturing_session()
         dag = {
             "nodes": {
                 "l1b-rad": {
                     "description": "L1B radiometer processing (manual test)",
                     "algorithm-version": None,
-                    "output-products": ["RAD-4CH"],
-                    "input-products": [{"id": "RAD-SAMPLE-DECODED", "version": None}],
+                    "output-products": ["RAD-4CH", {"id": "CAM", "optional": True}],
+                    "input-products": [{"id": "RAD-SAMPLE-DECODED", "version": None, "optional": True}],
                     "upstream-nodes": [],
                 }
             }
@@ -287,6 +288,25 @@ class TestValidateDagConfig:
         node = self._valid_node()
         node["output-products"] = ["NOT-A-PRODUCT"]
         with pytest.raises(ValueError, match="Invalid data product id"):
+            mp._validate_dag_config({"nodes": {"l1b-rad": node}})
+
+    def test_optional_input_and_output_accepted(self):
+        node = self._valid_node()
+        node["input-products"] = [{"id": "RAD-SAMPLE-DECODED", "version": None, "optional": True}]
+        node["output-products"] = ["RAD-4CH", {"id": "CAM", "optional": True}]
+        mp._validate_dag_config({"nodes": {"l1b-rad": node}})
+
+    @pytest.mark.parametrize(
+        ("output_products", "match"),
+        [
+            ([{"optional": True}], "'id' key"),
+            ([{"id": "NOT-A-PRODUCT", "optional": True}], "Invalid data product id"),
+        ],
+    )
+    def test_invalid_output_mapping(self, output_products, match):
+        node = self._valid_node()
+        node["output-products"] = output_products
+        with pytest.raises(ValueError, match=match):
             mp._validate_dag_config({"nodes": {"l1b-rad": node}})
 
     def test_dangling_upstream(self):

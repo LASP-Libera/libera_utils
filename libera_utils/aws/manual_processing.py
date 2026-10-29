@@ -79,6 +79,10 @@ def _validate_dag_config(dag: dict) -> None:
     references) before the event is emitted. The authoritative validation (including acyclicity) happens in the SDC Job
     Creator via the ``ProcessingSystemDagConfig`` Pydantic model, which lives in the libera_cdk repo.
 
+    Each ``output-products`` entry is a data product id string or a mapping with an ``id`` key, and each
+    ``input-products`` entry is a mapping with an ``id`` key. Only the ``id`` is checked here; other keys in a product
+    mapping, such as ``optional`` or ``version``, are left to the Job Creator.
+
     Parameters
     ----------
     dag : dict
@@ -114,11 +118,22 @@ def _validate_dag_config(dag: dict) -> None:
         if missing_keys:
             raise ValueError(f"Node '{node_id}' is missing required key(s) {sorted(missing_keys)}.")
 
-        for product in node["output-products"]:
+        for output_product in node["output-products"]:
+            if isinstance(output_product, dict):
+                if "id" not in output_product:
+                    raise ValueError(
+                        f"Each mapping in node '{node_id}' output-products must have an 'id' key (or write the "
+                        f"output as a bare data product id string)."
+                    )
+                product_id = output_product["id"]
+            else:
+                product_id = output_product
             try:
-                DataProductIdentifier(product)
+                DataProductIdentifier(product_id)
             except ValueError as err:
-                raise ValueError(f"Invalid data product id '{product}' in node '{node_id}' output-products.") from err
+                raise ValueError(
+                    f"Invalid data product id '{product_id}' in node '{node_id}' output-products."
+                ) from err
         for input_product in node["input-products"]:
             if not isinstance(input_product, dict) or "id" not in input_product:
                 raise ValueError(f"Each entry in node '{node_id}' input-products must be a mapping with an 'id' key.")

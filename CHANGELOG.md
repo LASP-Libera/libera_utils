@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- An `output-products` entry in a `manual-processing` custom DAG may be a mapping with `id` and `optional`, as well as a bare data product id string. `optional`, on an input or an output, takes effect only once the SDC deploy from libera_cdk PR #96 (LIBSDC-892) is live; until then the SDC Job Creator rejects an output mapping and ignores `optional` on an input.
+
 ## [5.15.0] - 2026-10-28
 
 ### Added
