@@ -125,6 +125,14 @@ class TestLiberaDataProductDefinition:
             with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
                 definition.check_dataset_conformance(test_dataset, strict=True)
 
+    def test_generate_filename_uses_time_extremes_not_endpoints(self, test_product_definition, test_dataset):
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        n = test_dataset.sizes["RADIOMETER_TIME"]
+        unordered = test_dataset.isel(RADIOMETER_TIME=[n - 2, 0, n - 1, 1])
+        fn = definition.generate_data_product_filename(unordered, time_variable="radiometer_time")
+        assert fn.filename_parts.utc_start == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
+
 
 @strict_warnings
 class TestLiberaDataProductDefinitionConformanceChecking:

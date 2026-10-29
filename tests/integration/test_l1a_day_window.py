@@ -101,7 +101,7 @@ def test_jpss1_gate_on_l0_spans(jpss1_files):
 def test_wfov_trims_on_camera_time(test_ditl_camera_with_duplicate_packet, monkeypatch, tmp_path):
     """Images were taken on 2028-02-14 but their packets carry 2028-02-15 packet times."""
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
-    with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+    with pytest.warns(UserWarning, match=r"Detected 1 duplicate SRC_SEQ_CTR packets"):
         dataset = packets.parse_packets_to_l1a_dataset(
             packet_files=[test_ditl_camera_with_duplicate_packet], apid=LiberaApid.icie_wfov_sci.value
         )

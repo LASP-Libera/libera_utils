@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which emits a `UserWarning` where packet time steps backward along the `PACKET` axis, with the count, the largest step and the first one's counters and times. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
+- Add `libera_utils.l1a.packet_ordering.sort_by_sequence_counter(ds, packet_time_coordinate)`, which orders the `PACKET` axis by `SRC_SEQ_CTR` and drops repeated packets as `parse_packets_to_l1a_dataset` does, and `libera_utils.l1a.packet_ordering.out_of_order_positions(ds, packet_time_coordinate)`, which returns the `PACKET` positions where `SRC_SEQ_CTR` repeats or steps backward between packets within 60 s of each other.
+
+### Changed
+
+- **BREAKING:** `parse_packets_to_l1a_dataset` orders the `PACKET` axis by `SRC_SEQ_CTR` instead of by packet time, whatever the order of the input files; packet time only resolves which counter wrap a packet falls in. Published `{group}_packet_index`, `CAMERA_PACKET_INDEX` and `PACKET_IMAGE_ID` values change, and packet time is not monotonic along `PACKET`; sort packet times before `numpy.searchsorted` or `numpy.interp`. Input files are parsed in file name order, which `input_files` lists.
+- **BREAKING:** `parse_packets_to_l1a_dataset` drops duplicate packets by `SRC_SEQ_CTR` instead of by packet time, so a distinct packet that shares a packet time with another is kept. Packets that share a packet time but not a counter are no longer treated as duplicates. Packets that share a counter but differ raise `ValueError` unless `ground_data=True`, which keeps the first. The duplicate warning reads "Detected N duplicate SRC_SEQ_CTR packets".
+- **BREAKING:** `nom_hk_trim.find_obsid_runs` raises `ValueError` for a NOM-HK dataset without `PACKET_ICIE_TIME` or `SRC_SEQ_CTR`, or whose `SRC_SEQ_CTR` repeats or steps backward between packets within 60 s of each other, which is the case for a NOM-HK product written in packet-time order by an earlier release; decode its L0 files again.
+- **BREAKING:** `parse_packets_to_l1a_dataset` raises `ValueError` where packets adjacent in an input file with consecutive `SRC_SEQ_CTR` would be placed a counter wrap apart, for ground and flight data alike.
+
+### Removed
+
+- **BREAKING:** Remove `packets.SRC_SEQ_CTR_DIMENSION`.
+
+### Fixed
+
+- `LiberaDataProductDefinition.generate_data_product_filename` takes the start and end from the minimum and maximum of the time variable, not its first and last values.
+
 ## [5.21.0] - 2026-11-02
 
 ### Added
