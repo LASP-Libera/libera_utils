@@ -222,6 +222,14 @@ class AbstractValidFilename(ABC):
 
         The forms are L0, ground CCSDS, Libera data product, manifest, and the external ancillary products' names.
 
+        Parameters
+        ----------
+        *args
+            The file path (str, Path or S3Path), and any further positional arguments, passed to each candidate
+            class's constructor and on to ``AnyPath``.
+        **kwargs
+            Keyword arguments passed to each candidate class's constructor and on to ``AnyPath``.
+
         Returns
         -------
         : AbstractValidFilename
