@@ -17,10 +17,10 @@ from libera_utils.footprint_matching.readers import (
     CLDPIXReader,
     ERA5PressureLevelReader,
     ERA5SurfaceReader,
+    FLASHFluxReader,
     IGBPReader,
     NISEReader,
     ReaderRegistry,
-    SSFReader,
     StaticReader,
     VIIRSAODReader,
     VIIRSBRDFReader,
@@ -33,7 +33,7 @@ _SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", mod
 # The product sets the readers declare, written out independently of the reader modules.
 _ALL = frozenset(OperationalMode)
 _IMAGER_PAIR = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
-_SSF_BASE = frozenset({OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+_FLASHFLUX_BASE = frozenset({OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 _ONLY_IMAGER = frozenset({OperationalMode.IMAGER})
 _HOUR = np.timedelta64(1, "h")
 _PASS_WINDOW = np.timedelta64(15, "m")
@@ -63,8 +63,8 @@ def _ranked(base: str, n_categories: int, modes: frozenset[OperationalMode]) -> 
     )
 
 
-# The SSF fields carried by FMATCH-IMAGER alone.
-_SSF_EXTENDED = (
+# The FLASHFlux fields carried by FMATCH-IMAGER alone.
+_FLASHFLUX_EXTENDED = (
     *(
         _mean(f"{base}_{layer}", _ONLY_IMAGER)
         for base in (
@@ -180,23 +180,23 @@ _DECLARED = [
         (),
     ),
     (
-        "ssf",
-        SSFReader,
+        "flashflux",
+        FLASHFluxReader,
         "NOAA20",
         20.0,  # the CERES footprint at nadir
         TimeMatch.NEAREST_PASS,
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _log_mean("aerosol_optical_depth", _SSF_BASE),
-            _mean("clear_coverage", _SSF_BASE),
-            _log_mean("cloud_optical_depth_lower", _SSF_BASE),
-            _mean("cloud_water_particle_radius_lower", _SSF_BASE),
-            _mean("cloud_ice_particle_radius_lower", _SSF_BASE),
-            _code("cloud_classification", None, _SSF_BASE),
-            _code("shortwave_adm_type", None, _SSF_BASE),
-            _code("longwave_adm_type", None, _SSF_BASE),
-            *_SSF_EXTENDED,
+            _log_mean("aerosol_optical_depth", _FLASHFLUX_BASE),
+            _mean("clear_coverage", _FLASHFLUX_BASE),
+            _log_mean("cloud_optical_depth_lower", _FLASHFLUX_BASE),
+            _mean("cloud_water_particle_radius_lower", _FLASHFLUX_BASE),
+            _mean("cloud_ice_particle_radius_lower", _FLASHFLUX_BASE),
+            _code("cloud_classification", None, _FLASHFLUX_BASE),
+            _code("shortwave_adm_type", None, _FLASHFLUX_BASE),
+            _code("longwave_adm_type", None, _FLASHFLUX_BASE),
+            *_FLASHFLUX_EXTENDED,
         ),
         (),
     ),
@@ -229,9 +229,9 @@ _CAM_READERS = frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_c
 _EXPECTED_MODE_READERS = {
     OperationalMode.CAM: _CAM_READERS,
     OperationalMode.CAM_CAMTIME: _CAM_READERS,
-    OperationalMode.IMAGER_FLASH: _CAM_READERS | {"ssf"},
-    OperationalMode.IMAGER: _CAM_READERS | {"viirs_aod", "era5_pressure", "cldpix", "ssf"},
-    OperationalMode.IMAGER_CAMTIME: _CAM_READERS | {"viirs_aod", "cldpix", "ssf"},
+    OperationalMode.IMAGER_FLASH: _CAM_READERS | {"flashflux"},
+    OperationalMode.IMAGER: _CAM_READERS | {"viirs_aod", "era5_pressure", "cldpix", "flashflux"},
+    OperationalMode.IMAGER_CAMTIME: _CAM_READERS | {"viirs_aod", "cldpix", "flashflux"},
 }
 # Each product's variable count, standard-deviation companions and additional variables included.
 _EXPECTED_PRODUCT_VARIABLE_COUNTS = {
@@ -384,7 +384,7 @@ class TestReadersForMode:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM, OperationalMode.CAM_CAMTIME])
     def test_camera_modes_exclude_the_climate_quality_readers(self, mode):
-        """``FMATCH_MODE_READERS`` gives the CAM products none of the AOD, SSF, CLDPIX or ERA5 pressure-level readers.
+        """``FMATCH_MODE_READERS`` gives the CAM products none of the AOD, FLASHFlux, CLDPIX or ERA5 pressure-level readers.
 
         Those sources are inputs to the Climate Quality FMATCH-IMAGER products only. The CAM products run at
         near-real-time latency from mission start; a ``modes`` entry that named a CAM product by mistake would add
@@ -392,7 +392,7 @@ class TestReadersForMode:
 
         Parametrized over the two CAM modes; asserts none of the four keys is in the mode's set.
         """
-        assert not {"viirs_aod", "ssf", "cldpix", "era5_pressure"} & FMATCH_MODE_READERS[mode]
+        assert not {"viirs_aod", "flashflux", "cldpix", "era5_pressure"} & FMATCH_MODE_READERS[mode]
 
     def test_era5_pressure_levels_are_radiometer_timescale_only(self):
         """``era5_pressure`` contributes to FMATCH-IMAGER but not to FMATCH-IMAGER-CAMTIME.

@@ -156,7 +156,7 @@ class TimeMatch(enum.Enum):
         between steps. A footprint farther than ``MAX_TIME_OFFSET`` from every step gets
         no samples.
     NEAREST_PASS
-        The source is swath or point data with a time per sample (CERES SSF, CLDPIX).
+        The source is swath or point data with a time per sample (CERES FLASHFlux, CLDPIX).
         Of the samples in the box, those within ``PASS_WINDOW`` of the observation time
         of the sample nearest the footprint time are served: the nearest pass, whole,
         and no other pass. A footprint whose nearest sample is farther than
@@ -208,7 +208,7 @@ class GridSamples:
 class PointSamples:
     """A reader's native data as geolocated points.
 
-    The native form of swath, footprint and projected-grid sources (CERES SSF and
+    The native form of swath, footprint and projected-grid sources (CERES FLASHFlux and
     CLDPIX, IGBP tiles on the MODIS sinusoidal grid, NISE EASE-Grid pixels): each sample carries its
     own latitude and longitude, and for a ``NEAREST_PASS`` source its own time.
 
@@ -445,7 +445,7 @@ class VariableSpec:
     n_categories : int or None
         For categorical variables only: number of distinct category values
         (e.g., 20 for IGBP surface type). ``None`` for continuous variables, and
-        for a mode-aggregated code with no fixed count (e.g., the CERES SSF scene
+        for a mode-aggregated code with no fixed count (e.g., the CERES FLASHFlux scene
         and ADM type codes), which the aggregation bins by the codes it sees.
 
     Raises

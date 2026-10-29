@@ -16,7 +16,7 @@ Wind components (every product, from mission start):
 - u10 / v10: 10 m U/V wind components
 
 Additional single-level fields, carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME
-alongside the RBSP CLDPIX/SSF cloud fields:
+alongside the RBSP CLDPIX/FLASHFlux cloud fields:
 
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
@@ -46,7 +46,7 @@ from libera_utils.footprint_matching.types import GridSamples, OperationalMode, 
 
 # The products that carry the winds: every FMATCH product, from mission start.
 _WIND_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
-# The products that carry the other single-level fields, alongside the RBSP CLDPIX/SSF
+# The products that carry the other single-level fields, alongside the RBSP CLDPIX/FLASHFlux
 # cloud fields.
 _IMAGER_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 

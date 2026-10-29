@@ -81,7 +81,7 @@ class TestDecodeCfTimes:
         ds, var = self._variable(tmp_path, [0.0])
         try:
             with pytest.raises(ValueError, match="no 'units' attribute"):
-                decode_cf_times(var, source="ssf x.nc Time_and_Position/time")
+                decode_cf_times(var, source="flashflux x.nc Time_and_Position/time")
         finally:
             ds.close()
 
@@ -103,7 +103,7 @@ class TestDecodeCfTimes:
     def test_fill_and_out_of_range_values_are_nat(self, tmp_path):
         """``decode_cf_times`` decodes ``_FillValue`` and out-of-``valid_range`` entries to ``NaT`` with masking off.
 
-        The CERES SSF time fill is about 1.8e308 days, which would overflow the calendar arithmetic, and the SSF reader
+        The CERES FLASHFlux time fill is about 1.8e308 days, which would overflow the calendar arithmetic, and the FLASHFlux reader
         turns netCDF4's automatic masking off, so the function must apply the fill and range itself.
 
         Writes 18353.5 days since 1970, the float64 maximum fill and 5.0 (below a ``valid_range`` of 10000..400000),
@@ -352,7 +352,7 @@ class TestScanToScanSpacing:
     def test_pairs_the_same_scan_position_on_consecutive_scans(self):
         """``scan_to_scan_spacing_km`` measures the distance between a scan position and the same position one scan on.
 
-        SSF footprints are listed scan by scan, so consecutive footprints are only the along-scan spacing apart; the
+        FLASHFlux footprints are listed scan by scan, so consecutive footprints are only the along-scan spacing apart; the
         along-track spacing between scans, several times larger, is only seen by pairing like positions.
 
         Builds three scans of four footprints 0.108 deg (about 12 km) apart along-scan, with scans 0.396 deg (about 44

@@ -3,7 +3,7 @@
 The fill and valid-range helpers the readers use are in :mod:`libera_utils.io.netcdf`.
 
 - :func:`decode_cf_times` -- turn a netCDF time variable with CF ``units`` into
-  ``datetime64[ns]`` sample times (CERES SSF).
+  ``datetime64[ns]`` sample times (CERES FLASHFlux).
 - :func:`decode_hours_of_day` -- turn a fractional-hour-of-day time variable (CERES
   CLDPIX) into ``datetime64[ns]`` sample times, each dated to the day nearest the
   granule's start.
@@ -236,7 +236,7 @@ def neighbor_spacing_km(lats: np.ndarray, lons: np.ndarray, *, max_rows: int = 5
 def scan_to_scan_spacing_km(lats: np.ndarray, lons: np.ndarray, times: np.ndarray, sample_number: np.ndarray) -> float:
     """Median distance between a scan position and the same position on the next scan, km.
 
-    CERES SSF lists footprints scan by scan; ``sample_number`` is the position within a
+    CERES FLASHFlux lists footprints scan by scan; ``sample_number`` is the position within a
     scan. Sorting by position and time pairs each footprint with the one at the same
     position on the following scan, whose separation is the along-track spacing (about
     44 km for a 6.6 s scan at 6.7 km/s), far larger than the along-scan spacing. Pairs

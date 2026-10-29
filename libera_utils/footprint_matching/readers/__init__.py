@@ -4,8 +4,8 @@ Importing this package triggers the registration of all built-in reader
 subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.AncillaryReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
-lists all readers: ``cldpix``, ``era5_pressure``, ``era5_surface``, ``igbp``,
-``nise``, ``ssf``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cldprop_d3``, and
+lists all readers: ``cldpix``, ``era5_pressure``, ``era5_surface``, ``flashflux``,
+``igbp``, ``nise``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cldprop_d3``, and
 :data:`~libera_utils.footprint_matching.readers.registry.FMATCH_MODE_READERS` holds
 the readers each product draws on, derived from their ``VariableSpec.modes``.
 
@@ -30,10 +30,10 @@ from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.era5_surface import ERA5SurfaceReader
+from libera_utils.footprint_matching.readers.flashflux import FLASHFluxReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS, ReaderRegistry, _derive_mode_readers
-from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCldpropD3Reader
 
 # Every built-in reader has registered by this line, and no reader defined elsewhere can
@@ -45,11 +45,11 @@ __all__ = [
     "CLDPIXReader",
     "ERA5PressureLevelReader",
     "ERA5SurfaceReader",
+    "FLASHFluxReader",
     "IGBPReader",
     "NISEReader",
     "PassReader",
     "ReaderRegistry",
-    "SSFReader",
     "StaticReader",
     "SteppedGridReader",
     "VIIRSAODReader",

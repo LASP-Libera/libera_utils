@@ -39,9 +39,9 @@ VIIRS Cloud CLDPROP_D3 (NetCDF4 with groups):
     NCEI CDR: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/
     Example filename: CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc
 
-CERES SSF / FLASHFlux (NetCDF4, per-footprint swath):
-    NASA CERES: https://ceres.larc.nasa.gov/data/#ssf-level-2
-    Example filename: CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc
+CERES FLASHFlux (NetCDF4, per-footprint swath, in the CERES SSF file layout):
+    NASA CERES: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-flashflux
+    Example layout source: CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc
 
 CERES CLDPIX (NetCDF4, imager-pixel swath):
     NASA CERES: https://ceres.larc.nasa.gov/data/
@@ -801,7 +801,7 @@ def make_viirs_cldprop_d3_fixture(
 
 
 SWATH_FIXTURE_TIME = np.datetime64("2026-01-01T12:00:00", "ns")
-"""The observation time the default SSF and CLDPIX fixtures carry; query them at this time."""
+"""The observation time the default FLASHFlux and CLDPIX fixtures carry; query them at this time."""
 _SWATH_TIME_UNITS = "seconds since 2026-01-01 00:00:00"
 
 
@@ -811,7 +811,7 @@ def _seconds_since_fixture_epoch(times: np.ndarray) -> np.ndarray:
     return ((np.asarray(times).astype("datetime64[ns]") - epoch) / np.timedelta64(1, "s")).astype(np.float64)
 
 
-def make_ssf_fixture(
+def make_flashflux_fixture(
     tmp_path: Path,
     lats: np.ndarray | None = None,
     lons_0360: np.ndarray | None = None,
@@ -831,9 +831,9 @@ def make_ssf_fixture(
     omit_variables: tuple[tuple[str, str], ...] = (),
     layer_dim_name: str = "LowerUpper",
 ) -> Path:
-    """Write a synthetic CERES SSF (footprint/swath) NetCDF4 file.
+    """Write a synthetic CERES FLASHFlux (footprint/swath) NetCDF4 file.
 
-    Replicates the grouped, per-footprint structure of the real SSF product:
+    Replicates the grouped, per-footprint structure of the real FLASHFlux product (the CERES SSF file layout):
     - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
       ``AeroTypePct`` (7) secondary axis the reader flattens, with
       ``product_version = "alpha4"``
@@ -935,7 +935,7 @@ def make_ssf_fixture(
     if longwave_adm_type is None:
         longwave_adm_type = np.array([50, 50, 50, 50, 50, 60], dtype=np.int16)[:n]
 
-    out_path = tmp_path / "cer_ssf_fixture.nc"
+    out_path = tmp_path / "flashflux_fixture.nc"
 
     def _create(grp, name, dtype, dims, fill):
         """Create ``grp/name``, making the group on first use; ``None`` when the caller omits it."""
@@ -1031,7 +1031,7 @@ def make_ssf_fixture(
             (0.0, 512.0),
             upper_values=cloud_optical_depth_lower + 1.0,
         )
-        # Phase-separated effective particle radii. SSF does not provide a single
+        # Phase-separated effective particle radii. FLASHFlux does not provide a single
         # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
         _add_lower_upper(
             cif,

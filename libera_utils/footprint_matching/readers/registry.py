@@ -95,7 +95,7 @@ class ReaderRegistry:
     --------
     >>> import libera_utils.footprint_matching.readers  # triggers registration
     >>> ReaderRegistry.list_readers()
-    ['cldpix', 'era5_pressure', 'era5_surface', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cldprop_d3']
+    ['cldpix', 'era5_pressure', 'era5_surface', 'flashflux', 'igbp', 'nise', 'viirs_aod', 'viirs_brdf', 'viirs_cldprop_d3']
     >>> ReaderRegistry.get("igbp").__name__
     'IGBPReader'
     """

@@ -34,7 +34,7 @@ Variables read (at each retained pressure level)
 - r:  relative humidity (%)
 
 These pressure-level fields sit in the radiometer-timescale FMATCH-IMAGER product
-alongside the RBSP CLDPIX/SSF cloud fields. The reader is deliberately absent from
+alongside the RBSP CLDPIX/FLASHFlux cloud fields. The reader is deliberately absent from
 the camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
 radiometer-timescale quantity. Product membership is declared outside the reader.
 

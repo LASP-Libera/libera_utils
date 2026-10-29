@@ -19,7 +19,7 @@ Three concrete contracts
   and loads one step on demand (:meth:`SteppedGridReader._load_step`); the base class
   keeps only the step nearest the footprint time in memory.
 * :class:`PassReader` -- the source is swath data in hourly granules, each with a time
-  per sample (CERES SSF, CLDPIX). The reader reads a granule's time span
+  per sample (CERES FLASHFlux, CLDPIX). The reader reads a granule's time span
   (:meth:`PassReader._granule_span`) and loads one granule as points
   (:meth:`PassReader._load_granule`); the base class holds only the granules whose span
   lies within ``MAX_TIME_OFFSET`` of the current footprint time.
@@ -809,7 +809,7 @@ class SteppedGridReader(AncillaryReader):
 class PassReader(AncillaryReader):
     """A reader whose source is swath data in time-spanning granules, served by time window.
 
-    CERES SSF and CLDPIX come as hourly granules, and a CLDPIX hour alone is several
+    CERES FLASHFlux and CLDPIX come as hourly granules, and a CLDPIX hour alone is several
     million pixels, so a day cannot be held at once. The subclass reports each granule's
     time span (:meth:`_granule_span`) and loads one granule as time-stamped points
     (:meth:`_load_granule`); this class keeps indexed only the granules whose span lies
