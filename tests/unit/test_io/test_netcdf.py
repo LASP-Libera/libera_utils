@@ -1,22 +1,31 @@
 """Unit tests for netcdf.py module"""
 
 import logging
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
 
+import dask
+import dask.array as da
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 import yaml
-from cloudpathlib import AnyPath, S3Client, S3Path
-from cloudpathlib.enums import FileCacheMode
+from cloudpathlib import AnyPath, S3Path
+from distributed import Client
 
 from libera_utils.io import netcdf, product_definition
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
+from libera_utils.io.netcdf import (
+    NetcdfEngine,
+    _load_netcdf_into_memory,
+    _write_worker_compressed,
+    write_libera_data_product,
+)
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 from tests.marks import strict_warnings
@@ -866,40 +875,280 @@ class TestNetcdfEngineConfig:
         for target in seen:
             assert isinstance(target, str | Path), f"{engine} was handed {type(target).__name__}"
 
-    def test_reading_back_an_s3_product_does_not_download_it(
-        self, test_product_definition, test_data_dict, create_mock_bucket
+    def test_s3_product_is_uploaded_and_leaves_no_local_copy(
+        self, test_product_definition, test_data_dict, create_mock_bucket, tmp_path, monkeypatch
     ):
-        """The written product stays in the cache, as it did through CloudPath.open
+        """The product is written to a temporary file, uploaded, and the temporary file removed"""
+        local_tmp = tmp_path / "tmp"
+        local_tmp.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(local_tmp))
+        output_path = S3Path(f"s3://{create_mock_bucket().name}/test-prefix")
 
-        A read of the product in the same process right after it is written is served from the
-        cache. If the cache were empty, that read would download the whole product from S3 again.
-        """
-        client = S3Client(file_cache_mode=FileCacheMode.tmp_dir)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
-
-        with patch.object(client, "_download_file", side_effect=AssertionError("product was downloaded")):
-            read_back = result.path.read_bytes()
-
-        assert read_back == result.path._local.read_bytes()
-
-    def test_close_file_cache_mode_removes_the_cache_file_after_upload(
-        self, test_product_definition, test_data_dict, create_mock_bucket
-    ):
-        """Under close_file the cache file is removed once uploaded, as CloudPath.open does on close"""
-        client = S3Client(file_cache_mode=FileCacheMode.close_file)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
+        result = write_libera_data_product(test_product_definition, test_data_dict, output_path, "radiometer_time")
 
         assert result.path.exists()
-        assert not result.path._local.exists()
+        assert list(local_tmp.iterdir()) == []
+
+
+def test_load_netcdf_into_memory_reads_the_file_and_closes_it(tmp_path):
+    """The Dataset is fully loaded, so it reads back unchanged after the file is closed and removed"""
+    expected = xr.Dataset({"values": (("t",), np.arange(5.0))}, coords={"t": np.arange(5)})
+    path = tmp_path / "small.nc"
+    expected.to_netcdf(path, engine="h5netcdf")
+    loaded = _load_netcdf_into_memory(path)
+    path.unlink()
+    xr.testing.assert_identical(loaded, expected)
+
+
+def test_load_netcdf_into_memory_unreadable_file_raises(tmp_path):
+    """A file that is not NetCDF raises ValueError naming the file"""
+    not_netcdf = tmp_path / "not_netcdf.nc"
+    not_netcdf.write_text("not a NetCDF file")
+    with pytest.raises(ValueError, match="Failed to open or read NetCDF file"):
+        _load_netcdf_into_memory(not_netcdf)
+
+
+@pytest.fixture
+def distributed_client():
+    """An in-process dask.distributed Client, closed after the test so later tests find none"""
+    with Client(processes=False, n_workers=2, threads_per_worker=1, dashboard_address=None) as client:
+        yield client
+
+
+def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **float_encoding) -> xr.Dataset:
+    """A 6-frame 64x64 Dataset whose float32 `floats` and uint16 `ints` share one task per 2-frame block
+
+    Each run of that task appends a line to `counter`.
+    """
+
+    def produce(frame_start):
+        with counter.open("a") as log:
+            log.write("call\n")
+        values = np.random.default_rng(frame_start).normal(size=(2, 64, 64)).astype(np.float32)
+        values[:, :16] = -999
+        return values, (np.abs(values) % 100).astype(np.uint16)
+
+    task = dask.delayed(produce, nout=2, pure=False)
+    float_blocks, int_blocks = [], []
+    for start in range(0, 6, 2):
+        values, counts = task(start)
+        float_blocks.append(da.from_delayed(values, (2, 64, 64), np.float32))
+        int_blocks.append(da.from_delayed(counts, (2, 64, 64), np.uint16))
+    floats = da.concatenate(float_blocks)
+    dataset = xr.Dataset(
+        {
+            "floats": (("t", "y", "x"), floats, {"_FillValue": np.float32(-999)}),
+            "ints": (("t", "y", "x"), da.concatenate(int_blocks)),
+            "frame_flag": (("t",), (floats.max(axis=(1, 2)) > 0).astype(np.uint32)),
+        },
+        coords={"t": np.arange(6)},
+    )
+    dataset["floats"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks, "shuffle": True, **float_encoding}
+    dataset["ints"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks}
+    return dataset
+
+
+def _calls(counter: Path) -> int:
+    """Number of times the shared block task has run, from the lines in `counter`; 0 before the first run"""
+    return len(counter.read_text().split()) if counter.exists() else 0
+
+
+def _stored_bits(dset: h5py.Dataset) -> np.ndarray:
+    """Values read through HDF5's filters, without CF decoding, as unsigned integers of the same width"""
+    values = dset[()]
+    return values.view(f"u{values.dtype.itemsize}")
+
+
+class TestWorkerCompression:
+    """`worker_compressed_variables` stores worker-compressed chunks that read back as a to_netcdf write does"""
+
+    @staticmethod
+    def _camera_dataset() -> xr.Dataset:
+        n_frames, size = 2, 2048
+        rng = np.random.default_rng(0)
+        values = rng.normal(size=(n_frames, size, size)).astype(np.float32)
+        values[0, :512, :512] = -999
+        counts = (np.abs(values) * 100).astype(np.uint16)
+        counts[1, 512:1024, 512:1024] = 0
+        times = pd.date_range("2026-07-12", periods=n_frames, freq="10s").to_numpy("datetime64[ns]")
+        dims = ("CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y")
+        # Built (time, y, x) and transposed, so every block reaches the workers non-contiguous.
+        shuffled = da.from_array(np.ascontiguousarray(values.transpose(0, 2, 1)), chunks=(1, 2048, 2048))
+        return xr.Dataset(
+            {
+                "float_fill": (dims, da.from_array(values, chunks=(1, 1024, 2048))),
+                "float_fill_shuffled": (dims, shuffled.transpose(0, 2, 1)),
+                "counts": (dims, da.from_array(counts, chunks=(2, 512, 1024))),
+                "mask": (dims, da.from_array((counts % 2).astype(np.uint8), chunks=(1, 2048, 2048))),
+                "frame_flag": (("CAMERA_TIME",), da.from_array(np.array([1, 2], dtype=np.uint32), chunks=1)),
+            },
+            coords={"CAMERA_TIME": times},
+            attrs={"ProductID": "CAM", "algorithm_version": "0.0.1"},
+        )
+
+    @pytest.mark.parametrize("to_s3", [False, True], ids=["local", "s3"])
+    def test_reads_back_identical_to_a_to_netcdf_write(
+        self, to_s3, distributed_client, test_worker_compression_product_definition, tmp_path, create_mock_bucket
+    ):
+        """Every variable's stored values, chunks, settings and metadata match a to_netcdf write"""
+        names = ("float_fill", "float_fill_shuffled", "counts", "mask")
+        (tmp_path / "reference").mkdir()
+        (tmp_path / "direct").mkdir()
+        reference = write_libera_data_product(
+            test_worker_compression_product_definition, self._camera_dataset(), tmp_path / "reference", "CAMERA_TIME"
+        )
+        if to_s3:
+            bucket = create_mock_bucket()
+            written = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                S3Path(f"s3://{bucket.name}/prefix"),
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            )
+            direct_path = tmp_path / written.path.name
+            bucket.download_file(f"prefix/{written.path.name}", str(direct_path))
+        else:
+            direct_path = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path / "direct",
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            ).path
+
+        with h5py.File(reference.path) as expected, h5py.File(direct_path) as actual:
+            for name in (*names, "frame_flag", "CAMERA_TIME"):
+                for setting in ("dtype", "chunks", "compression", "compression_opts", "shuffle", "fillvalue"):
+                    assert getattr(actual[name], setting) == getattr(expected[name], setting), (name, setting)
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+            # The all-fill and all-zero chunks in _camera_dataset are stored, as to_netcdf stores them.
+            for name in names:
+                assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks(), name
+        with xr.open_dataset(reference.path) as expected, xr.open_dataset(direct_path) as actual:
+            # Each write stamps its own creation time.
+            del actual.attrs[DATE_CREATED_ATTRIBUTE], expected.attrs[DATE_CREATED_ATTRIBUTE]
+            assert actual.identical(expected)
+
+    def test_a_task_shared_by_variables_runs_once_per_block(self, tmp_path, distributed_client):
+        """One compute holds every variable's blocks, so a task feeding two variables runs once per block"""
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        counter.unlink()
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats", "ints"))
+        assert _calls(counter) == 3
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "ints", "frame_flag", "t"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
+    def test_identically_built_variables_are_each_written(self, tmp_path, distributed_client):
+        """Variables whose blocks share a task key each get the result, as a to_netcdf write does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        for name in ("zeros_a", "zeros_b"):
+            dataset[name] = (("t",), da.zeros(6, chunks=2, dtype=np.uint8) + 1)
+        assert dataset["zeros_a"].data.name == dataset["zeros_b"].data.name
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "zeros_a", "zeros_b"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
+    def test_unlimited_dims_named_by_a_string_are_unlimited(self, tmp_path, distributed_client):
+        """A string ``unlimited_dims`` encoding marks that one dimension unlimited, as to_netcdf does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        dataset.encoding["unlimited_dims"] = "t"
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "out.nc") as written:
+            assert written["floats"].maxshape == (None, 64, 64)
+            assert written["ints"].maxshape == (None, 64, 64)
+
+    def test_configured_engine_other_than_h5netcdf_raises(
+        self, monkeypatch, test_worker_compression_product_definition, tmp_path
+    ):
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+        with pytest.raises(ValueError, match="requires the h5netcdf engine"):
+            write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path,
+                "CAMERA_TIME",
+                worker_compressed_variables=("counts",),
+            )
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.parametrize(
+        ("names", "match"),
+        [
+            (("floats", "missing"), "not Dask-backed data variables"),
+            (("t",), "not Dask-backed data variables"),
+            (("floats", "floats"), "repeats a name"),
+            (("numpy_values",), "not Dask-backed data variables"),
+        ],
+        ids=["unknown", "coordinate", "repeated", "numpy-backed"],
+    )
+    def test_names_that_are_not_distinct_dask_data_variables_raise(self, names, match, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["numpy_values"] = (("t",), np.arange(6))
+        with pytest.raises(ValueError, match=match):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", names)
+        assert _calls(counter) == 0
+
+    def test_variable_not_chunked_on_disk_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["floats"].encoding = {}
+        with pytest.raises(ValueError, match="is not chunked on disk"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_named_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        # xarray stores the byte strings as a (t, string2) character array, hence two chunk lengths.
+        dataset["labels"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (3, 2)}
+        with pytest.raises(ValueError, match="compress only integer and floating-point data"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("labels",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_no_distributed_client_raises(self, tmp_path):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="requires an active dask.distributed Client"):
+            _write_worker_compressed(_small_dataset(counter), tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_filter_the_workers_do_not_apply_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="the workers apply only deflate"):
+            _write_worker_compressed(_small_dataset(counter, fletcher32=True), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_dask_chunks_not_a_multiple_of_the_disk_chunks_raise(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="each must be a whole multiple"):
+            _write_worker_compressed(_small_dataset(counter, chunks=(1, 24, 64)), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_block_that_differs_from_its_declared_dtype_raises(self, tmp_path, distributed_client):
+        """Dask does not check a computed block against from_delayed's declaration, so the worker does"""
+        mislabeled = da.from_delayed(dask.delayed(np.zeros)((2, 32, 32), np.float64), (2, 32, 32), np.float32)
+        dataset = xr.Dataset({"values": (("t", "y", "x"), mislabeled)})
+        dataset["values"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (1, 16, 16)}
+        with pytest.raises(ValueError, match="A computed block of values has dtype float64"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("values",))
+        assert not (tmp_path / "out.nc").exists()
+
+    def test_other_dask_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        with pytest.raises(ValueError, match="not numeric or boolean"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0

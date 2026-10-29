@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-10-29
+
+### Added
+
+- `write_libera_data_product` takes `worker_compressed_variables`, a tuple of Dask-backed data variables whose chunks are shuffled and deflated on the `dask.distributed` workers instead of one at a time under the HDF5 write lock. The writing process stores the compressed chunks with h5py `write_direct_chunk`, and the file reads back identical to a normal write. It requires the `h5netcdf` engine and an active `distributed.Client`, and each named variable's Dask chunks must be whole multiples of its on-disk chunk shape, its filters deflate with or without shuffle, and its dtype integer or floating point; otherwise `ValueError` before any data is computed. A write that fails after creating the file deletes it. The default, an empty tuple, writes with `to_netcdf` as before.
+- `KernelManager.populate_cache()` fills the on-disk NAIF and static kernel caches and leaves the SPICE kernel pool empty, for a process to call before starting workers that each load their own kernels.
+- `dask[distributed]` is a declared dependency; worker-compressed writes import it and `h5py`.
+
+### Changed
+
+- `kernel_maker.create_kernels_from_manifest` reads the input L1A product once and creates each requested SPICE kernel at the same time, each in its own forked process, so the Az/El and JPSS kernel steps take about as long as their slowest kernel rather than the sum. It requires Linux and raises `ValueError` on any other platform before reading the L1A. Kernel filenames and the output manifest are unchanged. The `ValueError` raised after every kernel was attempted when any kernel fails now also gives each failed kernel's reason: its process's traceback, or its exit code when the process sent nothing; a kernel process killed by the operating system counts as that kernel failing. A kernel process flushes CloudWatch log handlers before it exits. Peak memory is about the sum of the concurrent kernels' (an estimated 18 GB for a full-day Az/El run, from about 9 GB measured per kernel). A kernel identifier repeated in `kernel_product_ids` raises `ValueError`.
+- **BREAKING:** `kernel_maker.create_kernels_from_manifest` raises a shared-setup failure before any kernel is attempted, with its own exception type, instead of the aggregated `ValueError` listing every kernel as failed: an unreadable L1A file raises `ValueError`, a kernel work directory path too long for curryer raises `RuntimeError` (set `LIBERA_TEMP_DIR` to a shorter base path), and a failure populating the kernel cache raises `RuntimeError`, `FileNotFoundError` or a `requests.RequestException`.
+- `write_libera_data_product` writes an S3 product to a temporary local file, uploads it and removes the file, instead of keeping it in the cloudpathlib cache for a read that the manifest checksum needed. A full-day product no longer stays on local disk after upload, and the write no longer reads cloudpathlib's private cache path or sends a request to sync the cache file's modification time.
+
 ## [5.16.0] - 2026-10-29
 
 ### Changed
@@ -914,7 +928,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...HEAD
+[5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
 [5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
 [5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
 [5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0

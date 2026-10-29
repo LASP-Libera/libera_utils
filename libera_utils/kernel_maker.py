@@ -7,9 +7,14 @@ libera_spice dependency hierarchy, importing both kernel_manager.py and spice_ut
 
 import argparse
 import logging
+import multiprocessing
 import os
+import sys
+import tempfile
+import traceback
 import warnings
 from datetime import UTC, datetime
+from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import cast
 
@@ -23,12 +28,15 @@ from curryer import spicierpy as sp
 from libera_utils.config import config
 from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.io import filenaming
+from libera_utils.io.caching import get_local_short_temp_dir, validate_path_length
 from libera_utils.io.manifest import Manifest
+from libera_utils.io.netcdf import _load_netcdf_into_memory
+from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.l1a import packets as libera_packets
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
-from libera_utils.logutil import configure_task_logging
+from libera_utils.logutil import configure_task_logging, flush_cloudwatch_logs
 
 logger = logging.getLogger(__name__)
 
@@ -590,13 +598,7 @@ def create_kernel_from_l1a(
     if isinstance(l1a_data, xr.Dataset):
         l1a_dataset = l1a_data
     else:
-        l1a_path = cast(filenaming.PathType, AnyPath(l1a_data))
-        logger.info("Opening L1A NetCDF file: %s", l1a_path)
-        try:
-            with xr.open_dataset(l1a_path, engine="h5netcdf") as l1a_dataset:
-                l1a_dataset = l1a_dataset.load()  # Load into memory
-        except Exception as e:
-            raise ValueError(f"Failed to open or read L1A NetCDF file {l1a_path}: {e}") from e
+        l1a_dataset = _load_netcdf_into_memory(l1a_data)
 
     kernel_identifier = DataProductIdentifier(kernel_identifier)
 
@@ -751,6 +753,34 @@ def create_kernel_from_packets(
     )
 
 
+def _make_kernel_in_worker(
+    result_conn: Connection,
+    l1a_dataset: xr.Dataset,
+    kernel_identifier: DataProductIdentifier,
+    work_dir: Path,
+) -> None:
+    """Create one kernel in `work_dir` and send the outcome through `result_conn`.
+
+    Runs as the target of a forked process. Sends ``("kernel", path)`` on success, or ``("error", traceback
+    text)`` after logging the exception. CloudWatch handlers are flushed before returning, because the process
+    then exits through ``os._exit`` and atexit's ``logging.shutdown`` never runs. `work_dir` starts empty, so
+    whether an existing kernel may be replaced is decided by the parent when it copies the kernel out.
+    """
+    # curryer shortens long kernel paths with fixed-name symlinks in its temp directory, so each worker
+    # needs its own directory or concurrent workers replace and delete each other's links (lasp/curryer#210).
+    os.environ["CURRYER_TEMP_DIR"] = str(work_dir)
+    try:
+        kernel = create_kernel_from_l1a(l1a_data=l1a_dataset, kernel_identifier=kernel_identifier, output_dir=work_dir)
+    except Exception:
+        logger.exception("Kernel generation failed for DPI [%s]", kernel_identifier)
+        result_conn.send(("error", traceback.format_exc()))
+    else:
+        result_conn.send(("kernel", kernel))
+    finally:
+        result_conn.close()
+        flush_cloudwatch_logs()
+
+
 def create_kernels_from_manifest(
     input_manifest: str | filenaming.PathType,
     kernel_product_ids: str | DataProductIdentifier | list[str | DataProductIdentifier],
@@ -776,6 +806,31 @@ def create_kernels_from_manifest(
     libera_utils.io.manifest.Manifest
         Output manifest file containing one or more kernel files.
 
+    Raises
+    ------
+    ValueError
+        If a requested identifier is not a SPICE product or is repeated, if the manifest does not hold
+        exactly one input file, if the L1A file cannot be read, or if the platform is not Linux. These
+        raise before any kernel is attempted. Also raised after every kernel was attempted
+        when any kernel failed, listing each failed kernel with its input files and the reason it
+        failed: a kernel process's traceback, its exit code when it sent nothing, or the copy to
+        `output_dir` failing or being refused; no output manifest is written.
+    RuntimeError
+        If a kernel work directory path is too long for curryer (set LIBERA_TEMP_DIR to a shorter
+        base path), or if static kernel creation fails while populating the kernel cache.
+    FileNotFoundError
+        If a kernel needed to populate the kernel cache cannot be found.
+    requests.exceptions.RequestException
+        If listing or downloading a NAIF generic kernel fails while populating the kernel cache.
+
+    Notes
+    -----
+    The L1A file is read once, then each kernel is created at the same time in its own forked process
+    (CSPICE is not thread-safe), so this requires Linux. Call it from a process with no other threads running, for example not alongside a
+    ``dask.distributed`` Client, because each forked kernel process inherits only the calling thread.
+    Peak memory is about the sum of the concurrent kernels'. Kernels are written to a local
+    staging directory and copied to `output_dir` by the calling process. A kernel process killed by the
+    operating system, for example at the job's memory limit, counts as that kernel failing.
     """
     logger.info("Starting SPICE kernel generation from manifest: %s", input_manifest)
     # Process input manifest
@@ -794,6 +849,16 @@ def create_kernels_from_manifest(
             raise ValueError(
                 f"The `kernel_product_ids` [{kernel_list}] contain a non-SPICE Data Product Identifier [{dpi}]."
             )
+    if len(set(kernel_list)) != len(kernel_list):
+        raise ValueError(f"The `kernel_product_ids` [{kernel_list}] repeat a kernel. Request each kernel once.")
+
+    # macOS has fork, but a forked kernel process crashes there when requests looks up the system proxy
+    # settings to list the NAIF kernels.
+    if sys.platform != "linux":
+        raise ValueError(f"Creating kernels in forked processes requires Linux, not {sys.platform!r}.")
+    # Fork shares the loaded L1A with every worker and keeps the logging configuration; it is named
+    # explicitly because it is not the default start method on every platform and Python version.
+    fork_context = multiprocessing.get_context("fork")
 
     # Verify expectations for processing L1A files to SPICE kernels
     input_file_names = mani.files
@@ -815,36 +880,89 @@ def create_kernels_from_manifest(
         warnings.warn(f"Input manifest file contains non-L1A product filename: {l1a_file} ({ve})")
 
     logger.info("Using input file for kernel generation: %s", l1a_file)
+    l1a_dataset = _load_netcdf_into_memory(l1a_file)
+
+    # Populate the kernel cache once, before the workers start, so they never write the same cache files at
+    # once. populate_cache leaves the SPICE kernel pool empty, so every worker starts from an empty pool.
+    KernelManager().populate_cache()
 
     outputs = []
     kernel_processing_failures: list[tuple[str, list]] = []
-    for kernel_identifier in kernel_list:
-        # Make each type of kernel requested (each kernel type has a unique DPI)
+    failure_details: list[str] = []
+    # Workers write to local staging and this process copies each kernel to `output_dir`, because a forked
+    # child must not use the parent's S3 connections.
+    with tempfile.TemporaryDirectory(dir=get_local_short_temp_dir()) as staging_dir:
+        work_dirs = {dpi: Path(staging_dir) / dpi.value for dpi in kernel_list}
+        for work_dir in work_dirs.values():
+            # curryer rejects a temp directory path longer than 50 characters
+            validate_path_length(work_dir, max_length=50)
+            work_dir.mkdir()
+
+        workers = []
         try:
-            outputs.append(
-                create_kernel_from_l1a(
-                    l1a_data=l1a_file,
-                    kernel_identifier=kernel_identifier,
-                    output_dir=output_dir,
-                    overwrite=overwrite,
+            for kernel_identifier, work_dir in work_dirs.items():
+                receive_conn, send_conn = fork_context.Pipe(duplex=False)
+                process = fork_context.Process(
+                    target=_make_kernel_in_worker,
+                    args=(send_conn, l1a_dataset, kernel_identifier, work_dir),
+                    name=f"kernel-{kernel_identifier.value}",
                 )
-            )
-        except Exception as _:
-            kernel_processing_failures.append((kernel_identifier, input_file_names))
-            logger.exception(
-                "Kernel generation failed for DPI [%s] and inputs [%s]. Suppressing and continuing with"
-                "other kernels (if any)",
-                kernel_identifier,
-                input_file_names,
-            )
+                process.start()
+                send_conn.close()
+                workers.append((kernel_identifier, process, receive_conn))
+
+            for kernel_identifier, process, receive_conn in workers:
+                # Receive before joining: a result larger than the pipe buffer blocks the child in send() until read.
+                try:
+                    outcome, payload = receive_conn.recv()
+                except EOFError:
+                    outcome, payload = None, None
+                process.join()
+                if outcome is None:
+                    payload = (
+                        f"kernel process exited with code {process.exitcode} without sending a result; a negative "
+                        "code is the signal that killed it, and -9 usually means the job reached its memory limit"
+                    )
+                    logger.error(
+                        "Kernel for DPI [%s] and inputs [%s]: %s", kernel_identifier, input_file_names, payload
+                    )
+                if outcome != "kernel":
+                    kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(f"{kernel_identifier.value}: {payload}")
+                    continue
+                staged_kernel = payload
+                output_kernel = AnyPath(output_dir) / staged_kernel.name
+                if not overwrite and output_kernel.exists():
+                    kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(
+                        f"{kernel_identifier.value}: {output_kernel} already exists and overwrite is False"
+                    )
+                    logger.error("Kernel %s already exists and overwrite is False", output_kernel)
+                    continue
+                try:
+                    smart_copy_file(staged_kernel, output_kernel)
+                except Exception as error:
+                    kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(f"{kernel_identifier.value}: copying to {output_kernel} failed: {error!r}")
+                    logger.exception("Copying kernel for DPI [%s] to %s failed", kernel_identifier, output_kernel)
+                    continue
+                outputs.append(output_kernel)
+        finally:
+            for _, process, receive_conn in workers:
+                if process.is_alive():
+                    process.terminate()
+                process.join()
+                receive_conn.close()
 
     # If failures occurred during kernel generation, raise before we write out a manifest
     # This allows the kernel maker to try making each kernel but if any fail, we don't want to continue.
     if kernel_processing_failures:
-        raise ValueError(f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}")
+        raise ValueError(
+            f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}\n"
+            + "\n".join(failure_details)
+        )
 
-    # Duplicates are possible depending on file naming and append flag.
-    outputs = sorted(set(outputs))
+    outputs = sorted(outputs)
 
     # Generate output manifest.
     pedi = Manifest.output_manifest_from_input_manifest(mani)
