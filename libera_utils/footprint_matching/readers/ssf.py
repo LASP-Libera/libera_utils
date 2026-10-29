@@ -73,16 +73,14 @@ import numpy as np
 
 from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
-    apply_fill_and_valid_range,
     decode_cf_times,
-    field_fill_value,
-    field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
     scan_to_scan_spacing_km,
 )
 from libera_utils.footprint_matching.readers.base import PassReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
+from libera_utils.io.netcdf import apply_fill_and_valid_range, field_fill_value, field_valid_range
 
 # Group paths to the per-footprint geolocation and time variables.
 _TIME_POS_GROUP: str = "Time_and_Position"

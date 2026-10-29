@@ -42,9 +42,9 @@ File naming:
 import netCDF4
 import numpy as np
 
-from libera_utils.footprint_matching.readers._points import field_fill_value
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
+from libera_utils.io.netcdf import field_fill_value
 
 # Each output variable, the (group, variable) it reads in the CLDPROP_D3 NetCDF4 file,
 # and its aggregation. This order is VARIABLES order and axis 0 of the reader's data array.

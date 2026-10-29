@@ -1,4 +1,13 @@
-"""Module containing utilities for writing Libera-conforming NetCDF4 data products"""
+"""Module containing utilities for writing Libera-conforming NetCDF4 data products
+
+It also holds the fill and valid-range helpers the footprint-matching readers use:
+
+- :func:`fill_in_dtype` -- a ``_FillValue`` in a given dtype, or ``None`` when no value of that dtype can equal it.
+- :func:`field_fill_value` -- read a field's own ``_FillValue``, raising when it has none.
+- :func:`field_valid_range` -- read a field's own ``valid_range``, raising when it has none.
+- :func:`apply_fill_and_valid_range` -- convert a raw masked/integer array to a float array with fill values and
+  out-of-range values replaced by ``NaN``.
+"""
 
 import itertools
 import logging
@@ -10,6 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import h5py
+import netCDF4
 import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath, CloudPath
@@ -490,3 +500,159 @@ def _compress_block(
         raw = chunk.view(np.uint8).reshape(-1, dtype.itemsize).T.tobytes() if shuffle else chunk.tobytes()
         compressed.append((start, zlib.compress(raw, level)))
     return compressed
+
+
+def fill_in_dtype(fill_value: float | int, dtype: np.dtype) -> np.ndarray | None:
+    """Return ``fill_value`` in ``dtype``, or ``None`` when no value of that dtype can equal it.
+
+    An integer dtype holds the fill only when it is a whole number within the dtype's range; any other fill
+    would wrap or truncate onto a valid value, so no stored value is fill. A float fill is cast to the float
+    dtype, which reproduces the stored bit pattern of a sentinel such as the float32 maximum.
+
+    Parameters
+    ----------
+    fill_value : float or int
+        The ``_FillValue`` sentinel, as declared.
+    dtype : np.dtype
+        The dtype the data is stored in, against which the fill is compared.
+
+    Returns
+    -------
+    np.ndarray or None
+        A zero-dimensional array holding the fill in ``dtype``, or ``None`` when ``dtype`` is an integer dtype and
+        ``fill_value`` is not finite, not a whole number, or outside the dtype's range.
+    """
+    if np.issubdtype(dtype, np.integer):
+        info = np.iinfo(dtype)
+        if not np.isfinite(fill_value) or fill_value != int(fill_value) or not info.min <= int(fill_value) <= info.max:
+            return None
+        return np.asarray(int(fill_value), dtype=dtype)
+    return np.asarray(fill_value).astype(dtype)
+
+
+def field_fill_value(variable: netCDF4.Variable, *, source: str) -> float | int:
+    """Return a field's own ``_FillValue`` attribute.
+
+    The fill sentinel comes from the file rather than a hard-coded value, so a field with
+    none raises rather than being masked with a guess. Pass it to
+    :func:`apply_fill_and_valid_range` when netCDF4's automatic masking is off.
+
+    Parameters
+    ----------
+    variable : netCDF4.Variable
+        The field being read.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    float or int
+        The ``_FillValue`` attribute, as stored.
+
+    Raises
+    ------
+    ValueError
+        If the field has no ``_FillValue`` attribute.
+    """
+    if "_FillValue" not in variable.ncattrs():
+        raise ValueError(
+            f"{source}: {variable.name} has no _FillValue attribute. The reader takes each field's fill value "
+            "from the file; stage the granule as distributed, which carries one on every field."
+        )
+    return np.asarray(variable.getncattr("_FillValue")).item()
+
+
+def field_valid_range(variable: netCDF4.Variable, *, source: str) -> tuple[float, float]:
+    """Return a field's own ``valid_range`` attribute.
+
+    The range comes from the file rather than a hard-coded value, so a range the producer
+    revises is applied as distributed, and a field with none raises rather than being
+    checked against a guess. The pair is returned in the file's order, which may be
+    descending; :func:`apply_fill_and_valid_range` accepts either order.
+
+    Parameters
+    ----------
+    variable : netCDF4.Variable
+        The field being read.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    tuple[float, float]
+        The two ``valid_range`` values, as floats.
+
+    Raises
+    ------
+    ValueError
+        If the field has no ``valid_range`` attribute, or it does not hold two values.
+    """
+    if "valid_range" not in variable.ncattrs():
+        raise ValueError(
+            f"{source}: {variable.name} has no valid_range attribute. The reader takes each field's valid range "
+            "from the file; stage the granule as distributed, which carries one on every field."
+        )
+    values = np.ravel(variable.getncattr("valid_range"))
+    if values.size != 2:
+        raise ValueError(
+            f"{source}: {variable.name} declares valid_range {values.tolist()!r}, which is not a (low, high) pair. "
+            "Stage the granule as distributed, or update the reader for this product version."
+        )
+    return float(values[0]), float(values[1])
+
+
+def apply_fill_and_valid_range(
+    raw: np.ndarray,
+    fill_value: float | int | None = None,
+    valid_range: tuple[float, float] | None = None,
+) -> np.ndarray:
+    """Return ``raw`` as float64 with fill / out-of-range values set to ``NaN``.
+
+    netCDF variables flag missing data in two ways that must both be honored: an
+    explicit ``_FillValue`` sentinel (e.g. ``-999.0`` for a float field, ``32767``
+    for int16) *and* a ``valid_range`` attribute outside of which values are invalid.
+    The fill comparison is made on the raw array, in its own dtype, before any
+    cast, so an integer sentinel that float32 cannot represent exactly still
+    matches. A fill the raw integer dtype cannot hold (``-999`` on ``uint8``,
+    ``1.5`` on ``int16``) matches nothing, rather than wrapping onto a valid value.
+
+    Parameters
+    ----------
+    raw : np.ndarray
+        Raw values read from the file. May be a ``numpy.ma.MaskedArray``.
+    fill_value : float or int, optional
+        Sentinel value to treat as missing, compared in the raw dtype. ``None``
+        skips the fill check.
+    valid_range : tuple of (float, float), optional
+        Inclusive ``(low, high)`` bounds; values outside are set to ``NaN``.
+        The order is normalized internally, so ``(1100, 10)`` is treated the same
+        as ``(10, 1100)``. ``None`` skips the range check.
+
+    Returns
+    -------
+    np.ndarray
+        float64 array, same shape as ``raw``, with invalid entries as ``NaN``.
+    """
+    if isinstance(raw, np.ma.MaskedArray):
+        masked = np.ma.getmaskarray(raw)
+        raw_data = np.ma.getdata(raw)
+    else:
+        masked = np.zeros(np.shape(raw), dtype=bool)
+        raw_data = np.asarray(raw)
+
+    invalid = masked.copy()
+    if fill_value is not None:
+        fill = fill_in_dtype(fill_value, raw_data.dtype)
+        if fill is not None:
+            invalid |= raw_data == fill
+
+    arr = raw_data.astype(np.float64)
+    arr[invalid] = np.nan
+
+    if valid_range is not None:
+        low, high = float(valid_range[0]), float(valid_range[1])
+        if low > high:
+            low, high = high, low
+        arr[(arr < low) | (arr > high)] = np.nan
+
+    return arr

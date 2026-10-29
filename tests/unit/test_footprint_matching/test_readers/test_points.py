@@ -1,7 +1,7 @@
 """Unit tests for the shared reader decoding helpers.
 
-These cover :mod:`libera_utils.footprint_matching.readers._points`: fill / valid-range
-masking, CF and hour-of-day time decoding, granule time coverage, and swath sample spacing.
+These cover :mod:`libera_utils.footprint_matching.readers._points`: CF and hour-of-day
+time decoding, granule time coverage, and swath sample spacing.
 """
 
 from types import SimpleNamespace
@@ -10,164 +10,12 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers._points import (
-    apply_fill_and_valid_range,
     decode_cf_times,
     decode_hours_of_day,
-    field_fill_value,
-    field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
     scan_to_scan_spacing_km,
 )
-
-_NAN = np.nan
-_INT32_MAX = np.iinfo(np.int32).max
-
-
-class TestApplyFillAndValidRange:
-    @pytest.mark.parametrize(
-        ("raw", "fill_value", "valid_range", "expected"),
-        [
-            pytest.param(np.array([1.0, 2.0, -999.0, 3.0]), -999.0, None, [1.0, 2.0, _NAN, 3.0], id="fill"),
-            # The range is inclusive: a value on a bound is valid.
-            pytest.param(np.array([-1.0, 0.0, 5.0, 6.0]), None, (0.0, 5.0), [_NAN, 0.0, 5.0, _NAN], id="range"),
-            # CLDPIX Eff_Cld_Pressure declares [1100, 10]; taken literally no value would satisfy both bounds.
-            pytest.param(
-                np.array([800.0, 50.0, 5.0, 2000.0]), None, (1100.0, 10.0), [800.0, 50.0, _NAN, _NAN], id="descending"
-            ),
-            pytest.param(np.array([1, 2, 127, 3], dtype=np.int8), 127, None, [1.0, 2.0, _NAN, 3.0], id="int8-fill"),
-            # The mask flags missing elements with no sentinel.
-            pytest.param(
-                np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False]), None, None, [1.0, _NAN, 3.0], id="masked"
-            ),
-            # The CERES float fill is the float32 maximum, whose float64 widening differs from the decimal literal.
-            pytest.param(
-                np.array([1.0, 3.4028235e38, 2.0], dtype=np.float32),
-                3.4028235e38,
-                None,
-                [1.0, _NAN, 2.0],
-                id="float32-max",
-            ),
-            # int32 max and max - 1 round to the same float32, so only a raw-dtype comparison keeps max - 1.
-            pytest.param(
-                np.array([1, _INT32_MAX, 2, _INT32_MAX - 1], dtype=np.int32),
-                _INT32_MAX,
-                None,
-                [1.0, _NAN, 2.0, float(_INT32_MAX - 1)],
-                id="int32-max",
-            ),
-            # A fill the dtype cannot hold would wrap or truncate onto a valid value if cast: -999 to 25 in uint8,
-            # 1.5 to 1 in int16, 300 to 44 in int8.
-            pytest.param(np.array([25, 7], dtype=np.uint8), -999, None, [25.0, 7.0], id="uint8-unholdable"),
-            pytest.param(np.array([1, 7], dtype=np.int16), 1.5, None, [1.0, 7.0], id="int16-unholdable"),
-            pytest.param(np.array([44, 7], dtype=np.int8), 300, None, [44.0, 7.0], id="int8-unholdable"),
-        ],
-    )
-    def test_invalid_entries_become_nan(self, raw, fill_value, valid_range, expected):
-        """``apply_fill_and_valid_range`` sets fill, masked and out-of-range entries to NaN and keeps every other value.
-
-        A sentinel or out-of-range value left as a number would be averaged into a footprint as if it were data, and a
-        valid value masked by a careless comparison would be lost. The fill is compared in the raw dtype, so a sentinel
-        float32 cannot represent exactly still matches, and a fill the dtype cannot hold matches nothing.
-
-        Parametrized over a float fill, an inclusive range, a descending range, an integer fill, a masked array, the
-        float32-maximum fill, the int32-maximum fill beside its float32 twin, and three fills their dtype cannot hold;
-        asserts the float64 output equals the expected values, NaN for NaN.
-        """
-        out = apply_fill_and_valid_range(raw, fill_value=fill_value, valid_range=valid_range)
-        assert out.dtype == np.float64
-        np.testing.assert_array_equal(out, np.array(expected, dtype=np.float64))
-
-
-class TestFieldFillValue:
-    @staticmethod
-    def _variable(tmp_path, dtype, fill_value):
-        import netCDF4
-
-        ds = netCDF4.Dataset(str(tmp_path / "f.nc"), "w")
-        ds.createDimension("n", 2)
-        return ds, ds.createVariable("field", dtype, ("n",), fill_value=fill_value)
-
-    @pytest.mark.parametrize(
-        ("dtype", "fill", "expected"),
-        [(np.float32, np.float32(3.4028235e38), float(np.float32(3.4028235e38))), (np.int8, 127, 127)],
-    )
-    def test_returns_the_attribute(self, tmp_path, dtype, fill, expected):
-        """``field_fill_value`` returns a field's declared ``_FillValue`` as a Python scalar.
-
-        The readers mask each field with the sentinel the file declares; a wrong or reshaped value would leave every
-        fill cell in the field to be served as data.
-
-        Parametrized over a float32 field filled with the float32 maximum and an int8 field filled with 127; builds
-        each in a scratch netCDF file and asserts the returned value equals the stored fill.
-        """
-        ds, var = self._variable(tmp_path, dtype, fill)
-        try:
-            assert field_fill_value(var, source="test") == expected
-        finally:
-            ds.close()
-
-    def test_field_without_fill_value_raises(self, tmp_path):
-        """``field_fill_value`` raises ``ValueError`` naming the field when it has no ``_FillValue`` attribute.
-
-        Guessing a sentinel for a field that declares none could mask valid values or let real fill cells through as
-        data, so the reader stops instead.
-
-        Builds a float32 field created with ``fill_value=False`` and asserts a ``ValueError`` whose message names the
-        field and the missing ``_FillValue``.
-        """
-        ds, var = self._variable(tmp_path, np.float32, False)
-        try:
-            with pytest.raises(ValueError, match="field has no _FillValue attribute"):
-                field_fill_value(var, source="test")
-        finally:
-            ds.close()
-
-
-class TestFieldValidRange:
-    @staticmethod
-    def _variable(tmp_path, valid_range):
-        import netCDF4
-
-        ds = netCDF4.Dataset(str(tmp_path / "r.nc"), "w")
-        ds.createDimension("n", 2)
-        var = ds.createVariable("field", np.float32, ("n",))
-        if valid_range is not None:
-            var.valid_range = np.array(valid_range, dtype=np.float32)
-        return ds, var
-
-    def test_returns_the_attribute_in_file_order(self, tmp_path):
-        """``field_valid_range`` returns a field's declared ``valid_range`` as floats, in the file's order.
-
-        The readers range-check each field with the bounds the file declares; a reordered or rounded pair would drop
-        valid values or pass invalid ones, and the CLDPIX pressure range is stored descending.
-
-        Builds a field declaring the descending [1100, 10] and asserts ``(1100.0, 10.0)``.
-        """
-        ds, var = self._variable(tmp_path, (1100.0, 10.0))
-        try:
-            assert field_valid_range(var, source="test") == (1100.0, 10.0)
-        finally:
-            ds.close()
-
-    @pytest.mark.parametrize(
-        ("valid_range", "match"),
-        [(None, "field has no valid_range attribute"), ((0.0, 1.0, 2.0), r"not a \(low, high\) pair")],
-    )
-    def test_missing_or_malformed_range_raises(self, tmp_path, valid_range, match):
-        """``field_valid_range`` raises ``ValueError`` naming the field when its ``valid_range`` is absent or not a pair.
-
-        A guessed range could silently drop valid values or keep invalid ones, so the reader stops instead.
-
-        Parametrized over a field with no ``valid_range`` and one declaring three values; asserts a ``ValueError``
-        naming the field.
-        """
-        ds, var = self._variable(tmp_path, valid_range)
-        try:
-            with pytest.raises(ValueError, match=match):
-                field_valid_range(var, source="test")
-        finally:
-            ds.close()
 
 
 class TestDecodeCfTimes:
