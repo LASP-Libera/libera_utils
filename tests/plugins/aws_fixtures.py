@@ -228,6 +228,7 @@ def make_test_archive_buckets(create_mock_bucket):
     create_mock_bucket("libera-spice-kernels-test")
     create_mock_bucket("libera-l1b-data-test")
     create_mock_bucket("libera-l2-data-test")
+    create_mock_bucket("libera-ancillary-data-test")
 
 
 @pytest.fixture

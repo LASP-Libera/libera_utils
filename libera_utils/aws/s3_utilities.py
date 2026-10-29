@@ -21,6 +21,9 @@ from libera_utils.aws.utils import (
 )
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
+    AbstractValidFilename,
+    AncillaryDataProductFilename,
+    DailyAncillaryDataProductFilename,
     L0Filename,
     LiberaDataProductFilename,
     LiberaGroundCcsdsFilename,
@@ -45,11 +48,11 @@ NEW_FILES_AVAILABLE_EVENT_DETAIL_TYPE = "NewFilesAvailableEventDetail"
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 300.0  # 5 minutes
 VERIFY_POLL_INTERVAL_SECONDS = 10.0
 
-ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
+ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | AncillaryDataProductFilename
 
 
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
-    """Validate a path as a Libera L0, ground CCSDS, or data product filename eligible for manual ingest.
+    """Validate a path as an L0, ground CCSDS, Libera data product or external ancillary filename for manual ingest.
 
     Manifest and any other filename types are rejected.
 
@@ -60,17 +63,24 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
 
     Returns
     -------
-    L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or AncillaryDataProductFilename
         The parsed filename object.
+
+    Raises
+    ------
+    ValueError
+        If the name is not one of the ingestable forms.
     """
-    for filename_class in (L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename):
-        try:
-            return filename_class(path)
-        except ValueError:
-            continue
-    raise ValueError(
-        f"File {path} is not a valid Libera L0, ground CCSDS, or data product filename and cannot be manually ingested."
-    )
+    try:
+        filename = AbstractValidFilename.from_file_path(path)
+    except ValueError:
+        filename = None
+    if not isinstance(filename, ManualIngestFilename):
+        raise ValueError(
+            f"File {path} is not an L0, ground CCSDS, Libera data product or external ancillary product filename "
+            "and cannot be manually ingested. Check the name against the File Naming Conventions documentation."
+        )
+    return filename
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -123,16 +133,21 @@ def manual_ingest_data_products(
     Parameters
     ----------
     paths_to_files : list of Path
-        Local filesystem paths to the files to ingest. Each must be a validly named Libera L0, ground CCSDS, or
-        data product file.
+        Local filesystem paths to the files to ingest. Each must be a validly named L0, ground CCSDS, Libera data
+        product or external ancillary product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.
 
     Returns
     -------
-    list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or AncillaryDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
+
+    Raises
+    ------
+    ValueError
+        If any path is not an ingestable filename; nothing is staged.
     """
     # Validate every filename up front so we don't stage a partial set before discovering a bad name.
     libera_filenames = [_validate_filename_for_ingest(path) for path in paths_to_files]
@@ -221,6 +236,10 @@ def verify_ingestion(
        ground CCSDS files, which the SDC does not write availability records for).
     3. A File Metadata record exists for the file basename.
 
+    A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
+    its Data Availability record, keyed on its applicable date and upstream version. A static ancillary product
+    (the land/ocean mask), which has no applicable date, cannot be verified yet and is refused before any check.
+
     A ground CCSDS capture passes on its base File Metadata row alone, so a successful
     verification does not mean its packet time span was indexed into a searchable row.
 
@@ -231,7 +250,8 @@ def verify_ingestion(
 
     Parameters
     ----------
-    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or
+        AncillaryDataProductFilename
         The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``).
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
@@ -242,15 +262,32 @@ def verify_ingestion(
 
     Raises
     ------
+    ValueError
+        If any file is a static ancillary product, which has no applicable date to verify records against.
+    TypeError
+        If any file is not an L0, ground CCSDS, Libera data product or ancillary filename.
     TimeoutError
         If any expected record/object is still missing when the timeout elapses.
     """
+    # TODO[LIBSDC-880]: Verify static ancillary products once the ingester defines their records
+    static_files = [
+        f.path.name
+        for f in libera_filenames
+        if isinstance(f, AncillaryDataProductFilename) and not isinstance(f, DailyAncillaryDataProductFilename)
+    ]
+    if static_files:
+        raise ValueError(
+            f"Cannot verify ingestion of static ancillary products, which have no applicable date: {static_files}. "
+            "Ingest them without --verify and check their archive bucket instead."
+        )
+
     s3_client = boto_session.client("s3")
     dynamodb = boto_session.resource("dynamodb")
 
     # Resolve all required resources once. Any 0/>1 match raises immediately (Libera Utils / SDC mismatch).
     archive_bucket_by_level: dict = {}
-    needs_availability = any(isinstance(f, LiberaDataProductFilename) for f in libera_filenames)
+    dated_product_types = (LiberaDataProductFilename, DailyAncillaryDataProductFilename)
+    needs_availability = any(isinstance(f, dated_product_types) for f in libera_filenames)
     file_specs = []
     for libera_filename in libera_filenames:
         data_level = libera_filename.data_product_id.data_level
@@ -262,7 +299,7 @@ def verify_ingestion(
             "name": libera_filename.path.name,
             "bucket": archive_bucket_by_level[data_level],
             "key": f"{libera_filename.archive_prefix}/{libera_filename.path.name}",
-            "is_data_product": isinstance(libera_filename, LiberaDataProductFilename),
+            "is_data_product": isinstance(libera_filename, dated_product_types),
         }
         if spec["is_data_product"]:
             spec["applicable_date"] = libera_filename.applicable_date.isoformat()
@@ -273,12 +310,17 @@ def verify_ingestion(
             # packets cover. A file whose packets yield no usable time span keeps only its base
             # record, so the base record alone counts as ingested.
             spec["min_metadata_count"] = 1
-        else:
+        elif isinstance(libera_filename, L0Filename):
             # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets a base
             # record plus a product record (SK=applicable_date) per applicable date it covers. We can't derive
             # a PDS's applicable dates here, so we verify via record count.
             is_construction_record = libera_filename.data_product_id == DataProductIdentifier.l0_pds_cr
             spec["min_metadata_count"] = 1 if is_construction_record else 2
+        else:
+            raise TypeError(
+                f"Cannot verify ingestion of {libera_filename.path.name}: {type(libera_filename).__name__} is not an "
+                "L0, ground CCSDS, Libera data product or ancillary filename."
+            )
         file_specs.append(spec)
 
     metadata_table = dynamodb.Table(

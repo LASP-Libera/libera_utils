@@ -42,9 +42,13 @@ class TestCollectInputFiles:
     def _manifest(self, *filenames: str) -> Manifest:
         # collect_input_files selects purely by filename, so records need no real files;
         # a placeholder checksum satisfies the required field (cf. test_manifest.py validation cases).
+        # Each checksum differs, since the manifest drops a file whose checksum repeats an earlier one's.
         return Manifest(
             manifest_type=ManifestType.INPUT,
-            files=[{"filename": f"{self._INPUT_DIR}/{name}", "checksum": "fakesum"} for name in filenames],
+            files=[
+                {"filename": f"{self._INPUT_DIR}/{name}", "checksum": f"fakesum{index}"}
+                for index, name in enumerate(filenames)
+            ],
         )
 
     def test_product_mode_keeps_only_matching_product(self):
@@ -56,6 +60,15 @@ class TestCollectInputFiles:
         selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
+
+    def test_placeholder_mode_keeps_only_non_libera_files(self):
+        """In placeholder mode the CERES SSF input is kept, though it parses as an ancillary filename."""
+        libera_product = _libera_product_name(DataProductIdentifier.l1b_rad)
+        manifest = self._manifest(libera_product, SSF_INPUT_NAME)
+
+        selected = collect_input_files(manifest, None)
+
+        assert selected == [f"{self._INPUT_DIR}/{SSF_INPUT_NAME}"]
 
 
 class TestRunnerDispatch:
