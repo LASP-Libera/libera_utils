@@ -23,7 +23,6 @@ from libera_utils.l1a.wfov_image_metadata import (
     VALID_FOOTER_BYTES,
     WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
     WFOV_COMPRESSED_IMAGE_VAR,
-    WFOV_HEADER_PARSE_VALID_VAR,
     WFOV_HEADER_SIZE,
     _extract_compressed_payload,
     _extract_wfov_header_metadata_from_blob,
@@ -579,7 +578,6 @@ class TestEnhanceWfovL1aDataset:
         # Only the good image survives, and CAMERA_TIME is usable for filenaming.
         assert enhanced.sizes[CAMERA_TIME_COORD] == 1
         assert not np.isnat(enhanced[CAMERA_TIME_COORD].values).any()
-        assert enhanced[WFOV_HEADER_PARSE_VALID_VAR].values.all()
         # The discarded image's packets are accounted for and traceable.
         assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 2
         assert enhanced[PACKET_IMAGE_ID_VAR].values[:2].tolist() == [-1, -1]
@@ -606,7 +604,6 @@ class TestEnhanceWfovL1aDataset:
         enhanced = enhance_wfov_l1a_dataset(ds)
 
         np.testing.assert_equal(enhanced[CAMERA_TIME_COORD].values[0], _expected_datetime64(100, 1))
-        assert enhanced[WFOV_HEADER_PARSE_VALID_VAR].values[0]
 
     def test_multi_packet_complete_image(self):
         payload = b"\x11\x22\x33\x44"

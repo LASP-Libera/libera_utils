@@ -49,6 +49,22 @@ def get_packet_config(apid: LiberaApid | int) -> "PacketConfiguration":
         return _PACKET_CONFIG_REGISTRY[apid]
 
 
+def configured_apids() -> tuple[LiberaApid, ...]:
+    """Return every APID that has a packet configuration, in ascending order.
+
+    These are the APIDs the L1A Preprocessor can parse. Configurations are loaded from YAML on
+    first access.
+
+    Returns
+    -------
+    tuple[LiberaApid, ...]
+        The configured APIDs.
+    """
+    if not _PACKET_CONFIG_REGISTRY:
+        _load_configs_from_yaml()
+    return tuple(sorted(_PACKET_CONFIG_REGISTRY))
+
+
 def _load_configs_from_yaml():
     """Load all packet configurations from YAML file and populate the registry."""
     l1a_packet_configs_path = str(config.get("LIBERA_L1A_PROCESSING_CONFIGS_PATH"))
@@ -336,6 +352,60 @@ class ArrayGroup(BaseModel):
         return self
 
 
+class CoverageMode(StrEnum):
+    """How a day's completeness is judged for one APID."""
+
+    FRACTION = "fraction"
+    PRESENCE = "presence"
+
+
+class DayCoveragePolicy(BaseModel):
+    """Completeness rule for one APID.
+
+    Attributes
+    ----------
+    mode : CoverageMode
+        ``FRACTION`` checks the fractions below. ``PRESENCE`` passes every region as soon
+        as any data overlaps the buffered day window, and takes no fractions.
+    day_coverage_frac : float | None
+        Minimum covered fraction of ``[D, D+1)``. Required for ``FRACTION``.
+    buffer_coverage_frac : float | None
+        Minimum covered fraction of each midnight buffer. Required for ``FRACTION``.
+
+    Raises
+    ------
+    pydantic_core.ValidationError
+        If a ``FRACTION`` policy omits either fraction, a ``PRESENCE`` policy carries
+        one, or a fraction falls outside ``(0, 1]``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    mode: CoverageMode
+    day_coverage_frac: float | None = None
+    buffer_coverage_frac: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_fractions(self) -> "DayCoveragePolicy":
+        """Require fractions in ``(0, 1]`` for ``FRACTION`` and none for ``PRESENCE``."""
+        fractions = {
+            "day_coverage_frac": self.day_coverage_frac,
+            "buffer_coverage_frac": self.buffer_coverage_frac,
+        }
+        if self.mode is CoverageMode.FRACTION:
+            missing = [name for name, value in fractions.items() if value is None]
+            if missing:
+                raise ValueError(f"A {self.mode} policy requires {', '.join(missing)}.")
+            for name, value in fractions.items():
+                if not 0.0 < value <= 1.0:
+                    raise ValueError(f"{name} must be in (0, 1], got {value}.")
+        else:
+            supplied = [name for name, value in fractions.items() if value is not None]
+            if supplied:
+                raise ValueError(f"A {self.mode} policy checks presence alone; drop {', '.join(supplied)}.")
+        return self
+
+
 class PacketConfiguration(BaseModel):
     """Base class for packet configurations.
 
@@ -362,12 +432,15 @@ class PacketConfiguration(BaseModel):
         Defaults to "LIBERA_PACKET_DEFINITION".
     packet_time_source : SampleTimeSource
         The time source for packet timestamps.
+    day_coverage : DayCoveragePolicy
+        Completeness rule the L1A combine applies to one day of this APID.
     """
 
     model_config = ConfigDict(frozen=True)
 
     packet_apid: LiberaApid
     packet_time_fields: TimeFieldMapping
+    day_coverage: DayCoveragePolicy
     sample_groups: list[SampleGroup] = Field(default_factory=list)
     aggregation_groups: list[AggregationGroup] = Field(default_factory=list)
     array_groups: list[ArrayGroup] = Field(default_factory=list)

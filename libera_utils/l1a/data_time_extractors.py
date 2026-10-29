@@ -166,6 +166,8 @@ def extract_data_time_range_from_dataset(packet_ds: xr.Dataset, apid: int) -> tu
             f"APID {apid} ({libera_apid.name}) is packet-time indexed; data-time extraction is not defined"
         )
 
+    # TODO[LIBSDC-878]: also return the gaps between these data times; the span alone counts a
+    # gap inside the file, such as a camera-off period, as covered.
     if libera_apid == LiberaApid.icie_wfov_sci:
         span = _camera_sop_time_span(packet_ds)
         if span is None:
