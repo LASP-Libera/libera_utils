@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.18.0] - 2026-10-29
+
 ### Added
 
 - The swath readers CERES FLASHFlux (`flashflux`, `FLASHFluxReader`, reading the RBSP FLASHFlux product in the CERES SSF file layout for FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, with its extended cloud/aerosol/albedo fields carried by FMATCH-IMAGER alone) and CERES CLDPIX, and the VIIRS daily L3 cloud-property reader `viirs_cldprop_d3` (`VIIRSCldpropD3Reader`, `CLDPROP_D3_VIIRS_NOAA20`, `DAILY`), completing the nine-reader registry. Every FLASHFlux and CLDPIX field, geolocation and observation time included, is read with its own `_FillValue` and `valid_range`, and every VIIRS cloud-property field with its own `_FillValue`; a field without one raises `ValueError`. CLDPIX cloud phase and mask codes that the file's `flag_meanings` label `bad_data` are dropped before the mode, and a categorical field without `flag_values`/`flag_meanings` raises `ValueError`. A FLASHFlux granule missing a group or variable the reader reads, or whose variable has other dimensions than the reader expects, raises `ValueError` naming it and the file's `product_version`, as does a CLDPIX granule missing a variable the reader reads. A time variable without a `units` attribute raises `ValueError`. The FLASHFlux scene and ADM type codes are int16. The FLASHFlux and CLDPIX readers are `PassReader`s (`TIME_MATCH = NEAREST_PASS`): they convert CLDPIX colatitude to latitude and normalize 0..360 longitudes to -180..180, raising `ValueError` when a CLDPIX `Latitude` declares a `valid_range` other than [0, 180] or a FLASHFlux footprint latitude is not in `degrees_north`, read each footprint's (`Time_and_Position/time`) or pixel's (`Observation_Time`, fractional hours each dated to the day nearest `time_coverage_start`) observation time, serve every footprint or pixel as its own time-stamped sample from the pass nearest the footprint time, the samples within `PASS_WINDOW` of the observation time of the sample nearest the footprint time, so a footprint midway between two passes gets only the nearer (none beyond `MAX_TIME_OFFSET`), choosing that sample from those inside the footprint's own box and from the padding only when none falls inside, hold only the hourly granules within that offset of the current footprint, and measure the granule's own sample spacing (`PointSamples.spacing_km`, the larger of the along-scan and along-track spacings) for the coverage measure in place of the nominal `RESOLUTION_KM`. `PassReader` joins `StaticReader` and `SteppedGridReader` as a reader base, and `ReaderRegistry.get_readers_for_mode` returns the readers that contribute to an `OperationalMode`'s product (`FMATCH_MODE_READERS`, derived from the built-in readers' `VariableSpec.modes`).
@@ -943,7 +945,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...HEAD
+[5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
 [5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
 [5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
 [5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
