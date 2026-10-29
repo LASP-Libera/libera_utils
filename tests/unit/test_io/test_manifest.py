@@ -3,8 +3,8 @@
 import json
 import sys
 from datetime import datetime, timedelta
-from hashlib import md5
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from cloudpathlib import S3Path
@@ -12,10 +12,8 @@ from pydantic import ValidationError
 from ulid import ULID
 
 from libera_utils.constants import ManifestType
-from libera_utils.io import manifest as manifest_module
 from libera_utils.io.filenaming import ManifestFilename
-from libera_utils.io.manifest import Manifest, ManifestError, ManifestFileRecord, calculate_checksum
-from libera_utils.io.smart_open import smart_open
+from libera_utils.io.manifest import Manifest, ManifestError
 
 VALID_ULID = "01GDHWG4R0W8KXWY0KRDD6BZTT"
 OTHER_ULID = "01MBAK5DC06HX46P3PG0M6HJR0"
@@ -40,10 +38,11 @@ class TestManifestConstruction:
         [
             (
                 "subfolder/LIBERA_INPUT_MANIFEST_201GDHWG4R0W8KXWY0KRDD6BZTT.json",
-                [{"filename": "relative/file.txt", "checksum": "fakesum"}],
+                ["relative/file.txt"],
                 ManifestType.OUTPUT,
                 None,
             ),
+            (None, [{"filename": "s3://abs/file.txt", "checksum": "fakesum"}], ManifestType.OUTPUT, None),
             (f"subfolder/{INPUT_NAME}", None, ManifestType.INPUT, ["config"]),
             (f"subfolder/{INPUT_NAME}", None, ManifestType.OUTPUT, None),  # INPUT name on an OUTPUT manifest
         ],
@@ -58,7 +57,7 @@ class TestManifestConstruction:
         [
             (
                 None,
-                [{"filename": "s3://abs/file.txt", "checksum": "fakesum"}],
+                ["s3://abs/file.txt", Path("/abs/file.nc"), S3Path("s3://abs/other.nc")],
                 ManifestType.OUTPUT,
                 {"data": "description"},
             ),
@@ -68,7 +67,8 @@ class TestManifestConstruction:
     )
     def test_validation_success(self, man_path, man_files, man_type, man_config):
         """Test manifest validation method for correct success cases"""
-        _ = Manifest(manifest_type=man_type, files=man_files, configuration=man_config, filename=man_path)
+        m = Manifest(manifest_type=man_type, files=man_files, configuration=man_config, filename=man_path)
+        assert m.files == [str(f) for f in man_files or []]
 
     def test_ulid_code_is_read_only(self):
         """ulid_code cannot be assigned; set filename instead"""
@@ -169,7 +169,7 @@ class TestFromFile:
         """Test factory method for creating a manifest object from a filepath"""
         m = Manifest.from_file(test_jpss_manifest)
         assert m.manifest_type == ManifestType.INPUT
-        assert isinstance(m.files, list)
+        assert m.files == json.loads(test_jpss_manifest.read_text())["files"]
         assert isinstance(m.configuration, dict)
         assert m.filename.path == test_jpss_manifest
         assert m.ulid_code == ULID.from_str(VALID_ULID)
@@ -223,11 +223,32 @@ class TestFromFile:
         with pytest.raises(ValidationError):
             Manifest.from_file(path)
 
-    def test_stored_null_checksum_is_invalid(self, tmp_path, test_txt):
-        """A null checksum on disk is a validation error, not recomputed on read"""
-        path = write_manifest_json(tmp_path / INPUT_NAME, files=[{"filename": str(test_txt), "checksum": None}])
-        with pytest.raises(ValidationError):
+    def test_file_record_is_invalid(self, tmp_path, test_txt):
+        """A file listed as a record rather than a path string is a validation error"""
+        path = write_manifest_json(tmp_path / INPUT_NAME, files=[{"filename": str(test_txt), "checksum": "fakesum"}])
+        with pytest.raises(ValidationError, match="lists each file as an absolute local or S3 path string"):
             Manifest.from_file(path)
+
+    def test_missing_files_are_read(self, tmp_path):
+        """Files are not checked for existence when a manifest is read"""
+        missing = str(tmp_path / "missing.nc")
+        path = write_manifest_json(tmp_path / INPUT_NAME, files=[missing])
+        assert Manifest.from_file(path).files == [missing]
+
+    def test_repeated_file_is_invalid(self, tmp_path):
+        """A manifest file listing the same path twice is a validation error"""
+        path = write_manifest_json(tmp_path / INPUT_NAME, files=["s3://bucket/a.nc", "s3://bucket/a.nc"])
+        with pytest.raises(ValidationError, match="already listed in the manifest"):
+            Manifest.from_file(path)
+
+    def test_identical_files_are_all_read(self, tmp_path):
+        """Files with identical content and different names are all read, in order"""
+        identical = [tmp_path / "a.nc", tmp_path / "b.nc"]
+        for path in identical:
+            path.write_bytes(b"identical")
+        path = write_manifest_json(tmp_path / INPUT_NAME, files=[str(p) for p in identical])
+        m = Manifest.from_file(path)
+        assert m.files == [str(p) for p in identical]
 
     def test_round_trip(self, tmp_path, test_txt):
         """A written manifest reads back with the same contents and ULID, and reading leaves the file unchanged"""
@@ -236,6 +257,7 @@ class TestFromFile:
         before = path.read_bytes()
         read = Manifest.from_file(path)
         assert path.read_bytes() == before
+        assert json.loads(before)["files"] == [str(test_txt)]
         assert read.files == m.files
         assert read.configuration == m.configuration
         assert read.ulid_code == m.ulid_code
@@ -250,8 +272,7 @@ class TestFiles:
             manifest_type=ManifestType.INPUT,
             files=[test_txt, test_jpss1_cr_1],
         )
-        m.validate_checksums()
-        assert len(m.files) == 2
+        assert m.files == [str(test_txt), str(test_jpss1_cr_1)]
 
     def test_add_relative_path_file_error(self):
         """Files must be recorded with absolute paths"""
@@ -262,23 +283,20 @@ class TestFiles:
             m.add_files(Path("relative/a_file.txt"))
 
     def test_add_files_local(self, test_jpss_manifest, test_txt, test_jpss1_cr_1):
-        """Test adding files to a manifest with checksum and local paths"""
+        """Test adding files to a manifest with local paths"""
         m = Manifest(
             manifest_type=ManifestType.INPUT,
         )
         initial_list_len = len(m.files)
         m.add_files(test_jpss_manifest)
-        m.validate_checksums()
         assert len(m.files) == initial_list_len + 1
 
         more_files = (test_txt, test_jpss1_cr_1)
         m.add_files(*more_files)
-        m.validate_checksums()
-        assert len(m.files) == initial_list_len + 3
+        assert m.files == [str(test_jpss_manifest), str(test_txt), str(test_jpss1_cr_1)]
 
     def test_add_files_s3(self, test_jpss_manifest, test_txt, test_jpss1_cr_1, create_mock_bucket, write_file_to_s3):
-        """Test adding files to a manifest with checksum with S3 paths.
-        Ensures functionality for single and multiple file additions."""
+        """S3 files are added singly and several at a time without being downloaded"""
         bucket = create_mock_bucket()
         manifest_path = f"s3://{bucket.name}/test_file1.json"
         text_paths = (f"s3://{bucket.name}/test_file2.txt", f"s3://{bucket.name}/test_construction_record.PDS")
@@ -289,28 +307,76 @@ class TestFiles:
         m = Manifest(
             manifest_type=ManifestType.INPUT,
         )
-        initial_list_len = len(m.files)
-        m.add_files(manifest_path)
-        m.validate_checksums()
-        assert len(m.files) == initial_list_len + 1
+        with patch.object(
+            S3Path(manifest_path).client, "_download_file", side_effect=AssertionError("object was downloaded")
+        ):
+            m.add_files(manifest_path)
+            assert m.files == [manifest_path]
 
-        m.add_files(*text_paths)
-        m.validate_checksums()
-        assert len(m.files) == initial_list_len + 3
+            m.add_files(*text_paths)
+        assert m.files == [manifest_path, *text_paths]
 
-    def test_add_duplicate_file(self, caplog, test_jpss_manifest):
-        """Test adding a duplicate file to a manifest"""
-        m = Manifest(
-            manifest_type=ManifestType.INPUT,
+    def test_add_listed_file_raises(self, test_jpss_manifest, test_txt):
+        """Adding a file that is already listed raises and leaves the file list unchanged"""
+        m = Manifest(manifest_type=ManifestType.INPUT, files=[test_jpss_manifest])
+        with pytest.raises(ValueError, match="already listed in the manifest"):
+            m.add_files(test_txt, test_jpss_manifest)
+        assert m.files == [str(test_jpss_manifest)]
+
+    def test_add_same_file_twice_in_one_call_raises(self, test_txt):
+        """A file given twice in one call raises and nothing is added"""
+        m = Manifest(manifest_type=ManifestType.INPUT)
+        with pytest.raises(ValueError, match="already listed in the manifest"):
+            m.add_files(test_txt, test_txt)
+        assert m.files == []
+
+    def test_add_listed_s3_file_sends_no_existence_request(self):
+        """A repeated path raises before any file check, so S3 is not queried"""
+        listed = "s3://some-bucket/listed.nc"
+        m = Manifest(manifest_type=ManifestType.INPUT, files=[listed])
+        with patch.object(S3Path(listed).client, "_s3_file_query", side_effect=AssertionError("existence was checked")):
+            with pytest.raises(ValueError, match="already listed in the manifest"):
+                m.add_files(listed)
+
+    def test_add_mixed_absolute_and_relative_raises(self, tmp_path, test_txt):
+        """A batch with an absolute path and a relative path raises for the relative one and adds neither.
+
+        Every path is checked before any file's existence, so the relative path is reported even when a missing
+        file precedes it.
+        """
+        m = Manifest(manifest_type=ManifestType.INPUT)
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            m.add_files(test_txt, Path("relative/a_file.txt"))
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            m.add_files(tmp_path / "missing.nc", Path("relative/a_file.txt"))
+        assert m.files == []
+
+    def test_constructor_with_repeated_file_raises(self, test_txt):
+        """A path listed twice in the constructor is a validation error"""
+        with pytest.raises(ValidationError, match="already listed in the manifest"):
+            Manifest(manifest_type=ManifestType.INPUT, files=[test_txt, test_txt])
+
+    def test_add_identical_files_to_output_manifest(self, tmp_path):
+        """An algorithm's two outputs with identical content and different names are both listed and written"""
+        identical = [tmp_path / "a.bsp", tmp_path / "b.bsp"]
+        for path in identical:
+            path.write_bytes(b"identical")
+        m = Manifest.output_manifest_from_input_manifest(
+            Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME)
         )
-        m.add_files(test_jpss_manifest)
-        initial_length = len(m.files)
+        m.add_files(*identical)
+        assert m.files == [str(p) for p in identical]
 
-        # Add the same file
-        with caplog.at_level("WARNING"):
-            m.add_files(test_jpss_manifest)
-        m.validate_checksums()
-        assert len(m.files) == initial_length
+        written = m.write(tmp_path)
+        assert json.loads(written.read_text())["files"] == [str(p) for p in identical]
+
+    def test_constructor_with_identical_files(self, tmp_path):
+        """Files with identical content and different names passed to the constructor are all listed"""
+        identical = [tmp_path / "a.nc", tmp_path / "b.nc"]
+        for path in identical:
+            path.write_bytes(b"identical")
+        m = Manifest(manifest_type=ManifestType.INPUT, files=identical)
+        assert m.files == [str(p) for p in identical]
 
     @pytest.mark.parametrize("on_s3", [False, True])
     def test_add_missing_file_raises(self, tmp_path, test_txt, create_mock_bucket, on_s3):
@@ -328,69 +394,31 @@ class TestFiles:
             m.add_files(present, missing)
         assert m.files == before
 
-    @pytest.mark.parametrize("as_dict", [True, False])
-    def test_constructor_with_missing_file(self, tmp_path, as_dict):
-        """A missing file passed to the constructor, as a path or as a record without a checksum, raises"""
-        missing = tmp_path / "missing.nc"
-        with pytest.raises(FileNotFoundError, match=f"File {missing} cannot be found"):
-            Manifest(manifest_type=ManifestType.INPUT, files=[{"filename": str(missing)} if as_dict else missing])
+    @pytest.mark.parametrize("location", ["local", "s3_prefix", "s3_bucket"])
+    def test_add_directory_raises(self, tmp_path, test_txt, create_mock_bucket, write_file_to_s3, location):
+        """Adding a directory, S3 prefix or S3 bucket root raises IsADirectoryError and leaves the files unchanged"""
+        if location == "local":
+            directory = str(tmp_path)
+        else:
+            bucket = create_mock_bucket().name
+            write_file_to_s3(test_txt, f"s3://{bucket}/prefix/a.txt")
+            directory = f"s3://{bucket}/prefix" if location == "s3_prefix" else f"s3://{bucket}"
+        m = Manifest(manifest_type=ManifestType.INPUT, files=[test_txt])
+        before = list(m.files)
+        with pytest.raises(IsADirectoryError, match="not a file"):
+            m.add_files(directory)
+        assert m.files == before
+        # A valid file passed in the same call is not added either
+        present = tmp_path / "present.nc"
+        present.write_text("present")
+        with pytest.raises(IsADirectoryError):
+            m.add_files(present, directory)
+        assert m.files == before
 
-
-class TestCalculateChecksum:
-    """calculate_checksum"""
-
-    def test_gzip_file_covers_compressed_bytes(self, test_txt_gz):
-        """A checksum must cover the bytes on disk, not the decompressed contents.
-
-        smart_open transparently decompresses *.gz by default, which would produce a checksum of
-        content that exists nowhere on disk and cannot be compared against the file a data provider
-        delivered. calculate_checksum therefore has to opt out of that decompression.
-        """
-        with test_txt_gz.open("rb") as fh:
-            compressed_checksum = md5(fh.read(), usedforsecurity=False).hexdigest()
-        with smart_open(test_txt_gz) as fh:
-            decompressed_checksum = md5(fh.read(), usedforsecurity=False).hexdigest()
-        # Guard against the two hashes coinciding, which would make this test prove nothing
-        assert compressed_checksum != decompressed_checksum
-
-        assert calculate_checksum(test_txt_gz) == compressed_checksum
-
-    def test_reads_in_blocks(self, tmp_path, monkeypatch):
-        """A file spanning several blocks hashes to the same MD5 as one read of the whole file"""
-        monkeypatch.setattr(manifest_module, "_CHECKSUM_BLOCK_BYTES", 1000)
-        payload = bytes(range(256)) * 50  # 12,800 bytes: twelve full blocks and a partial one
-        path = tmp_path / "payload.bin"
-        path.write_bytes(payload)
-
-        assert calculate_checksum(path) == md5(payload, usedforsecurity=False).hexdigest()
-
-
-class TestValidateChecksums:
-    """Validating the checksums of the files in a manifest"""
-
-    def test_validate_checksums(self, test_jpss_manifest, caplog):
-        """Test the method that validates checksums in a manifest file"""
-        # We test by referencing the manifest file itself, so we're only dependent on one test file
-        m = Manifest.from_file(test_jpss_manifest)
-        m.files[0].filename = test_jpss_manifest.absolute()
-        m.files[1].filename = test_jpss_manifest.absolute()
-        with caplog.at_level("ERROR"):
-            with pytest.raises(ManifestError, match="Files failed checksum validation"):  # Fake values don't validate
-                m.validate_checksums()
-            assert f"Checksum validation for {test_jpss_manifest.absolute()} failed." in caplog.records[0].message
-            assert len(caplog.records) == 2
-
-        with test_jpss_manifest.open("rb") as fh:
-            checksum = md5(fh.read()).hexdigest()
-        m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
-        m.validate_checksums()
-
-    def test_missing_file_fails(self, tmp_path):
-        """A file that cannot be found fails validation rather than raising FileNotFoundError"""
+    def test_constructor_with_missing_file(self, tmp_path):
+        """The constructor lists a path whose file does not exist; only add_files checks existence"""
         missing = str(tmp_path / "missing.nc")
-        m = Manifest(manifest_type=ManifestType.INPUT, files=[ManifestFileRecord(filename=missing, checksum="abc")])
-        with pytest.raises(ManifestError, match=missing):
-            m.validate_checksums()
+        assert Manifest(manifest_type=ManifestType.INPUT, files=[missing]).files == [missing]
 
 
 class TestWrite:
@@ -559,6 +587,13 @@ class TestOutputManifestFromInputManifest:
         assert output_manifest.configuration["key"] == "value"
         assert output_manifest.configuration["input_manifest_files"] == input_manifest.files
         assert "contains input_manifest_files" in caplog.text
+
+    def test_input_files_are_copied(self, test_txt, test_jpss_manifest):
+        """Adding files to the input manifest afterwards leaves the output manifest's record of them unchanged"""
+        input_manifest = Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME, files=[test_txt])
+        output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
+        input_manifest.add_files(test_jpss_manifest)
+        assert output_manifest.configuration["input_manifest_files"] == [str(test_txt)]
 
     def test_input_without_ulid(self):
         """An input manifest with no ULID cannot produce an output manifest"""

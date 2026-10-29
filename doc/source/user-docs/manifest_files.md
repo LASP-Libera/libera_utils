@@ -18,14 +18,15 @@ from libera_utils.io.manifest import Manifest
 
 # Manifest filenames are passed into your Docker image CLI as its only argument
 input_manifest = Manifest.from_file("s3://some-dropbox/LIBERA_INPUT_MANIFEST_01H2GK8J6XM93VKQP4CQFM1TAN.json")
-# Read from manifest file to do processing
-input_manifest.validate_checksums()
+# Each listed file is an absolute local or S3 path string
+for filename in input_manifest.files:
+    ...  # open and process the input
 
 # Create an output manifest named according to the input manifest (the ULID matches for traceability)
 output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
 
-# Add files. This will raise a credentials error because it tries to checksum the file but can't access S3
-# without credentials provided (your Docker images will have proper credentials attached).
+# Add files. This will raise a credentials error because it checks that the file exists and is a file but can't
+# access S3 without credentials provided (your Docker images will have proper credentials attached).
 output_manifest.add_files(
     "s3://some-dropbox/LIBERA_L2_CF-CAM_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc"
 )
@@ -50,5 +51,7 @@ path = input_manifest.write("/dropbox/")
 
 `write()` refuses to overwrite an existing file unless you pass `overwrite=True`.
 
-`add_files()` raises `FileNotFoundError` for a file that cannot be found. A manifest records each file's MD5
-checksum, taken over its bytes as stored, so a `.gz` file is not decompressed first.
+A manifest lists each file as an absolute local or S3 path string, for example
+`"files": ["s3://some-dropbox/LIBERA_L1B_RAD-4CH_...nc"]`. `add_files()` raises `FileNotFoundError` for a file that
+cannot be found, but does not read the file, so an S3 file is not downloaded. Files with identical content and
+different names are each listed; a path listed twice raises `ValueError`.
