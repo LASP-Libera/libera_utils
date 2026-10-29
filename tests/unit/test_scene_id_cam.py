@@ -13,20 +13,19 @@ def _collect_fmatch_cam_input_files(manifest):
 def _fake_manifest(filenames):
     """Build a minimal stand-in for a Manifest exposing only what the collector reads.
 
-    ``collect_input_files`` only accesses ``manifest.files`` and each record's ``filename``, so a
-    lightweight namespace keeps the test focused on the selection logic rather than Manifest construction.
+    ``collect_input_files`` only reads ``manifest.files``, a list of file paths, so a lightweight namespace
+    keeps the test focused on the selection logic rather than Manifest construction.
     """
-    files = [SimpleNamespace(filename=name) for name in filenames]
-    return SimpleNamespace(files=files)
+    return SimpleNamespace(files=list(filenames))
 
 
 class TestCollectFmatchCamInputFiles:
     """Test cases for collecting FMATCH-CAM input files."""
 
     # A real, parseable FMATCH-CAM Libera product filename (ProductID FMATCH-CAM).
-    FMATCH_CAM_FILE = "LIBERA_AUX_FMATCH-CAM_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
+    FMATCH_CAM_FILE = "LIBERA_AUX_FMATCH-CAM_V0-1-0_20280212T033945_20280212T052007_R20280212T060000000000.nc"
     # A different Libera product (parses, but is not FMATCH-CAM) that might share a manifest.
-    FMATCH_IMAGER_FILE = "LIBERA_AUX_FMATCH-IMAGER_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
+    FMATCH_IMAGER_FILE = "LIBERA_AUX_FMATCH-IMAGER_V0-1-0_20280212T033945_20280212T052007_R20280212T060000000000.nc"
     # A non-Libera filename (e.g. a raw CERES SSF input) that must never be selected here.
     CERES_SSF_FILE = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
