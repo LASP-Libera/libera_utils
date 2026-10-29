@@ -1306,6 +1306,16 @@ def test_ancillary_malformed_names_rejected(name, filename_class):
         filenaming.AbstractValidFilename.from_file_path(name)
 
 
+def test_ancillary_impossible_date_reassignment_leaves_path_unchanged():
+    """Assigning a name with an impossible date raises and keeps the original path"""
+    original = "NISE_AMSR2_20260610.HDFEOS"
+    fn = filenaming.NsidcNiseFilename(original)
+    with pytest.raises(ValueError, match="is not a valid NsidcNiseFilename"):
+        fn.path = "NISE_AMSR2_20260231.HDFEOS"
+    assert fn.path.name == original
+    assert fn.applicable_date == dt.date(2026, 6, 10)
+
+
 def test_ancillary_parse_only_class_cannot_build_a_name():
     """Classes for provider-named files parse names and refuse to build one."""
     with pytest.raises(NotImplementedError, match="cannot build one"):

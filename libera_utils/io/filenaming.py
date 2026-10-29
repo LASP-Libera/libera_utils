@@ -1082,6 +1082,8 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     def path(self, new_path: str | PathType):
         """Set the path, rejecting a name whose date or time fields do not form a real UTC instant.
 
+        The name is parsed before it is assigned, so a rejected path leaves the previous path in place.
+
         Parameters
         ----------
         new_path : str | PathType
@@ -1092,13 +1094,51 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
         ValueError
             If the name does not match the class's pattern, or a date or time field is not a real UTC instant.
         """
-        AbstractValidFilename.path.fset(self, new_path)
+        if isinstance(new_path, str):
+            _new_path: PathType = cast(PathType, AnyPath(new_path))
+        else:
+            _new_path = new_path
+        parts = self.regex_match(_new_path)
         try:
-            self._parse_filename_parts()
+            self._parse_match(parts)
         except ValueError as err:
             raise ValueError(
-                f"Proposed path {new_path} is not a valid {type(self).__name__}: {err}. Correct the field in the name."
+                f"Proposed path {_new_path} is not a valid {type(self).__name__}: {err}. Correct the field in the name."
             ) from err
+        self._path = _new_path
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+        """
+        return self._parse_match(self.regex_match(self.path))
+
+    @staticmethod
+    @abstractmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects, including ``data_product_id`` and
+            ``version``
+
+        Raises
+        ------
+        ValueError
+            If a field does not parse to a valid value.
+        """
+        raise NotImplementedError()
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
@@ -1168,8 +1208,14 @@ class CeresFilename(DailyAncillaryDataProductFilename):
 
     _regex = CERES_REGEX
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
@@ -1179,9 +1225,8 @@ class CeresFilename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the name does not match the pattern, or its hour field is not a real UTC hour.
+            If the hour field is not a real UTC hour.
         """
-        d = self.regex_match(self.path)
         utc_start = datetime.strptime(d["utc_start"], "%Y%m%d%H").replace(tzinfo=UTC)
         return SimpleNamespace(
             data_product_id=_CERES_PRODUCTS[d["product"]],
@@ -1206,8 +1251,14 @@ class ViirsL3Filename(DailyAncillaryDataProductFilename):
 
     _regex = VIIRS_L3_REGEX
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
@@ -1217,15 +1268,13 @@ class ViirsL3Filename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the name does not match the pattern, its extension is not its product's, or a date field is not a
-            real UTC instant.
+            If the extension is not its product's, or a date field is not a real UTC instant.
         """
-        d = self.regex_match(self.path)
         data_product_id, extension = _VIIRS_L3_PRODUCTS[d["short_name"]]
         if d["extension"] != extension:
             raise ValueError(
-                f"{self.path.name} has extension .{d['extension']}, but {d['short_name']} files are .{extension}. "
-                "Check that the file is the product its name says."
+                f"the extension is .{d['extension']}, but {d['short_name']} files are .{extension}. "
+                "Check that the file is the product its name says"
             )
         production = d["production_time"]
         return SimpleNamespace(
@@ -1259,8 +1308,14 @@ class ViirsSdrFilename(DailyAncillaryDataProductFilename):
 
     _regex = VIIRS_SDR_REGEX
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
@@ -1270,9 +1325,8 @@ class ViirsSdrFilename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the name does not match the pattern, or a date or time field is not a real UTC instant.
+            If a date or time field is not a real UTC instant.
         """
-        d = self.regex_match(self.path)
         start_date = datetime.strptime(d["start_date"], "%Y%m%d").replace(tzinfo=UTC)
         utc_start = start_date + _parse_sdr_time_of_day(d["start_time"])
         utc_end = start_date + _parse_sdr_time_of_day(d["end_time"])
@@ -1301,8 +1355,14 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
 
     _regex = NSIDC_NISE_REGEX
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
@@ -1312,9 +1372,8 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the name does not match the pattern, or its date is not a real date.
+            If the date is not a real date.
         """
-        d = self.regex_match(self.path)
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
@@ -1341,20 +1400,20 @@ class NsidcLandOceanMaskFilename(AncillaryDataProductFilename):
         """Archive prefix ``<ProductID>/<version>``"""
         return f"{self.data_product_id}/{self.filename_parts.version}"
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
         : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
-
-        Raises
-        ------
-        ValueError
-            If the name does not match the pattern.
         """
-        d = self.regex_match(self.path)
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_land_ocean_mask,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys the mask on
@@ -1456,8 +1515,14 @@ class Era5Filename(DailyAncillaryDataProductFilename):
             revision=revision.strftime(REVISION_TS_FORMAT),
         )
 
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
 
         Returns
         -------
@@ -1467,14 +1532,12 @@ class Era5Filename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the name does not match the pattern, a time field is not a real UTC time, or ``utc_end`` is before
-            ``utc_start``.
+            If a time field is not a real UTC time, or ``utc_end`` is before ``utc_start``.
         """
-        parts = LiberaDataProductFilename._parse_match(self.regex_match(self.path))
+        parts = LiberaDataProductFilename._parse_match(d)
         if parts.utc_end < parts.utc_start:
             raise ValueError(
-                f"{self.path.name} has utc_end {parts.utc_end:%Y-%m-%dT%H:%M:%S} before utc_start "
-                f"{parts.utc_start:%Y-%m-%dT%H:%M:%S}. Correct the time range in the name."
+                f"utc_end {parts.utc_end:%Y-%m-%dT%H:%M:%S} is before utc_start {parts.utc_start:%Y-%m-%dT%H:%M:%S}"
             )
         parts.data_product_id = DataProductIdentifier(parts.product_name)
         parts.applicable_date = parts.utc_start.date()
