@@ -1,7 +1,7 @@
 """Unit tests for the FMATCH product definitions and their loaders.
 
 There is one SSF-style product definition per FMATCH operational mode. The
-radiometer-timescale FMATCH-IMAGER carries the RBSP CLDPIX/SSF cloud fields
+radiometer-timescale FMATCH-IMAGER carries the RBSP CLDPIX/FLASHFlux cloud fields
 alongside the full ERA5 single-level and pressure-level fields and the VIIRS
 imager fields. These tests confirm, for every shipped definition, that:
 - The product ID is registered as an auxiliary (AUX) DataProductIdentifier and
@@ -75,7 +75,7 @@ PRODUCTION_READER_KEYS = frozenset(
         "nise",
         "viirs_brdf",
         "viirs_cldprop_d3",
-        "ssf",
+        "flashflux",
         "cldpix",
         "viirs_aod",
     }
@@ -112,7 +112,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     ``spec_active_in_mode`` -- the ``required_mode`` rank rule (e.g. the ERA5
     single-level fields carry ``required_mode=IMAGER`` and so appear in the
     FMATCH-IMAGER-family products), or an exact ``only_modes`` pin (e.g. the extended
-    SSF cloud/aerosol/albedo fields appear in FMATCH-IMAGER only).
+    FLASHFlux cloud/aerosol/albedo fields appear in FMATCH-IMAGER only).
     """
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
@@ -152,7 +152,7 @@ class TestImagerContent:
     def test_imager_has_rbsp_variables(self, definitions):
         definition = definitions[OperationalMode.IMAGER]
         assert any(name.startswith("cldpix_") for name in definition.variables)
-        assert any(name.startswith("ssf_") for name in definition.variables)
+        assert any(name.startswith("flashflux_") for name in definition.variables)
 
     def test_imager_keeps_full_era5_field_set(self, definitions):
         definition = definitions[OperationalMode.IMAGER]
@@ -166,27 +166,27 @@ class TestImagerContent:
         assert "era5_pressure_temperature_500hPa" in definition.variables
         assert "era5_pressure_relative_humidity_1000hPa_standard_deviation" in definition.variables
 
-    def test_extended_ssf_fields_are_imager_only(self, definitions):
-        # The extended SSF cloud-layer / aerosol / albedo fields are pinned to
+    def test_extended_flashflux_fields_are_imager_only(self, definitions):
+        # The extended FLASHFlux cloud-layer / aerosol / albedo fields are pinned to
         # FMATCH-IMAGER via only_modes and must NOT leak into the other products that
-        # also activate the ssf reader (FLASH, IMAGER-CAMTIME). Spot-check one field
+        # also activate the flashflux reader (FLASH, IMAGER-CAMTIME). Spot-check one field
         # per secondary axis (layer, aerosol type, albedo band) plus a std companion.
         extended = (
-            "ssf_layer_coverage_upper",
-            "ssf_cloud_optical_depth_upper",
-            "ssf_cloud_top_pressure_lower_standard_deviation",
-            "ssf_match_aot",
-            "ssf_aerosol_type_percentage_type6",
-            "ssf_surface_albedo",
+            "flashflux_layer_coverage_upper",
+            "flashflux_cloud_optical_depth_upper",
+            "flashflux_cloud_top_pressure_lower_standard_deviation",
+            "flashflux_match_aot",
+            "flashflux_aerosol_type_percentage_type6",
+            "flashflux_surface_albedo",
         )
         imager = definitions[OperationalMode.IMAGER]
         for name in extended:
             assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
         for mode in (OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER_CAMTIME):
             leaked = [name for name in extended if name in definitions[mode].variables]
-            assert leaked == [], f"{mode.value} must not declare IMAGER-only ssf fields, found {leaked}"
-        # The base SSF fields, by contrast, still appear in FLASH and IMAGER-CAMTIME.
-        assert "ssf_cloud_optical_depth_lower" in definitions[OperationalMode.IMAGER_FLASH].variables
+            assert leaked == [], f"{mode.value} must not declare IMAGER-only flashflux fields, found {leaked}"
+        # The base FLASHFlux fields, by contrast, still appear in FLASH and IMAGER-CAMTIME.
+        assert "flashflux_cloud_optical_depth_lower" in definitions[OperationalMode.IMAGER_FLASH].variables
 
 
 class TestFmatchDefinitions:
@@ -283,11 +283,11 @@ class TestDerivedProductVariables:
         assert "wind_v10_standard_deviation" in names
 
     def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
-        # SSF's encoded scene-type codes have n_categories=None but are
+        # FLASHFlux's encoded scene-type codes have n_categories=None but are
         # weighted_mode, so a within-footprint standard deviation is meaningless
         # and must NOT be generated. This guards the mean-only rule.
-        ssf = ReaderRegistry.get("ssf")
-        names = {spec.name for spec in ssf.product_variable_specs()}
+        flashflux = ReaderRegistry.get("flashflux")
+        names = {spec.name for spec in flashflux.product_variable_specs()}
         for encoded in ("cloud_classification", "shortwave_adm_type", "longwave_adm_type"):
             assert encoded in names
             assert f"{encoded}_standard_deviation" not in names

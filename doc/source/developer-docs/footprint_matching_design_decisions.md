@@ -263,7 +263,7 @@ For example, moving the VIIRS readers from NOAA-20 to NOAA-21:
 
 1. In each affected reader under `libera_utils/footprint_matching/readers/`, set
    `INSTRUMENT` (for example `INSTRUMENT = "NOAA21"` in `aod.py`, `brdf.py`, `viirs.py`,
-   `cldpix.py` and `ssf.py`), and update the module docstring's product and file-naming
+   `cldpix.py` and `flashflux.py`), and update the module docstring's product and file-naming
    lines.
 2. In every `libera_utils/data/product_definitions/fmatch_*.yml`, change the instrument
    in parentheses at the end of each affected `long_name`, for example `(NOAA20)` to
@@ -281,7 +281,7 @@ unaffected unless step 3 changes a variable.
 ### Add a variable to an existing reader
 
 1. Add the field to the reader's table: `_CLDPIX_FIELDS` in `cldpix.py`,
-   `_SSF_BASE_FIELDS` or `_IMAGER_SSF_SOURCES` in `ssf.py`, `_D3_GROUP_MAP` and
+   `_FLASHFLUX_BASE_FIELDS` or `_IMAGER_FLASHFLUX_SOURCES` in `flashflux.py`, `_D3_GROUP_MAP` and
    `VARIABLES` in `viirs.py`, or the reader's `VARIABLES` elsewhere. Give it its
    aggregation, `required_mode` (or `only_modes`), its valid range with the document it
    comes from, and for a mode-aggregated code `n_categories` and an `int16` dtype.

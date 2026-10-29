@@ -272,7 +272,7 @@ CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
 )
 
 # FMATCH-IMAGER (radiometer timescale): the RBSP Climate Quality product -- the highest latency rank of the
-# radiometer-timed modes and thus the largest active reader set (RBSP CLDPIX/SSF + ERA5 single/pressure + VIIRS).
+# radiometer-timed modes and thus the largest active reader set (RBSP CLDPIX/FLASHFlux + ERA5 single/pressure + VIIRS).
 # It declares no cloud_fraction_camera (cloud info comes from the imager readers), so it takes no cloud-fraction input.
 IMAGER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER,
@@ -478,7 +478,7 @@ def resolve_ancillary_inputs(
     """Map each reader active for ``mode`` to its staged granule files.
 
     Footprint matching aggregates external, non-Libera datasets (ERA5 reanalysis, IGBP
-    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/SSF)
+    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/FLASHFlux)
     onto each radiometer footprint. Those granules are *not* Libera data products: they
     have third-party filenames, so they cannot be selected out of a manifest the way
     :func:`select_manifest_files_by_product_id` selects L1B inputs.
@@ -494,14 +494,14 @@ def resolve_ancillary_inputs(
             viirs_brdf/         VIIRS BRDF granules
             viirs_cldprop_d3/   VIIRS daily L3 cloud-property granules
             viirs_aod/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
-            cldpix/             CERES CLDPIX granules   (IMAGER-family modes)
-            ssf/                CERES SSF granules      (IMAGER-family modes)
+            cldpix/             CERES CLDPIX granules    (IMAGER-family modes)
+            flashflux/          CERES FLASHFlux granules (IMAGER-family modes)
 
     The active reader set comes from
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
     so this automatically tracks the mode's latency rank: FMATCH-CAM looks for five
     readers, while FMATCH-IMAGER additionally looks for ``era5_pressure``,
-    ``viirs_aod``, and the RBSP ``cldpix``/``ssf`` inputs. Using the registry keys as
+    ``viirs_aod``, and the RBSP ``cldpix``/``flashflux`` inputs. Using the registry keys as
     directory names means the set of directories required for a run is *derived* from
     the registry rather than hard-coded here.
 
@@ -781,7 +781,7 @@ def create_and_write_data_product(
     Notes
     -----
     Only the L1B-derived columns are written with real values. The external-reader
-    aggregates (``igbp_surface_type``, ``era5_*``, ``ssf_*``, ``cldpix_*``, ...) and the
+    aggregates (``igbp_surface_type``, ``era5_*``, ``flashflux_*``, ``cldpix_*``, ...) and the
     camera cloud-fraction values are **not** supplied here - the aggregation engine that
     computes them is still ``TODO[LIBSDC-785]`` - so ``write_fmatch_product`` writes them as
     conformant fill values. A product written by this
