@@ -15,17 +15,12 @@ loads it, and the run stops: a product with a source silently missing would be w
 and a crash gets noticed.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from libera_utils.footprint_matching.readers.base import AncillaryReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-
-if TYPE_CHECKING:
-    from libera_utils.footprint_matching.readers.base import AncillaryReader
-    from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 
 
 def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[Path]]) -> dict[str, AncillaryReader]:
