@@ -409,7 +409,7 @@ def aggregate_external_variables(
     sample is averaged, binned or interpolated before the weigher sees it. The active
     reader set - and therefore the keys of the returned dict - grows with the mode's
     latency (e.g. CAM has era5_single_level, igbp, nise, viirs_brdf, viirs_cldprop_d3; IMAGER
-    additionally has era5_pressure, viirs_aod, and the RBSP ssf and cldpix fields).
+    additionally has era5_pressure, viirs_aod, and the RBSP flashflux and cldpix fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<source_key>_<spec_name>`` (e.g.
@@ -418,7 +418,7 @@ def aggregate_external_variables(
     each variable's ``long_name`` rather than in the name. Per-spec gating uses
     :func:`~libera_utils.footprint_matching.types.spec_active_in_mode`: a spec's
     ``required_mode`` rank rule, or an exact ``only_modes`` pin (e.g. the extended
-    SSF cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
+    FLASHFlux cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
     Processing is done one footprint at a time, so only the current footprint's
     samples are held beyond what each reader holds of its source. With ``n_workers``
@@ -567,7 +567,7 @@ def _aggregate_footprints(
         entries: list[tuple[str, str]] = []
         for spec in reader_cls.product_variable_specs():
             # Per-spec mode gating: a reader may declare variables that only belong to
-            # higher-latency modes (e.g. the extended SSF cloud/aerosol/albedo fields
+            # higher-latency modes (e.g. the extended FLASHFlux cloud/aerosol/albedo fields
             # are FMATCH-IMAGER only), so skip specs not active in this mode.
             if not spec_active_in_mode(spec, mode):
                 continue
