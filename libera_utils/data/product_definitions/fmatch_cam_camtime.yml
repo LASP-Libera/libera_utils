@@ -120,32 +120,32 @@ variables:
   # ---------------------------------------------------------------------------
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
-  # --- source reader: era5_single_level (resolution 25.0 km) ---
-  era5_single_level_wind_u10:
+  # --- source reader: era5_surface (resolution 28.0 km) ---
+  era5_surface_wind_u10:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_single_level_wind_u10_standard_deviation:
+  era5_surface_wind_u10_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
-  era5_single_level_wind_v10:
+  era5_surface_wind_v10:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Northward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_single_level_wind_v10_standard_deviation:
+  era5_surface_wind_v10_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
-  # --- source reader: igbp (resolution 1.0 km) ---
+  # --- source reader: igbp (resolution 0.463 km) ---
   igbp_surface_type:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
