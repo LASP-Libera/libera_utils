@@ -157,9 +157,9 @@ class TimeMatch(enum.Enum):
         no samples.
     NEAREST_PASS
         The source is swath or point data with a time per sample (CERES SSF, CLDPIX).
-        Of the samples in the box, those within ``PASS_WINDOW`` of the smallest
-        ``|sample time - footprint time|`` are served: the nearest pass, whole, and no
-        other pass. A footprint whose nearest sample is farther than
+        Of the samples in the box, those within ``PASS_WINDOW`` of the observation time
+        of the sample nearest the footprint time are served: the nearest pass, whole,
+        and no other pass. A footprint whose nearest sample is farther than
         ``MAX_TIME_OFFSET`` gets no samples.
     """
 

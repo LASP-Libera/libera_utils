@@ -42,7 +42,8 @@ Time selection
 After the box query, the reader's :class:`~libera_utils.footprint_matching.types.TimeMatch`
 policy selects in time: nothing for a ``DAILY`` source, the nearest step for a
 ``NEAREST_STEP`` source, and the nearest pass (every sample within ``PASS_WINDOW`` of
-the smallest sample-to-footprint time offset) for a ``NEAREST_PASS`` source. Beyond
+the observation time of the sample nearest the footprint time) for a ``NEAREST_PASS``
+source. Beyond
 ``MAX_TIME_OFFSET`` the query returns no samples, which the orchestrator scores as zero
 coverage and flags.
 
@@ -274,8 +275,9 @@ class AncillaryReader(abc.ABC):
     TIME_MATCH : TimeMatch
         The time-selection policy (see the module docstring).
     PASS_WINDOW : np.timedelta64 or None
-        ``NEAREST_PASS`` only: samples within this window of the smallest time offset
-        are the nearest pass. Required for that policy; ``None`` otherwise.
+        ``NEAREST_PASS`` only: samples within this window of the observation time of the
+        sample nearest the footprint time are the nearest pass. Required for that policy;
+        ``None`` otherwise.
     MAX_TIME_OFFSET : np.timedelta64 or None
         ``NEAREST_STEP`` and ``NEAREST_PASS``: the largest sample-to-footprint time
         offset accepted; beyond it the query returns no samples. Required for those
@@ -581,18 +583,21 @@ class AncillaryReader(abc.ABC):
         """Boolean mask of the samples that belong to the pass nearest ``time``.
 
         The nearest pass is every sample, padding included, within ``PASS_WINDOW`` of
-        the smallest ``|sample time - footprint time|`` among the samples ``inside`` the
-        footprint's own (unpadded) box, so a pass that only clips the padding, where
-        the PSF weight is zero, cannot displace one that covers the footprint. When no
-        sample lies inside the box (a footprint smaller than one native cell), the
-        smallest offset is taken over every served sample. When that smallest offset
-        exceeds ``MAX_TIME_OFFSET`` no sample is kept.
+        the observation time of the sample nearest ``time`` among the samples ``inside``
+        the footprint's own (unpadded) box, so a pass that only clips the padding, where
+        the PSF weight is zero, cannot displace one that covers the footprint. The window
+        is centred on that sample's own time rather than on its offset, so two passes on
+        either side of the footprint time are never served together. When no sample lies
+        inside the box (a footprint smaller than one native cell), the nearest sample is
+        taken from every served sample; on a tie, the first in array order. When its
+        offset exceeds ``MAX_TIME_OFFSET`` no sample is kept.
         """
         offsets = np.abs(times - time)
-        nearest = offsets[inside].min() if inside.any() else offsets.min()
-        if nearest > self.MAX_TIME_OFFSET:
+        candidates = inside if inside.any() else np.ones(times.shape, dtype=bool)
+        nearest_time = times[candidates][np.argmin(offsets[candidates])]
+        if np.abs(nearest_time - time) > self.MAX_TIME_OFFSET:
             return np.zeros(times.shape, dtype=bool)
-        return np.abs(offsets - nearest) <= self.PASS_WINDOW
+        return np.abs(times - nearest_time) <= self.PASS_WINDOW
 
     def _box_samples(
         self, native: _Native, bbox: BoundingBox
@@ -819,8 +824,8 @@ class PassReader(AncillaryReader):
 
     TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
     # The window for a swath from a polar orbiter, such as the NOAA-20 CERES host. One pass
-    # crosses a footprint box in seconds, consecutive passes are about 100 min apart and the
-    # opposite pass about 12 h, so 15 min keeps one pass together and never admits a second.
+    # crosses a footprint box in seconds; 15 min holds one pass's samples together; passes
+    # about 100 min apart are separated by the nearest-pass selection.
     # Libera and the swath's host are different spacecraft, so the nearest pass can be tens
     # of minutes away; 3 h is the largest offset accepted before the footprint is scored as
     # having no match. A reader for another orbit overrides both.

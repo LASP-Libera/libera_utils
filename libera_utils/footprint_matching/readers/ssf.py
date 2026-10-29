@@ -26,7 +26,8 @@ at its own position and observation time as a
 PSF weigher is the first place a value is weighted. A day of SSF sees a ground
 location on more than one pass, so the reader serves the pass nearest the Libera
 footprint time (``TIME_MATCH = NEAREST_PASS``): every footprint within
-``PASS_WINDOW`` of the smallest time offset, and none beyond ``MAX_TIME_OFFSET``.
+``PASS_WINDOW`` of the observation time of the footprint nearest in time, and none
+beyond ``MAX_TIME_OFFSET``.
 Granules are hourly; only those whose ``time_coverage_start``/``time_coverage_end``
 lie within ``MAX_TIME_OFFSET`` of the current footprint time are held in memory.
 

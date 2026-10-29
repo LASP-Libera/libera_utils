@@ -648,6 +648,27 @@ class TestNearestPass:
         samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
         assert samples.n_samples == 2
 
+    def test_footprint_between_two_passes_gets_the_nearer(self):
+        """A ``NEAREST_PASS`` reader serves only the nearer pass to a footprint midway between two passes.
+
+        The two passes' offsets from the footprint time differ by less than ``PASS_WINDOW``; a window measured on the
+        offsets would admit both and average two passes, about 100 min apart, into one footprint.
+
+        Builds three in-box samples 50 minutes before the query and three 52 minutes after it, at the same spot;
+        asserts only the three samples from 50 minutes before are served.
+        """
+        n = 3
+        times = np.concatenate([np.full(n, _T0 - np.timedelta64(50, "m")), np.full(n, _T0 + np.timedelta64(52, "m"))])
+        points = PointSamples(
+            lats=np.full(2 * n, 10.5),
+            lons=np.full(2 * n, 20.5),
+            values=np.concatenate([np.full(n, 1.0), np.full(n, 2.0)])[np.newaxis, :].astype(np.float32),
+            times=times.astype("datetime64[ns]"),
+        )
+        samples = _HeldPassReader(points).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == n
+        assert set(samples.values[0].tolist()) == {1.0}
+
     def test_nat_footprint_time_raises(self):
         """A reader that selects in time raises ``ValueError`` when the footprint time is NaT.
 
