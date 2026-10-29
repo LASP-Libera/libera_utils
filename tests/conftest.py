@@ -12,6 +12,7 @@ pytest_plugins = [
     "tests.plugins.manifest_fixtures",
     "tests.plugins.integration_test_fixtures",
     "tests.plugins.l1a_fixtures",
+    "tests.plugins.e2e_fixtures",
 ]
 
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an `e2e` pytest mark, deselected by default (`addopts = "-m 'not e2e'"`), and `.github/workflows/e2e-tests.yml`, which runs the E2E tests daily on `main` and on demand on any branch against golden input in S3 and uploads each run's products, logs and run report. The first E2E test processes the DITL2 golden day 2026-07-12 for every L1A APID it holds, checks each daily product's day window, and checks the coverage of its data-time axis against the APID's `day_coverage` policy. The run report records each APID's `libera_utils` warnings and packet-order summary.
+
 ## [5.22.0] - 2026-11-02
 
 ### Added
