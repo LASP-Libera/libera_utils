@@ -43,8 +43,6 @@ sample lies inside it.
 
 References
 ----------
-* Design doc ``instructions/documentation/Footprint Matching and Scene ID PDF``,
-  sections 2.4.2.5-2.4.2.7 and 2.8.1.1.
 * CERES ATBD v2.2 section 4.4:
   https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
 """
