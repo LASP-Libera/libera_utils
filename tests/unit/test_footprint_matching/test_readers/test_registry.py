@@ -148,7 +148,7 @@ _DECLARED = [
         None,
         None,
         (
-            _mean("aod_550", _IMAGER_PAIR),
+            _mean("optical_depth_550", _IMAGER_PAIR),
             _code("aerosol_type", 8, _IMAGER_PAIR),
         ),
         _ranked("aerosol_type", 8, _IMAGER_PAIR),
@@ -162,9 +162,7 @@ _DECLARED = [
         None,
         None,
         tuple(
-            _mean(f"brdf_{band}_{param}", _ALL)
-            for band in ("shortwave", "vis", "nir")
-            for param in ("fiso", "fvol", "fgeo")
+            _mean(f"{band}_{param}", _ALL) for band in ("shortwave", "vis", "nir") for param in ("fiso", "fvol", "fgeo")
         ),
         (),
     ),
