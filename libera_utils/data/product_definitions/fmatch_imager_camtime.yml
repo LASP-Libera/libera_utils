@@ -63,7 +63,9 @@ coordinates:
 
 variables:
   # ---------------------------------------------------------------------------
-  # (a) Geolocation inputs (from L1B Daily): lat, lon, alt, sza, vza, raa.
+  # Geolocation and viewing angles: passed through unchanged from L1B Daily
+  #     Camera at each pseudo-footprint's center pixel (the nearest valid pixel
+  #     when the center_pixel_substituted q_flags bit is set), not averaged.
   # ---------------------------------------------------------------------------
   latitude:
     dtype: float32
@@ -106,9 +108,8 @@ variables:
       units: degrees
 
   # ---------------------------------------------------------------------------
-  # (b) Derived viewing geometry (computed from the angles above; CERES/SSF
-  #     heritage). Math lives in
-  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
+  # Derived viewing geometry: computed here from the angles above (CERES/SSF
+  #     heritage).
   # ---------------------------------------------------------------------------
   sunglint_angle:
     dtype: float32
@@ -118,7 +119,10 @@ variables:
       units: degrees
 
   # ---------------------------------------------------------------------------
-  # (c) PSF-aggregated external variables (one value per footprint).
+  # PSF-aggregated external variables: aggregated here from external sources
+  #     with the PSF weights, one value per footprint.
+  #     Variable names are <source_key>_<spec_name>; the source instrument is
+  #     recorded in each variable's long_name as "... (INSTRUMENT)".
   # ---------------------------------------------------------------------------
   # --- source reader: cldpix (resolution 1.0 km) ---
   cldpix_cloud_optical_depth:
@@ -131,7 +135,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud optical depth (RBSP CLDPIX) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud optical depth (RBSP CLDPIX), PSF-weighted over positive within-footprint values (NOAA20)
       units: "1"
   cldpix_cloud_water_path:
     dtype: float32
@@ -143,7 +147,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud water path (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud water path, PSF-weighted over within-footprint values (NOAA20)
       units: "g/m^2"
   cldpix_cloud_effective_temperature:
     dtype: float32
@@ -155,7 +159,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud effective temperature (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud effective temperature, PSF-weighted over within-footprint values (NOAA20)
       units: "K"
   cldpix_cloud_effective_height:
     dtype: float32
@@ -167,7 +171,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud effective height (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud effective height, PSF-weighted over within-footprint values (NOAA20)
       units: "km"
   cldpix_cloud_effective_pressure:
     dtype: float32
@@ -179,7 +183,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud effective pressure (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud effective pressure, PSF-weighted over within-footprint values (NOAA20)
       units: "hPa"
   cldpix_cloud_top_height:
     dtype: float32
@@ -191,7 +195,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud top height (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud top height, PSF-weighted over within-footprint values (NOAA20)
       units: "km"
   cldpix_cloud_particle_radius:
     dtype: float32
@@ -203,7 +207,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of effective cloud particle radius blended (CLDPIX Cld_Radius), PSF-weighted over within-footprint values (NOAA20)
       units: "um"
   cldpix_cloud_particle_phase:
     dtype: int16
@@ -226,7 +230,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of eastward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
       units: "m/s"
   era5_surface_wind_v10:
     dtype: float32
@@ -238,7 +242,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of northward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
       units: "m/s"
   era5_surface_temperature_2m:
     dtype: float32
@@ -250,7 +254,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Air temperature at 2 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of air temperature at 2 m, PSF-weighted over within-footprint values (ECMWF)
       units: "K"
   era5_surface_dew_point_temperature_2m:
     dtype: float32
@@ -262,7 +266,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Dewpoint temperature at 2 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of dewpoint temperature at 2 m, PSF-weighted over within-footprint values (ECMWF)
       units: "K"
   era5_surface_surface_pressure:
     dtype: float32
@@ -274,7 +278,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Surface pressure (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of surface pressure, PSF-weighted over within-footprint values (ECMWF)
       units: "Pa"
   era5_surface_surface_geopotential:
     dtype: float32
@@ -286,7 +290,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Surface geopotential (orography x standard gravity) (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of surface geopotential (orography x standard gravity), PSF-weighted over within-footprint values (ECMWF)
       units: "m^2/s^2"
   era5_surface_forecast_albedo:
     dtype: float32
@@ -298,7 +302,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Forecast albedo (broadband surface albedo) (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of forecast albedo (broadband surface albedo), PSF-weighted over within-footprint values (ECMWF)
       units: "1"
   # --- source reader: flashflux (resolution 20.0 km) ---
   flashflux_aerosol_optical_depth:
@@ -311,7 +315,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Aerosol optical depth (CERES FLASHFlux) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of aerosol optical depth (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   flashflux_clear_coverage:
     dtype: float32
@@ -323,7 +327,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Clear-sky areal coverage (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of clear-sky areal coverage, PSF-weighted over within-footprint values (NOAA20)
       units: "percent"
   flashflux_cloud_optical_depth_lower:
     dtype: float32
@@ -335,7 +339,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud optical depth (CERES FLASHFlux imager lower layer) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud optical depth (CERES FLASHFlux imager lower layer), PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   flashflux_cloud_water_particle_radius_lower:
     dtype: float32
@@ -347,7 +351,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (FLASHFlux lower layer) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of effective cloud water particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
       units: "um"
   flashflux_cloud_ice_particle_radius_lower:
     dtype: float32
@@ -359,7 +363,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer) (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
       units: "um"
   flashflux_cloud_classification:
     dtype: int16
@@ -408,7 +412,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Sea ice concentration (fraction) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of sea ice concentration (fraction), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_snow_free_land:
     dtype: float32
@@ -420,7 +424,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by snow-free land (NISE code 0) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by snow-free land (NISE code 0), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_permanent_ice:
     dtype: float32
@@ -432,7 +436,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by permanent ice (NISE code 101), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_snow_on_land:
     dtype: float32
@@ -444,7 +448,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by snow on land (NISE codes 103-104) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by snow on land (NISE codes 103-104), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_open_ocean:
     dtype: float32
@@ -456,7 +460,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by ocean (NISE code 255) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   # --- source reader: viirs_aod (resolution 111.0 km) ---
   viirs_aod_optical_depth_550:
@@ -469,7 +473,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Aerosol optical depth at 550 nm (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of aerosol optical depth at 550 nm, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_aod_aerosol_type:
     dtype: int16
@@ -492,6 +496,12 @@ variables:
     attributes:
       long_name: Third most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
+  # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
+  # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
+  # isotropic (fiso), volumetric (fvol) and geometric (fgeo), per broadband
+  # (shortwave/vis/nir), named viirs_brdf_<band>_<param>. Source: VIIRS BRDF/Albedo
+  # (VNP43) User Guide.
   viirs_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -502,7 +512,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_shortwave_fvol:
     dtype: float32
@@ -514,7 +524,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_shortwave_fgeo:
     dtype: float32
@@ -526,7 +536,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fiso:
     dtype: float32
@@ -538,7 +548,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fvol:
     dtype: float32
@@ -550,7 +560,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fgeo:
     dtype: float32
@@ -562,7 +572,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fiso:
     dtype: float32
@@ -574,7 +584,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fvol:
     dtype: float32
@@ -586,7 +596,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fgeo:
     dtype: float32
@@ -598,7 +608,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
   viirs_cldprop_d3_cloud_optical_thickness:
@@ -611,7 +621,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud optical thickness (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud optical thickness, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_cldprop_d3_cloud_top_pressure:
     dtype: float32
@@ -623,11 +633,11 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud top pressure (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud top pressure, PSF-weighted over within-footprint values (NOAA20)
       units: "hPa"
 
   # ---------------------------------------------------------------------------
-  # (d) Coverage / QA
+  # Coverage / QA: computed here from the PSF bounding box and each source's coverage.
   # ---------------------------------------------------------------------------
   psf_bbox_lat_min:
     dtype: float32
@@ -682,7 +692,7 @@ variables:
       flag_meanings: "partial_coverage center_pixel_substituted insufficient_coverage limb_truncated off_limb"
 
   # ---------------------------------------------------------------------------
-  # (e) Camera pixel-block provenance.
+  # Camera pixel-block provenance: computed here by camera segmentation.
   #     Each pseudo-footprint is a contiguous block of L1B camera pixels
   #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
   #     on each pixel axis is carried by the camera_pixel_{x,y}_{min,max}

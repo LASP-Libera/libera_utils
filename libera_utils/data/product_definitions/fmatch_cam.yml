@@ -20,7 +20,8 @@ coordinates:
 
 variables:
   # ---------------------------------------------------------------------------
-  # (a) Geolocation inputs (from L1B Daily)
+  # Geolocation and viewing angles: passed through unchanged from L1B Daily at
+  #     the footprint boresight.
   # ---------------------------------------------------------------------------
   latitude:
     dtype: float32
@@ -62,12 +63,10 @@ variables:
       units: degrees
 
   # ---------------------------------------------------------------------------
-  # (b) Derived viewing geometry. These are COMPUTED from the angles above to
+  # Derived viewing geometry: computed here from the angles above to
   #     characterize the Sun-surface-sensor scattering geometry (CERES/SSF
   #     heritage). They are stored on the product so downstream consumers
   #     (Scene ID, ADM binning) do not have to recompute them.
-  #     The actual math lives in
-  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
   # ---------------------------------------------------------------------------
   sunglint_angle:
     dtype: float32
@@ -79,7 +78,8 @@ variables:
       units: degrees
 
   # ---------------------------------------------------------------------------
-  # (c) PSF-aggregated external variables (one value per footprint).
+  # PSF-aggregated external variables: aggregated here from external sources
+  #     with the PSF weights, one value per footprint.
   #     Variable names are <source_key>_<spec_name>; the source instrument is
   #     recorded in each variable's long_name as "... (INSTRUMENT)".
   # ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of eastward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
       units: m/s
   era5_surface_wind_v10:
     dtype: float32
@@ -106,7 +106,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      long_name: Standard deviation of northward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
       units: m/s
   # --- source reader: igbp (resolution 0.463 km) ---
   igbp_surface_type:
@@ -140,7 +140,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Sea ice concentration (fraction) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of sea ice concentration (fraction), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_snow_free_land:
     dtype: float32
@@ -152,7 +152,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Fraction of footprint covered by snow-free land (NISE code 0) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by snow-free land (NISE code 0), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_permanent_ice:
     dtype: float32
@@ -164,7 +164,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by permanent ice (NISE code 101), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_snow_on_land:
     dtype: float32
@@ -176,7 +176,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Fraction of footprint covered by snow on land (NISE codes 103-104) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by snow on land (NISE codes 103-104), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   nise_open_ocean:
     dtype: float32
@@ -188,12 +188,15 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Fraction of footprint covered by ocean (NISE code 255) (within-footprint standard deviation) (AMSR2)
+      long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
       units: "1"
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
-  # Ross-Thick/Li-Sparse model decomposes surface reflectance into isotropic
-  # (fiso), volumetric (fvol), and geometric (fgeo) kernel weights, per spectral
-  # band (shortwave/vis/nir).
+  # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
+  # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
+  # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
+  # isotropic (fiso), volumetric (fvol) and geometric (fgeo), per broadband
+  # (shortwave/vis/nir), named viirs_brdf_<band>_<param>. Source: VIIRS BRDF/Albedo
+  # (VNP43) User Guide.
   viirs_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -204,7 +207,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_shortwave_fvol:
     dtype: float32
@@ -216,7 +219,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_shortwave_fgeo:
     dtype: float32
@@ -228,7 +231,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of shortwave BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fiso:
     dtype: float32
@@ -240,7 +243,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fvol:
     dtype: float32
@@ -252,7 +255,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_vis_fgeo:
     dtype: float32
@@ -264,7 +267,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of visible BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fiso:
     dtype: float32
@@ -276,7 +279,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fvol:
     dtype: float32
@@ -288,7 +291,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_brdf_nir_fgeo:
     dtype: float32
@@ -300,7 +303,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
   viirs_cldprop_d3_cloud_optical_thickness:
@@ -313,7 +316,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Cloud optical thickness (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud optical thickness, PSF-weighted over within-footprint values (NOAA20)
       units: "1"
   viirs_cldprop_d3_cloud_top_pressure:
     dtype: float32
@@ -325,12 +328,11 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Cloud top pressure (within-footprint standard deviation) (NOAA20)
+      long_name: Standard deviation of cloud top pressure, PSF-weighted over within-footprint values (NOAA20)
       units: hPa
   # ---------------------------------------------------------------------------
-  # (e) Libera WFOV CAM algorithm outputs (NOT from external readers).
-  #     Per-footprint values produced by Libera's CF-CAM algorithm and merged into
-  #     the record.
+  # Libera WFOV CAM algorithm outputs: passed through from Libera's CF-CAM
+  #     product, already one value per footprint (NOT from external readers).
   # ---------------------------------------------------------------------------
   cloud_fraction_camera:
     dtype: float32
@@ -344,7 +346,7 @@ variables:
       long_name: Cloud fraction (Libera WFOV)
       units: percent
   # ---------------------------------------------------------------------------
-  # (d) Coverage / QA
+  # Coverage / QA: computed here from the PSF bounding box and each source's coverage.
   # ---------------------------------------------------------------------------
   psf_bbox_lat_min:
     dtype: float32
