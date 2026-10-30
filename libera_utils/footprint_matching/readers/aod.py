@@ -16,7 +16,7 @@ What this reader exposes
 FMATCH-IMAGER carries both **AOD** and **aerosol type**. The single-sensor Deep
 Blue granule carries both, so this one reader serves both:
 
-1. ``aod_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
+1. ``optical_depth_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
    and ocean (continuous, ``weighted_mean``).
 2. ``aerosol_type`` — the modal aerosol type over land and ocean (categorical,
    8 classes, ``weighted_mode``), plus three ranked companions
@@ -95,7 +95,7 @@ _MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, Operatio
 class VIIRSAODReader(StaticReader):
     """Read NOAA-20 VIIRS Deep Blue AOD + aerosol type from an AERDB_D3_VIIRS_NOAA20 file.
 
-    Loads two variables -- ``aod_550`` (continuous) and ``aerosol_type``
+    Loads two variables -- ``optical_depth_550`` (continuous) and ``aerosol_type``
     (categorical) -- from a single-sensor Deep Blue Level-3 daily file as a
     ``(2, n_lat, n_lon)`` grid stacked in ``VARIABLES`` order. The file is a daily
     mean with no time axis, so the staged day is the time match
@@ -108,7 +108,7 @@ class VIIRSAODReader(StaticReader):
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Two variables: ``aod_550`` (``weighted_mean``) and ``aerosol_type``
+        Two variables: ``optical_depth_550`` (``weighted_mean``) and ``aerosol_type``
         (``weighted_mode``, 8 categories).
     ADDITIONAL_PRODUCT_VARIABLES : tuple[VariableSpec, ...]
         Three ranked aerosol-type outputs (primary/secondary/tertiary), derived
@@ -129,7 +129,7 @@ class VIIRSAODReader(StaticReader):
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="aod_550",
+            name="optical_depth_550",
             dtype="float32",
             # CERES averages aerosol optical depth arithmetically over its footprint:
             # SSF-137 takes "an arithmetic mean ... of all imager pixels in the angular
@@ -191,7 +191,7 @@ class VIIRSAODReader(StaticReader):
         -------
         GridSamples
             ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
-            [aod_550, aerosol_type] (fill / out-of-range as NaN). The categorical
+            [optical_depth_550, aerosol_type] (fill / out-of-range as NaN). The categorical
             aerosol type is carried as float32 with NaN fill here; its ``int16``
             product dtype is applied at product-write time (the same convention
             IGBP uses).
@@ -222,7 +222,7 @@ class VIIRSAODReader(StaticReader):
                 "update the reader's aerosol-type categories before reading it."
             )
 
-        # Stack in VARIABLES order: axis 0 = [aod_550, aerosol_type].
+        # Stack in VARIABLES order: axis 0 = [optical_depth_550, aerosol_type].
         data = np.stack([aod, aerosol_type], axis=0)  # (2, n_lat_full, n_lon_full)
         return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)
 

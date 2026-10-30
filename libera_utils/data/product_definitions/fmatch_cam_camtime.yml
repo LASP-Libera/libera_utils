@@ -228,109 +228,109 @@ variables:
       long_name: Fraction of footprint covered by ocean (NISE code 255) (within-footprint standard deviation) (AMSR2)
       units: "1"
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
-  viirs_brdf_brdf_shortwave_fiso:
+  viirs_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fiso_standard_deviation:
+  viirs_brdf_shortwave_fiso_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fvol:
+  viirs_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fvol_standard_deviation:
+  viirs_brdf_shortwave_fvol_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fgeo:
+  viirs_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fgeo_standard_deviation:
+  viirs_brdf_shortwave_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fiso:
+  viirs_brdf_vis_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fiso_standard_deviation:
+  viirs_brdf_vis_fiso_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fvol:
+  viirs_brdf_vis_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fvol_standard_deviation:
+  viirs_brdf_vis_fvol_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fgeo:
+  viirs_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fgeo_standard_deviation:
+  viirs_brdf_vis_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fiso:
+  viirs_brdf_nir_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fiso_standard_deviation:
+  viirs_brdf_nir_fiso_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fvol:
+  viirs_brdf_nir_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fvol_standard_deviation:
+  viirs_brdf_nir_fvol_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fgeo:
+  viirs_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fgeo_standard_deviation:
+  viirs_brdf_nir_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:

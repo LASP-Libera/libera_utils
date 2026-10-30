@@ -419,7 +419,7 @@ class TestVIIRSBRDFReaderRealSubset:
         """
         land = reader.samples_in(BoundingBox(36.4, 36.45, -121.95, -121.9), _T)
         values = sample_at(land, 36.425, -121.925)
-        assert values[0] == pytest.approx(0.069)  # brdf_shortwave_fiso
-        assert values[3] == pytest.approx(0.062)  # brdf_vis_fiso
+        assert values[0] == pytest.approx(0.069)  # shortwave_fiso
+        assert values[3] == pytest.approx(0.062)  # vis_fiso
         ocean = reader.samples_in(BoundingBox(36.95, 37.0, -123.0, -122.95), _T)
         assert np.isnan(sample_at(ocean, 36.975, -122.975)).all()

@@ -194,109 +194,109 @@ variables:
   # Ross-Thick/Li-Sparse model decomposes surface reflectance into isotropic
   # (fiso), volumetric (fvol), and geometric (fgeo) kernel weights, per spectral
   # band (shortwave/vis/nir).
-  viirs_brdf_brdf_shortwave_fiso:
+  viirs_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fiso_standard_deviation:
+  viirs_brdf_shortwave_fiso_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fvol:
+  viirs_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fvol_standard_deviation:
+  viirs_brdf_shortwave_fvol_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fgeo:
+  viirs_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_shortwave_fgeo_standard_deviation:
+  viirs_brdf_shortwave_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fiso:
+  viirs_brdf_vis_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fiso_standard_deviation:
+  viirs_brdf_vis_fiso_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fvol:
+  viirs_brdf_vis_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fvol_standard_deviation:
+  viirs_brdf_vis_fvol_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fgeo:
+  viirs_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_vis_fgeo_standard_deviation:
+  viirs_brdf_vis_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fiso:
+  viirs_brdf_nir_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fiso_standard_deviation:
+  viirs_brdf_nir_fiso_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fvol:
+  viirs_brdf_nir_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fvol_standard_deviation:
+  viirs_brdf_nir_fvol_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fgeo:
+  viirs_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_brdf_nir_fgeo_standard_deviation:
+  viirs_brdf_nir_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:

@@ -26,7 +26,7 @@ These are dimensionless; values range from 0.0 to ~3.0 for fiso and ~1.0 for
 fvol/fgeo. Stored as int16; each field's own ``_FillValue`` (32767), ``valid_range``
 (0..32766), ``scale_factor`` (0.001) and ``add_offset`` (0) are applied.
 
-Output variable naming: ``brdf_{band}_{param}``
+Output variable naming: ``{band}_{param}``
 
   ========= =================
   Band      HDF5 field suffix
@@ -69,15 +69,15 @@ _BRDF_GRID_NAME: str = "VIIRS_CMG_BRDF"
 # Each output variable and the HDF5 field it reads from the grid's Data Fields group.
 # This order is VARIABLES order and axis 0 of the reader's data array.
 _BRDF_FIELDS: tuple[tuple[str, str], ...] = (
-    ("brdf_shortwave_fiso", "BRDF_Albedo_Parameter1_shortwave"),
-    ("brdf_shortwave_fvol", "BRDF_Albedo_Parameter2_shortwave"),
-    ("brdf_shortwave_fgeo", "BRDF_Albedo_Parameter3_shortwave"),
-    ("brdf_vis_fiso", "BRDF_Albedo_Parameter1_vis"),
-    ("brdf_vis_fvol", "BRDF_Albedo_Parameter2_vis"),
-    ("brdf_vis_fgeo", "BRDF_Albedo_Parameter3_vis"),
-    ("brdf_nir_fiso", "BRDF_Albedo_Parameter1_nir"),
-    ("brdf_nir_fvol", "BRDF_Albedo_Parameter2_nir"),
-    ("brdf_nir_fgeo", "BRDF_Albedo_Parameter3_nir"),
+    ("shortwave_fiso", "BRDF_Albedo_Parameter1_shortwave"),
+    ("shortwave_fvol", "BRDF_Albedo_Parameter2_shortwave"),
+    ("shortwave_fgeo", "BRDF_Albedo_Parameter3_shortwave"),
+    ("vis_fiso", "BRDF_Albedo_Parameter1_vis"),
+    ("vis_fvol", "BRDF_Albedo_Parameter2_vis"),
+    ("vis_fgeo", "BRDF_Albedo_Parameter3_vis"),
+    ("nir_fiso", "BRDF_Albedo_Parameter1_nir"),
+    ("nir_fvol", "BRDF_Albedo_Parameter2_nir"),
+    ("nir_fgeo", "BRDF_Albedo_Parameter3_nir"),
 )
 
 # The per-field attributes a VJ143C1 BRDF field carries and the read applies.
