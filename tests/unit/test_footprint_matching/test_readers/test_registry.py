@@ -33,7 +33,6 @@ _SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", mod
 # The product sets the readers declare, written out independently of the reader modules.
 _ALL = frozenset(OperationalMode)
 _IMAGER_PAIR = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
-_FLASHFLUX_BASE = frozenset({OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 _ONLY_IMAGER = frozenset({OperationalMode.IMAGER})
 _HOUR = np.timedelta64(1, "h")
 _PASS_WINDOW = np.timedelta64(15, "m")
@@ -186,14 +185,14 @@ _DECLARED = [
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _mean("aerosol_optical_depth", _FLASHFLUX_BASE),
-            _mean("clear_coverage", _FLASHFLUX_BASE),
-            _mean("cloud_optical_depth_lower", _FLASHFLUX_BASE),
-            _mean("cloud_water_particle_radius_lower", _FLASHFLUX_BASE),
-            _mean("cloud_ice_particle_radius_lower", _FLASHFLUX_BASE),
-            _code("cloud_classification", None, _FLASHFLUX_BASE),
-            _code("shortwave_adm_type", None, _FLASHFLUX_BASE),
-            _code("longwave_adm_type", None, _FLASHFLUX_BASE),
+            _mean("aerosol_optical_depth", _IMAGER_PAIR),
+            _mean("clear_coverage", _IMAGER_PAIR),
+            _mean("cloud_optical_depth_lower", _IMAGER_PAIR),
+            _mean("cloud_water_particle_radius_lower", _IMAGER_PAIR),
+            _mean("cloud_ice_particle_radius_lower", _IMAGER_PAIR),
+            _code("cloud_classification", None, _IMAGER_PAIR),
+            _code("shortwave_adm_type", None, _IMAGER_PAIR),
+            _code("longwave_adm_type", None, _IMAGER_PAIR),
             *_FLASHFLUX_EXTENDED,
         ),
         (),
@@ -227,7 +226,6 @@ _CAM_READERS = frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_c
 _EXPECTED_MODE_READERS = {
     OperationalMode.CAM: _CAM_READERS,
     OperationalMode.CAM_CAMTIME: _CAM_READERS,
-    OperationalMode.IMAGER_FLASH: _CAM_READERS | {"flashflux"},
     OperationalMode.IMAGER: _CAM_READERS | {"viirs_aod", "era5_pressure", "cldpix", "flashflux"},
     OperationalMode.IMAGER_CAMTIME: _CAM_READERS | {"viirs_aod", "cldpix", "flashflux"},
 }
@@ -235,7 +233,6 @@ _EXPECTED_MODE_READERS = {
 _EXPECTED_PRODUCT_VARIABLE_COUNTS = {
     OperationalMode.CAM: 40,
     OperationalMode.CAM_CAMTIME: 40,
-    OperationalMode.IMAGER_FLASH: 53,
     OperationalMode.IMAGER: 505,
     OperationalMode.IMAGER_CAMTIME: 85,
 }

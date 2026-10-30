@@ -13,8 +13,8 @@ CERES Single Scanner Footprint (SSF) file layout (FLASH_SSF).
   and ``instrument_fov_longitude`` (longitude stored 0..360 — normalized here).
 - Native footprint scale: ~20 km at nadir.
 
-This reader feeds the products its fields name in ``modes``: FMATCH-IMAGER-FLASH,
-FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME (see Variable set).
+This reader feeds the products its fields name in ``modes``: FMATCH-IMAGER and
+FMATCH-IMAGER-CAMTIME (see Variable set).
 
 Native footprints, matched by time
 ----------------------------------
@@ -36,7 +36,7 @@ Two sets, read in this order:
 - **The base FLASHFlux fields** (``_FLASHFLUX_BASE_FIELDS``): aerosol optical depth, clear
   coverage, the lower-layer cloud optical depth and water / ice particle radii, and
   the scene and ADM type codes. Carried by every product FLASHFlux feeds:
-  FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME.
+  FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME.
 - **The FMATCH-IMAGER-only FLASHFlux fields** (``_FLASHFLUX_IMAGER_ONLY_FIELDS``): the
   extended cloud-layer, aerosol, surface-albedo and TOA-insolation fields, carried by
   FMATCH-IMAGER alone.
@@ -150,9 +150,7 @@ class _FlashFluxField(NamedTuple):
 
 
 # The products that carry the base FLASHFlux fields: every product FLASHFlux feeds.
-_FLASHFLUX_BASE_MODES: frozenset[OperationalMode] = frozenset(
-    {OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME}
-)
+_FLASHFLUX_BASE_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
 # Each FLASHFlux optical depth is already a linear mean over its CERES footprint, so FMATCH combines
 # footprints with the arithmetic mean: cloud_optical_depth_mean ("Mean visible optical depth for
@@ -255,7 +253,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
 # Extended FLASHFlux field set carried by FMATCH-IMAGER only.
 # ---------------------------------------------------------------------------
 # These FLASHFlux cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
-# *only* -- not IMAGER-FLASH or IMAGER-CAMTIME, which carry the base FLASHFlux fields.
+# *only* -- not IMAGER-CAMTIME, which carries the base FLASHFlux fields.
 #
 # Multi-valued source fields are flattened into one 1-D product variable per member:
 # LowerUpper (2) -> _lower/_upper, AeroTypePct (7) -> _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
