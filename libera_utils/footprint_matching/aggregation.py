@@ -14,7 +14,7 @@ Two layers
 ----------
 1. **Pure strategy functions** (``weighted_mean``, ``weighted_mode``,
    ``weighted_log_mean`` ...). Each takes 1-D ``values`` and ``weights`` arrays and
-   returns a small ``dict`` of named sub-results, exactly as tabulated in design
+   returns a small ``dict`` of named sub-results, following the methods in design
    doc section 2.8.1.4. These are reusable by scientists directly and are what the
    unit tests exercise. NaN values are excluded from every computation (doc: "NaN
    values are excluded from all computations").
@@ -26,9 +26,8 @@ Two layers
 CERES heritage
 --------------
 The weighted statistics implement CERES ATBD v2.2 Eq. 4.4-17
-``xbar = sum(w*x) / sum(w)`` and its companions. The cloud-path strategies follow
-CERES SSF conventions (log-space averaging of pixel cloud optical depth,
-cloud-conditional means, overcast fraction). See
+``xbar = sum(w*x) / sum(w)`` and its companions, and follow the CERES SSF
+convention of log-space averaging for pixel cloud optical depth. See
 https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
 
 Optical depth is averaged in log space only where the samples are imager pixels, as
@@ -145,7 +144,7 @@ class _WeightedPartials:
     """The usable ``(values, weights)`` of one data plane, masked once.
 
     The continuous surface strategies (:func:`weighted_mean`, :func:`weighted_std`,
-    :func:`weighted_log_mean`, :func:`weighted_median`) each independently apply the
+    :func:`weighted_log_mean`, :func:`weighted_positive_std`) each independently apply the
     :func:`_usable` mask before doing their arithmetic. When several product variables
     derive from the *same* data plane -- e.g. a variable and its
     ``<name>_standard_deviation`` companion -- that mask (and the array copy it drives)
@@ -220,21 +219,6 @@ def _positive_std_from_partials(p: _WeightedPartials) -> dict[str, float]:
     return _std_from_partials(_positive(p))
 
 
-def _median_from_partials(p: _WeightedPartials) -> dict[str, float]:
-    """Weighted median from pre-masked partials (see :func:`weighted_median`)."""
-    if p.weights.size == 0:
-        return {"median": float("nan")}
-    order = np.argsort(p.values)
-    v_sorted = p.values[order]
-    cumulative = np.cumsum(p.weights[order])
-    half = 0.5 * cumulative[-1]
-    # searchsorted finds the first cell whose cumulative weight reaches the halfway
-    # point -- that value is the weighted median.
-    idx = int(np.searchsorted(cumulative, half))
-    idx = min(idx, v_sorted.size - 1)
-    return {"median": float(v_sorted[idx])}
-
-
 def weighted_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
     """PSF-weighted mean ``xbar = sum(w*x)/sum(w)`` (CERES ATBD Eq. 4.4-17).
 
@@ -285,16 +269,6 @@ def weighted_positive_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> 
     positive.
     """
     return _positive_std_from_partials(_prepare(values, weights))
-
-
-def weighted_median(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
-    """PSF-weighted median (the 50th percentile of the weight-sorted values).
-
-    Sorts the usable values, walks the cumulative weight, and returns the value at
-    which the cumulative weight first reaches half of the total. Robust to outliers,
-    hence useful for skewed surface distributions.
-    """
-    return _median_from_partials(_prepare(values, weights))
 
 
 # ---------------------------------------------------------------------------
@@ -425,152 +399,27 @@ def weighted_mode_tertiary(
 
 
 # ---------------------------------------------------------------------------
-# Cloud / radiance-path strategies
-# ---------------------------------------------------------------------------
-#
-# These are declared in the design doc (section 2.8.1.4) and provided here so the
-# dispatcher is complete, but note that no *current* reader labels a variable with
-# them -- VIIRS/CLDPIX cloud variables are presently aggregated with weighted_mean /
-# weighted_log_mean. They are wired and unit-tested so a future reader can select
-# them without touching this module.
-
-
-def coverage_fraction(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
-    """PSF-weighted fraction of cells whose value exceeds zero ``sum(w*[x>0])/sum(w)``.
-
-    Used for cloud fraction and snow fraction, where the input is a per-pixel
-    presence indicator and the footprint statistic is the fractional area covered.
-    """
-    mask = _usable(values, weights)
-    if not np.any(mask):
-        return {"fraction": float("nan")}
-    v = np.asarray(values, dtype=float)[mask]
-    w = np.asarray(weights, dtype=float)[mask]
-    return {"fraction": float(np.sum(w * (v > 0.0)) / np.sum(w))}
-
-
-def cloud_weighted_mean(
-    values: np.ndarray, weights: np.ndarray, *, cloud_mask: np.ndarray | None = None, **_: Any
-) -> dict[str, float]:
-    """PSF-weighted mean over cloudy cells only (design doc section 2.8.1.4.3).
-
-    Clear-sky cells are given zero weight before averaging, so the result is the
-    in-cloud mean of a cloud-conditional quantity (optical depth, cloud-top height).
-    ``cloud_mask`` is a per-cell boolean/0-1 array; when omitted, every finite cell
-    counts as cloudy (the strategy then degenerates to :func:`weighted_mean`).
-    """
-    weights = np.asarray(weights, dtype=float)
-    if cloud_mask is not None:
-        # Zero the weight of every non-cloudy cell so it drops out of the mean.
-        weights = np.where(np.asarray(cloud_mask, dtype=bool), weights, 0.0)
-    mask = _usable(values, weights)
-    n_cloudy = int(np.count_nonzero(mask))
-    if n_cloudy == 0:
-        return {"mean": float("nan"), "n_cloudy": 0.0}
-    v = np.asarray(values, dtype=float)[mask]
-    w = weights[mask]
-    return {"mean": float(np.sum(w * v) / np.sum(w)), "n_cloudy": float(n_cloudy)}
-
-
-def overcast_fraction(
-    values: np.ndarray, weights: np.ndarray, *, threshold: float = 0.95, **_: Any
-) -> dict[str, float]:
-    """PSF-weighted overcast fraction ``sum(w*[cf>threshold])/sum(w_cloudy)``.
-
-    Per CERES section 4.4.2.7: of the cloudy PSF weight, what fraction is fully
-    overcast (cloud fraction above ``threshold``). Cloudy weight is that of cells
-    with a positive cloud value; NaN when the footprint has no cloudy weight.
-    """
-    mask = _usable(values, weights)
-    if not np.any(mask):
-        return {"overcast_fraction": float("nan")}
-    v = np.asarray(values, dtype=float)[mask]
-    w = np.asarray(weights, dtype=float)[mask]
-    cloudy_weight = np.sum(w * (v > 0.0))
-    if cloudy_weight <= 0.0:
-        return {"overcast_fraction": float("nan")}
-    return {"overcast_fraction": float(np.sum(w * (v > threshold)) / cloudy_weight)}
-
-
-def aggregate_broadband_radiance(
-    values: np.ndarray, weights: np.ndarray, *, cloud_mask: np.ndarray | None = None, **_: Any
-) -> dict[str, float]:
-    """Aggregate camera broadband radiance (simplified stand-in).
-
-    The full CERES treatment separates radiance by cloud-layer type within each
-    angular bin (design doc section 2.8.1.4.3). That scene-dependent bin weighting
-    needs the per-bin cloud layering, which the current stand-in weighting layer does
-    not yet expose, so this provides the total PSF-weighted radiance now and reports
-    NaN for the clear/cloudy split.
-
-    TODO[LIBSDC-785]: implement the cloud-layer-aware bin weighting once the weighting
-    exposes the per-bin cloud layering.
-    """
-    total = weighted_mean(values, weights)["mean"]
-    if cloud_mask is None:
-        return {"total_radiance": total, "clear_radiance": float("nan"), "cloudy_radiance": float("nan")}
-    cloud_mask = np.asarray(cloud_mask, dtype=bool)
-    cloudy = cloud_weighted_mean(values, weights, cloud_mask=cloud_mask)["mean"]
-    clear = cloud_weighted_mean(values, weights, cloud_mask=~cloud_mask)["mean"]
-    return {"total_radiance": total, "clear_radiance": clear, "cloudy_radiance": cloudy}
-
-
-def report_all(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, np.ndarray]:
-    """Return the raw usable ``(values, weights)`` without aggregating.
-
-    Used for pass-through variables (e.g. FlashFlux reference fluxes, camera-CF
-    pixel provenance) that downstream algorithms aggregate themselves. Not a scalar
-    strategy, so it has no entry in :data:`_SCALAR_KEY` and is never used on the
-    per-footprint product path.
-    """
-    mask = _usable(values, weights)
-    return {"values": np.asarray(values, dtype=float)[mask], "weights": np.asarray(weights, dtype=float)[mask]}
-
-
-# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
-# Registry of strategy name -> implementing function. New strategies are added here
-# (and, if they yield a product scalar, in _SCALAR_KEY below). This is the single
-# lookup the dispatcher and the product path share, mirroring the doc's "internal
-# registry" (section 2.8.1.4.4).
-_STRATEGIES: dict[str, Callable[..., dict[str, Any]]] = {
-    "weighted_mean": weighted_mean,
-    "weighted_std": weighted_std,
-    "weighted_log_mean": weighted_log_mean,
-    "weighted_positive_std": weighted_positive_std,
-    "weighted_median": weighted_median,
-    "weighted_mode": weighted_mode,
-    "weighted_mode_primary": weighted_mode_primary,
-    "weighted_mode_secondary": weighted_mode_secondary,
-    "weighted_mode_tertiary": weighted_mode_tertiary,
-    "coverage_fraction": coverage_fraction,
-    "cloud_weighted_mean": cloud_weighted_mean,
-    "overcast_fraction": overcast_fraction,
-    "aggregate_broadband_radiance": aggregate_broadband_radiance,
-    "report_all": report_all,
+# Registry of strategy name -> (implementing function, key of its result dict that is
+# the single value the product stores). This is the single lookup the dispatcher and
+# the product path share, mirroring the doc's "internal registry" (section
+# 2.8.1.4.4). A new strategy is added here and in the product path's dispatch table
+# for its kind: _CONTINUOUS_CORES, _CATEGORICAL_RANK, or the ``weighted_mode`` branch
+# of :func:`aggregate_sample_variables`.
+_STRATEGIES: dict[str, tuple[Callable[..., dict[str, Any]], str]] = {
+    "weighted_mean": (weighted_mean, "mean"),
+    "weighted_std": (weighted_std, "standard_deviation"),
+    "weighted_log_mean": (weighted_log_mean, "log_mean"),
+    "weighted_positive_std": (weighted_positive_std, "standard_deviation"),
+    "weighted_mode": (weighted_mode, "mode"),
+    "weighted_mode_primary": (weighted_mode_primary, "mode"),
+    "weighted_mode_secondary": (weighted_mode_secondary, "mode"),
+    "weighted_mode_tertiary": (weighted_mode_tertiary, "mode"),
 }
 
-# For each strategy that produces a single product value, which key of its result
-# dict is that value. report_all is intentionally absent (it returns arrays, not a
-# scalar), so selecting a scalar for it raises -- a reader must not label a product
-# variable report_all.
-_SCALAR_KEY: dict[str, str] = {
-    "weighted_mean": "mean",
-    "weighted_std": "standard_deviation",
-    "weighted_log_mean": "log_mean",
-    "weighted_positive_std": "standard_deviation",
-    "weighted_median": "median",
-    "weighted_mode": "mode",
-    "weighted_mode_primary": "mode",
-    "weighted_mode_secondary": "mode",
-    "weighted_mode_tertiary": "mode",
-    "coverage_fraction": "fraction",
-    "cloud_weighted_mean": "mean",
-    "overcast_fraction": "overcast_fraction",
-    "aggregate_broadband_radiance": "total_radiance",
-}
+_SCALAR_KEY: dict[str, str] = {name: scalar_key for name, (_, scalar_key) in _STRATEGIES.items()}
 
 # Cores that consume a single plane's shared partials, keyed by strategy name.
 # :func:`aggregate_sample_variables` dispatches through these so several product
@@ -584,7 +433,6 @@ _CONTINUOUS_CORES: dict[str, Callable[[_WeightedPartials], dict[str, Any]]] = {
     "weighted_std": _std_from_partials,
     "weighted_log_mean": _log_mean_from_partials,
     "weighted_positive_std": _positive_std_from_partials,
-    "weighted_median": _median_from_partials,
 }
 
 # Rank each ranked-mode strategy selects from the shared category histogram (0 =
@@ -617,8 +465,7 @@ def aggregate(
         Per-cell data values and PSF weights (any shape; flattened internally by the
         strategies via the usable-mask helper).
     **kwargs
-        Extra strategy arguments (e.g. ``n_categories``, ``cloud_mask``,
-        ``threshold``).
+        Extra strategy arguments (``n_categories`` for the mode strategies).
 
     Returns
     -------
@@ -630,7 +477,7 @@ def aggregate(
         If ``strategy`` is not registered.
     """
     try:
-        func = _STRATEGIES[strategy]
+        func, _ = _STRATEGIES[strategy]
     except KeyError as exc:
         raise ValueError(
             f"Unknown aggregation strategy {strategy!r}. Known strategies: {sorted(_STRATEGIES)}."
@@ -685,8 +532,8 @@ def _map_product_specs(reader_cls: type[AncillaryReader]) -> list[tuple[Variable
     ------
     ValueError
         If a product spec cannot be associated with any read variable, or names an
-        aggregation strategy that does not yield one scalar (a misconfigured reader),
-        so the failure is loud at the first footprint rather than a silent bad plane.
+        unregistered aggregation strategy (a misconfigured reader), so the failure is
+        loud at the first footprint rather than a silent bad plane.
     """
     read_names = [spec.name for spec in reader_cls.VARIABLES]
     index_by_name = {name: i for i, name in enumerate(read_names)}
@@ -696,7 +543,7 @@ def _map_product_specs(reader_cls: type[AncillaryReader]) -> list[tuple[Variable
         if spec.aggregation not in _SCALAR_KEY:
             raise ValueError(
                 f"Reader {reader_cls.__name__!r}: product variable {spec.name!r} names aggregation "
-                f"{spec.aggregation!r}, which does not yield one value per footprint. Set its "
+                f"{spec.aggregation!r}, which is not a registered aggregation strategy. Set its "
                 f"VariableSpec.aggregation to one of {sorted(_SCALAR_KEY)}."
             )
         if spec.name in index_by_name:
@@ -754,7 +601,7 @@ def aggregate_sample_variables(
     ------
     ValueError
         If a product variable cannot be mapped to a read variable or names an
-        aggregation that does not yield one value (see :func:`_map_product_specs`); if
+        unregistered aggregation (see :func:`_map_product_specs`); if
         ``samples.values`` is not ``(len(reader_cls.VARIABLES), samples.n_samples)``; or
         if ``weight_field.weights`` does not hold one weight per sample.
 
@@ -824,11 +671,7 @@ def aggregate_sample_variables(
                 n_categories = reader_cls.VARIABLES[read_index].n_categories
             if strategy == "weighted_mode":
                 result = _mode_from_histogram(*histogram(read_index, n_categories))
-            elif strategy in _CATEGORICAL_RANK:
-                result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
             else:
-                # Uncommon strategies (cloud / radiance path) that no current reader
-                # labels on the product path: fall back to a direct strategy call.
-                result = _STRATEGIES[strategy](data_rows[read_index], weights, n_categories=n_categories)
+                result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
         out[spec.name] = float(result[_SCALAR_KEY[strategy]])
     return out

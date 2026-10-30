@@ -188,22 +188,6 @@ class TestWeightedLogMean:
         assert companions == {"a_standard_deviation": "weighted_std", "b_standard_deviation": "weighted_positive_std"}
 
 
-class TestWeightedMedian:
-    def test_weighted_median_picks_halfway_value(self):
-        """``weighted_median`` returns the first sorted value at which cumulative weight reaches half the total.
-
-        A weighted median is a central value that resists outliers. It must follow the PSF weights, not the sample
-        count, so a heavily weighted sample can be the median even when it is not the middle value.
-
-        Gives the largest of three sorted values most of the weight (cumulative weights 1, 2, 7; half of 7 is 3.5)
-        and asserts the median is that value, 3, not the unweighted middle value, 2.
-        """
-        values = np.array([1.0, 2.0, 3.0])
-        weights = np.array([1.0, 1.0, 5.0])
-        # cumulative weight 1,2,7; half = 3.5 -> reached at value 3
-        assert agg.weighted_median(values, weights)["median"] == pytest.approx(3.0)
-
-
 class TestWeightedMode:
     """Categorical mode + per-class coverage fractions."""
 
@@ -308,82 +292,6 @@ class TestRankedMode:
         assert agg.weighted_mode_primary(values, weights, n_categories=6)["mode"] == pytest.approx(4.0)
         assert math.isnan(agg.weighted_mode_secondary(values, weights, n_categories=6)["mode"])
         assert math.isnan(agg.weighted_mode_tertiary(values, weights, n_categories=6)["mode"])
-
-
-class TestCloudRadianceStrategies:
-    """The cloud/radiance-path strategies (provided for future readers)."""
-
-    def test_coverage_fraction(self):
-        """``coverage_fraction`` returns the share of PSF weight on samples whose value is above zero.
-
-        This is how a per-pixel presence flag, such as cloudy or snow-covered, becomes a footprint cloud fraction or
-        snow fraction. No current reader selects it, so this test is its only check.
-
-        Puts weight 2 on a zero sample and weight 1 on each of two positive samples, and asserts the fraction is 0.5
-        (weight 2 of 4).
-        """
-        values = np.array([0.0, 1.0, 1.0])
-        weights = np.array([2.0, 1.0, 1.0])
-        # weight where x>0 is 2; total 4 -> 0.5
-        assert agg.coverage_fraction(values, weights)["fraction"] == pytest.approx(0.5)
-
-    def test_cloud_weighted_mean_zeros_clear_cells(self):
-        """``cloud_weighted_mean`` averages only the samples the cloud mask marks cloudy.
-
-        Cloud properties such as optical depth or cloud-top height exist only where there is cloud. Averaging in
-        clear-sky samples would dilute the in-cloud value.
-
-        Masks the middle of three equal-weight samples as clear. Asserts the mean is 20, the mean of the two cloudy
-        values 10 and 30, and that ``n_cloudy`` is 2.
-        """
-        values = np.array([10.0, 20.0, 30.0])
-        weights = np.array([1.0, 1.0, 1.0])
-        cloud_mask = np.array([True, False, True])
-        result = agg.cloud_weighted_mean(values, weights, cloud_mask=cloud_mask)
-        assert result["mean"] == pytest.approx(20.0)  # (10 + 30)/2
-        assert result["n_cloudy"] == pytest.approx(2.0)
-
-    def test_overcast_fraction(self):
-        """``overcast_fraction`` returns the share of cloudy PSF weight whose cloud fraction exceeds 0.95.
-
-        Following CERES, overcast fraction is measured against the cloudy part of the footprint, not the whole of it,
-        so that clear sky does not lower the overcast share of the cloud that is present.
-
-        Passes cloud fractions 0, 0.5 and 0.99 at equal weight. Two samples are cloudy and one of those is overcast,
-        so the test asserts 0.5. Over the whole footprint the share would have been 1/3.
-        """
-        values = np.array([0.0, 0.5, 0.99])
-        weights = np.array([1.0, 1.0, 1.0])
-        # cloudy weight (x>0) = 2; overcast (x>0.95) = 1 -> 0.5
-        assert agg.overcast_fraction(values, weights)["overcast_fraction"] == pytest.approx(0.5)
-
-    def test_broadband_radiance_total(self):
-        """``aggregate_broadband_radiance`` reports the PSF-weighted mean radiance as ``total_radiance``.
-
-        The strategy is a stand-in until the cloud-layer split is implemented. This pins the part that exists, the
-        total radiance, to the weighted mean.
-
-        Passes radiances 1 and 3 at equal weight and asserts ``total_radiance`` is 2. The clear and cloudy split is
-        not checked.
-        """
-        values = np.array([1.0, 3.0])
-        weights = np.array([1.0, 1.0])
-        assert agg.aggregate_broadband_radiance(values, weights)["total_radiance"] == pytest.approx(2.0)
-
-    def test_report_all_returns_usable_arrays(self):
-        """``report_all`` returns the usable values and weights unaggregated, minus NaN-valued and zero-weight samples.
-
-        Some downstream algorithms aggregate the samples themselves. They need the same exclusions the other
-        strategies apply, so that they never see fill values or samples from outside the PSF contour.
-
-        Passes one good sample, one NaN-valued sample and one zero-weight sample, and asserts that only the good
-        sample's value and weight come back.
-        """
-        values = np.array([1.0, np.nan, 3.0])
-        weights = np.array([1.0, 1.0, 0.0])
-        result = agg.report_all(values, weights)
-        np.testing.assert_array_equal(result["values"], np.array([1.0]))
-        np.testing.assert_array_equal(result["weights"], np.array([1.0]))
 
 
 class TestCheckCoverage:
@@ -638,36 +546,6 @@ class TestAggregateSampleVariablesValues:
         assert got["surface_secondary"] == 2.0
         assert math.isnan(got["surface_tertiary"])
 
-    def test_cloud_path_strategy_on_the_product_path(self):
-        """``aggregate_sample_variables`` runs a cloud-path strategy that has no shared per-row core.
-
-        ``coverage_fraction`` and the other cloud and radiance strategies are called directly on the variable's row
-        rather than through the shared mask or histogram. That path must still read the right row and return the
-        strategy's scalar.
-
-        Uses a reader whose one variable is ``coverage_fraction``, with values 0, 1, 1 at weights 2, 1, 1, and asserts
-        the fraction is 0.5 (weight 2 of 4 above zero).
-        """
-        got = agg.aggregate_sample_variables(
-            _CloudFractionReader, _sample_set(np.array([[0.0, 1.0, 1.0]])), _weight_field(np.array([2.0, 1.0, 1.0]))
-        )
-        assert got == {"cloud": pytest.approx(0.5)}
-
-
-class _CloudFractionReader:
-    """Reader stand-in whose one product variable uses a cloud-path strategy."""
-
-    __name__ = "_CloudFractionReader"
-    VARIABLES = (
-        VariableSpec(
-            name="cloud", dtype="float32", aggregation="coverage_fraction", modes=frozenset({OperationalMode.CAM})
-        ),
-    )
-
-    @classmethod
-    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
-        return cls.VARIABLES
-
 
 class _UnmappableReader:
     """Reader stand-in whose derived product variable is not named after any read variable."""
@@ -688,12 +566,14 @@ class _UnmappableReader:
         )
 
 
-class _NonScalarReader:
-    """Reader stand-in whose product variable names a strategy that does not yield one value."""
+class _UnregisteredStrategyReader:
+    """Reader stand-in whose product variable names an unregistered aggregation strategy."""
 
-    __name__ = "_NonScalarReader"
+    __name__ = "_UnregisteredStrategyReader"
     VARIABLES = (
-        VariableSpec(name="field_a", dtype="float32", aggregation="report_all", modes=frozenset({OperationalMode.CAM})),
+        VariableSpec(
+            name="field_a", dtype="float32", aggregation="not_a_strategy", modes=frozenset({OperationalMode.CAM})
+        ),
     )
 
     @classmethod
@@ -715,17 +595,17 @@ class TestAggregateSampleVariablesErrors:
         with pytest.raises(ValueError, match="cannot be mapped"):
             agg.aggregate_sample_variables(_UnmappableReader, _sample_set(values), _weight_field(np.ones(2)))
 
-    def test_non_scalar_aggregation_raises(self):
-        """``aggregate_sample_variables`` raises ``ValueError`` naming the variable when its strategy has no scalar.
+    def test_unregistered_aggregation_raises(self):
+        """``aggregate_sample_variables`` raises ``ValueError`` naming the variable when its strategy is unregistered.
 
-        ``report_all`` returns arrays, not one value, so a product variable labelled with it, or with a misspelled
-        strategy, cannot be stored. The error must name the reader and the variable so the spec can be fixed.
+        A product variable labelled with a misspelled strategy has no statistic to compute. The run must stop with an
+        error naming the reader and the variable so the spec can be fixed.
 
-        Uses a reader whose only variable is ``report_all`` and asserts a ``ValueError`` naming ``field_a``.
+        Uses a reader whose only variable is ``not_a_strategy`` and asserts a ``ValueError`` naming ``field_a``.
         """
         values = np.array([[1.0, 2.0]])
-        with pytest.raises(ValueError, match="'field_a'.*'report_all'"):
-            agg.aggregate_sample_variables(_NonScalarReader, _sample_set(values), _weight_field(np.ones(2)))
+        with pytest.raises(ValueError, match="'field_a'.*'not_a_strategy'"):
+            agg.aggregate_sample_variables(_UnregisteredStrategyReader, _sample_set(values), _weight_field(np.ones(2)))
 
     def test_missing_value_row_raises(self):
         """``aggregate_sample_variables`` raises ``ValueError`` when the samples carry fewer rows than the reader's
