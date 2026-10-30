@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -9,10 +11,12 @@ from libera_utils.footprint_matching.geometry import compute_viewing_frames, pro
 from libera_utils.footprint_matching.psf import psf_95_energy_extent, psf_weight
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet
 from libera_utils.footprint_matching.weighting import (
+    _COVERAGE_STEP_KM,
     AngularPSFWeigher,
     PixelWeigher,
     RadialWeigher,
     WeightField,
+    _radial_reference,
 )
 
 # Spacecraft distance from Earth's center (~835 km orbit), km.
@@ -290,13 +294,19 @@ class TestRadialCoverage:
         the 75% rule.
 
         Weighs one sample at the boresight. With ``sample_resolution_km=28``, the sample covers a square of half-width
-        28 / sqrt(2), about 20 km, inside a disc of about 27 km radius, and the test asserts coverage is between 0.4 and
-        0.9. With 111 km, the square encloses the whole disc, and the test asserts coverage is 1.0.
+        28 / sqrt(2), about 19.8 km, inside a disc of about 27 km radius, and the test asserts coverage is within 0.02 of
+        the truncated kernel's energy inside that square; the inscribed 14 km square would give about 0.57. With 111 km,
+        the square encloses the whole disc, and the test asserts coverage is 1.0.
         """
         samples = _grid_samples(np.array([0.0]), np.array([0.0]))
         geom = {**_GEOM, "sample_resolution_km": 28.0}
         wf = RadialWeigher().weight_field(samples, 0.0, 0.0, **geom)
-        assert 0.4 < wf.coverage < 0.9
+        reference = _radial_reference(wf.max_radius_km)
+        centers = -wf.max_radius_km + (np.arange(reference.shape[0]) + 0.5) * _COVERAGE_STEP_KM
+        east, north = np.meshgrid(centers, centers)
+        half_width_km = 28.0 * math.sqrt(2.0) / 2.0
+        inside = (np.abs(east) <= half_width_km) & (np.abs(north) <= half_width_km)
+        assert wf.coverage == pytest.approx(reference[inside].sum() / reference.sum(), abs=0.02)
         # A 111 km cell swallows the whole disc.
         wide = RadialWeigher().weight_field(samples, 0.0, 0.0, **{**_GEOM, "sample_resolution_km": 111.0})
         assert wide.coverage == pytest.approx(1.0)
