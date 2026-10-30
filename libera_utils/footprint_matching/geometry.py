@@ -745,11 +745,11 @@ def psf_ground_radius_km(
 
     Unlike the rest of this module, which ray-traces the WGS84 ellipsoid, this is an
     analytic estimate on a sphere of the WGS84 equatorial radius
-    (:data:`WGS84_SEMI_MAJOR_AXIS_KM`).
+    (``WGS84_SEMI_MAJOR_AXIS_KM``).
 
     The angular half-extent is the diagonal of the PSF's along-scan and cross-scan
     95%-energy half-extents, because the energy contour reaches toward the corners of
-    that rectangle (see :func:`_perimeter_angles`). It is floored at the optical FOV
+    that rectangle (see ``_perimeter_angles``). It is floored at the optical FOV
     half-angle so the radius is never smaller than the field of view.
 
     This is the single home for the angular-extent -> ground-radius projection, used by
@@ -762,7 +762,7 @@ def psf_ground_radius_km(
         ``Radius_of_Satellite_from_Center_of_Earth``), km.
     viewing_zenith_deg : float
         Viewing zenith angle, degrees (clamped at
-        :data:`_MAX_VZA_FOR_ELONGATION_DEG` for the elongation factor).
+        ``_MAX_VZA_FOR_ELONGATION_DEG`` for the elongation factor).
     fov_halfangle_deg : float, optional
         Instrument FOV half-angle, degrees -- the floor on the angular extent.
         Defaults to :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
@@ -787,10 +787,10 @@ def psf_ground_radius_km(
 def slant_range_km(satellite_radius_km: float, viewing_zenith_deg: float) -> float:
     """Distance from the satellite to the ground point seen at a viewing zenith, in km.
 
-    On a sphere of the WGS84 equatorial radius ``R`` (:data:`WGS84_SEMI_MAJOR_AXIS_KM`),
+    On a sphere of the WGS84 equatorial radius ``R`` (``WGS84_SEMI_MAJOR_AXIS_KM``),
     a satellite at distance ``R_s`` from Earth's center sees a point at viewing zenith
     ``v`` from ``rho = sqrt(R_s^2 - (R sin v)^2) - R cos v``. The viewing zenith is
-    clamped at :data:`_MAX_VZA_FOR_ELONGATION_DEG`, as in :func:`psf_ground_radius_km`.
+    clamped at ``_MAX_VZA_FOR_ELONGATION_DEG``, as in :func:`psf_ground_radius_km`.
     The PSF weighers use it to turn a source's ground sample spacing into an angular
     bin size for the coverage reference grid.
 

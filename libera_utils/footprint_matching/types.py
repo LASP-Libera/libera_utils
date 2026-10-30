@@ -483,9 +483,9 @@ _STANDARD_DEVIATION_AGGREGATION: dict[str, str] = {
     "weighted_log_mean": "weighted_positive_std",
 }
 
-# Suffix appended to a continuous variable's name to form its std-dev companion.
-# Kept as a module constant so the readers, product definitions, and tests all
-# agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``).
+#: Suffix appended to a continuous variable's name to form its std-dev companion.
+#: Kept as a module constant so the readers, product definitions, and tests all
+#: agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``).
 STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
 
 

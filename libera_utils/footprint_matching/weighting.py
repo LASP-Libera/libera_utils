@@ -319,7 +319,7 @@ class RadialWeigher(PixelWeigher):
     cannot be built (see :class:`AngularPSFWeigher`).
 
     Distances from the boresight use a fast local-tangent-plane formula
-    (:func:`_local_tangent_plane_km`) for normal footprint boxes -- within sub-meter of
+    (``_local_tangent_plane_km``) for normal footprint boxes -- within sub-meter of
     the WGS84 geodesic over a footprint's span -- and fall back to the exact ellipsoidal
     :class:`pyproj.Geod` distance for polar or large / dateline-crossing boxes, where the
     flat-plane approximation would drift.
@@ -474,7 +474,7 @@ class AngularPSFWeigher(PixelWeigher):
     ---------------
     The projected ``delta`` is anchored at the reported footprint centroid (the
     boresight). Any residual alignment offset to the PSF centroid is
-    :data:`_CENTROID_OFFSET_DEG`, currently assumed 0 (see its LIBSDC-794 note).
+    ``_CENTROID_OFFSET_DEG``, currently assumed 0 (see its LIBSDC-794 note).
 
     Coverage
     --------
@@ -538,7 +538,8 @@ class AngularPSFWeigher(PixelWeigher):
         """Compute the CERES-PSF :class:`WeightField` for ``samples``. See class docstring.
 
         When ``frame`` is supplied (the orchestrator batched the viewing frames up
-        front), it is passed straight to :func:`project_to_angular`, skipping the
+        front), it is passed straight to
+        :func:`~libera_utils.footprint_matching.geometry.project_to_angular`, skipping the
         per-footprint viewing-geometry reconstruction; the result is identical.
 
         Raises

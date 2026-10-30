@@ -145,7 +145,7 @@ class _WeightedPartials:
 
     The continuous surface strategies (:func:`weighted_mean`, :func:`weighted_std`,
     :func:`weighted_log_mean`, :func:`weighted_positive_std`) each independently apply the
-    :func:`_usable` mask before doing their arithmetic. When several product variables
+    ``_usable`` mask before doing their arithmetic. When several product variables
     derive from the *same* data plane -- e.g. a variable and its
     ``<name>_standard_deviation`` companion -- that mask (and the array copy it drives)
     is identical across them. :func:`_prepare` computes it once and the ``*_from_partials``
@@ -158,7 +158,7 @@ class _WeightedPartials:
     ----------
     values, weights : np.ndarray
         1-D arrays of the plane's usable cell values and PSF weights (already masked
-        by :func:`_usable`), in grid order.
+        by ``_usable``), in grid order.
     """
 
     values: np.ndarray
@@ -347,7 +347,7 @@ def _mode_from_histogram(categories: np.ndarray, category_weight: np.ndarray) ->
 
 
 def _ranked_mode_from_histogram(categories: np.ndarray, category_weight: np.ndarray, rank: int) -> dict[str, float]:
-    """The ``rank``-th most common category from a precomputed histogram (see :func:`_ranked_mode`)."""
+    """The ``rank``-th most common category from a precomputed histogram (see ``_ranked_mode``)."""
     ranked = _order_categories(categories, category_weight)
     if rank >= ranked.size:
         return {"mode": float("nan")}
@@ -380,21 +380,21 @@ def _ranked_mode(values: np.ndarray, weights: np.ndarray, rank: int, n_categorie
 def weighted_mode_primary(
     values: np.ndarray, weights: np.ndarray, *, n_categories: int | None = None, **_: Any
 ) -> dict[str, float]:
-    """Most common category by PSF weight (rank 0). See :func:`_ranked_mode`."""
+    """Most common category by PSF weight (rank 0). See ``_ranked_mode``."""
     return _ranked_mode(values, weights, 0, n_categories)
 
 
 def weighted_mode_secondary(
     values: np.ndarray, weights: np.ndarray, *, n_categories: int | None = None, **_: Any
 ) -> dict[str, float]:
-    """Second most common category by PSF weight (rank 1). See :func:`_ranked_mode`."""
+    """Second most common category by PSF weight (rank 1). See ``_ranked_mode``."""
     return _ranked_mode(values, weights, 1, n_categories)
 
 
 def weighted_mode_tertiary(
     values: np.ndarray, weights: np.ndarray, *, n_categories: int | None = None, **_: Any
 ) -> dict[str, float]:
-    """Third most common category by PSF weight (rank 2). See :func:`_ranked_mode`."""
+    """Third most common category by PSF weight (rank 2). See ``_ranked_mode``."""
     return _ranked_mode(values, weights, 2, n_categories)
 
 
@@ -424,7 +424,7 @@ _SCALAR_KEY: dict[str, str] = {name: scalar_key for name, (_, scalar_key) in _ST
 # Cores that consume a single plane's shared partials, keyed by strategy name.
 # :func:`aggregate_sample_variables` dispatches through these so several product
 # variables derived from one data plane (e.g. a mean-aggregated variable and its
-# ``_standard_deviation`` companion) reuse a single :func:`_usable` mask instead of
+# ``_standard_deviation`` companion) reuse a single ``_usable`` mask instead of
 # recomputing it per variable. Each core returns the same result dict as its public
 # strategy (which are thin wrappers over the same cores), so the shared and the
 # per-variable paths are numerically identical.
@@ -460,7 +460,7 @@ def aggregate(
     Parameters
     ----------
     strategy : str
-        Registered strategy name (a key of :data:`_STRATEGIES`).
+        Registered strategy name (a key of ``_STRATEGIES``).
     values, weights : np.ndarray
         Per-cell data values and PSF weights (any shape; flattened internally by the
         strategies via the usable-mask helper).
@@ -573,7 +573,7 @@ def aggregate_sample_variables(
     """Aggregate one footprint's samples from one source to one scalar per product variable.
 
     For the given reader, this picks the correct value row for each product
-    variable (see :func:`_map_product_specs`), dispatches to that variable's
+    variable (see ``_map_product_specs``), dispatches to that variable's
     aggregation strategy with the PSF ``weight_field``, and returns the single scalar
     the product stores -- keyed by the *bare* spec name (the caller prefixes it with
     ``<source>_`` to form the product variable name).
@@ -601,7 +601,7 @@ def aggregate_sample_variables(
     ------
     ValueError
         If a product variable cannot be mapped to a read variable or names an
-        unregistered aggregation (see :func:`_map_product_specs`); if
+        unregistered aggregation (see ``_map_product_specs``); if
         ``samples.values`` is not ``(len(reader_cls.VARIABLES), samples.n_samples)``; or
         if ``weight_field.weights`` does not hold one weight per sample.
 
@@ -612,7 +612,7 @@ def aggregate_sample_variables(
     (``WeightField.coverage``, scored by :func:`check_coverage`), not computed here.
     Because many product variables derive from the same data plane -- a variable and its
     ``_standard_deviation`` companion, or IGBP's four ranked-mode scenes off one
-    ``surface_type`` plane -- the per-plane :func:`_usable` mask (continuous) and category
+    ``surface_type`` plane -- the per-plane ``_usable`` mask (continuous) and category
     histogram (categorical) are computed once and reused across those variables.
     """
     mapping = _map_product_specs(reader_cls)
