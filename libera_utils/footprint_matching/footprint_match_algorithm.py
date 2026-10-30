@@ -40,11 +40,7 @@ Three environment variables are required at run time:
     to. This is the standard Libera runner convention.
 ``FMATCH_ANCILLARY_PATH``
     Root of the staged ancillary granule tree; see
-    :func:`resolve_ancillary_inputs` for its layout. Resolved
-    non-strictly: an absent or incomplete tree degrades the external columns to
-    conformant placeholders rather than failing the product (see "Ancillary inputs"
-    below). ``TODO[LIBSDC-785]``: enforce strict availability once production
-    staging is guaranteed.
+    :func:`resolve_ancillary_inputs` for its layout and "Ancillary inputs" below.
 
 One optional variable tunes the run: ``FMATCH_WORKERS`` (also a ``config.json`` key,
 default 1) is the number of worker processes the external aggregation runs the
@@ -52,14 +48,13 @@ footprints on; see :func:`~libera_utils.footprint_matching.product.aggregate_ext
 
 Ancillary inputs
 ----------------
-When a full ancillary tree is staged under ``FMATCH_ANCILLARY_PATH`` (at least one local
-granule per active reader; see :func:`resolve_ancillary_inputs`), the
-runner hands those files to the product assembly so the external variables and the
-coverage/QA columns are computed by the PSF aggregation engine. When the tree is
-absent or incomplete, those columns fall back to conformant placeholders and the
-derived-geometry (``sunglint_angle``) column is still computed from the L1B angles.
-``TODO[LIBSDC-785]``: materialize S3-staged ancillary granules locally (readers need
-real files) and enforce strict availability once production staging is guaranteed.
+Every reader active for the mode needs at least one local granule staged under
+``FMATCH_ANCILLARY_PATH`` (see :func:`resolve_ancillary_inputs`). The runner hands those
+files to the product assembly, where the PSF aggregation engine computes the external
+variables and the coverage/QA columns from them. A run with ``FMATCH_ANCILLARY_PATH``
+unset, a missing or empty reader directory, or a granule staged in S3 raises rather
+than writing those columns as fill values. ``TODO[LIBSDC-785]``: materialize S3-staged
+ancillary granules locally (readers need real files).
 """
 
 from __future__ import annotations
@@ -137,10 +132,6 @@ class FmatchRunnerConfig:
         The FMATCH operational mode this runner produces. Drives the product
         definition, the time coordinate, the active reader set, and which assembly
         path (camera- or radiometer-timescale) is taken.
-    output_product_id : DataProductIdentifier
-        The FMATCH product this runner emits. Used for documentation/logging; the
-        written filename's product id comes from the product definition's
-        ``ProductID`` attribute.
     input_product_id : DataProductIdentifier
         The product that counts as this runner's primary input: ``l1b_rad`` (``RAD-4CH``) for
         radiometer-timescale modes, and the CF-CAM-CAMTIME product (``l2_cf_cam_camtime``) for
@@ -161,7 +152,6 @@ class FmatchRunnerConfig:
     """
 
     mode: OperationalMode
-    output_product_id: DataProductIdentifier
     input_product_id: DataProductIdentifier
     cloud_fraction_product_id: DataProductIdentifier | None
     log_prefix: str
@@ -184,7 +174,7 @@ class FmatchRunnerConfig:
 # from a CF-CAM-CAMTIME file; they differ only in whether the mode carries the Camera Cloud Fraction.
 
 
-def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], np.ndarray | None]:
+def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], np.ndarray]:
     """Rebuild pseudo-footprints and cloud fraction from a local CF-CAM-CAMTIME file.
 
     The camera-timescale footprint loader for FMATCH-CAM-CAMTIME. The cloud fraction is flattened with
@@ -197,23 +187,28 @@ def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFoo
 
     Returns
     -------
-    tuple[list[PseudoFootprint], numpy.ndarray | None]
-        The pseudo-footprints and their per-footprint ``cloud_fraction_camera`` values, or ``None``
-        when the file carries no ``cloud_fraction``.
+    tuple[list[PseudoFootprint], numpy.ndarray]
+        The pseudo-footprints and their per-footprint ``cloud_fraction_camera`` values.
 
     Raises
     ------
     MissingCamtimeVariablesError
         If the file lacks a variable needed to rebuild the pseudo-footprints.
+    ValueError
+        If the file has no ``cloud_fraction`` variable.
     """
     with xr.open_dataset(local_input_path) as cf_dataset:
         cf_dataset = cf_dataset.load()
     footprints = pseudofootprints_from_camtime_dataset(cf_dataset)
-    cloud_fraction_camera: np.ndarray | None = None
-    if "cloud_fraction" in cf_dataset:
-        # Boolean-mask indexing returns row-major order, matching the reconstruction order.
-        mask = camtime_real_cell_mask(cf_dataset)
-        cloud_fraction_camera = np.asarray(cf_dataset["cloud_fraction"].values, dtype=np.float32)[mask]
+    if "cloud_fraction" not in cf_dataset:
+        raise ValueError(
+            f"CF-CAM-CAMTIME input {local_input_path} has no cloud_fraction variable, which FMATCH-CAM-CAMTIME "
+            "writes as cloud_fraction_camera. Regenerate the input with the Camera Cloud Fraction algorithm so it "
+            "carries cloud_fraction."
+        )
+    # Boolean-mask indexing returns row-major order, matching the reconstruction order.
+    mask = camtime_real_cell_mask(cf_dataset)
+    cloud_fraction_camera = np.asarray(cf_dataset["cloud_fraction"].values, dtype=np.float32)[mask]
     return footprints, cloud_fraction_camera
 
 
@@ -254,7 +249,6 @@ def _load_imager_camtime_footprints(local_input_path: Path) -> tuple[list[Pseudo
 # timescale). No RBSP-sourced readers are active at its latency rank.
 CAM_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM,
-    output_product_id=DataProductIdentifier.aux_fmatch_cam,
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam,
     log_prefix="fmatch_cam",
@@ -264,7 +258,6 @@ CAM_CONFIG = FmatchRunnerConfig(
 # which carries the pseudo-footprints and the cloud fraction; _load_cam_camtime_footprints reads both.
 CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM_CAMTIME,
-    output_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     input_product_id=DataProductIdentifier.l2_cf_cam_camtime,
     cloud_fraction_product_id=None,  # bundled in input_product_id (CF-CAM-CAMTIME)
     log_prefix="fmatch_cam_camtime",
@@ -276,7 +269,6 @@ CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
 # It declares no cloud_fraction_camera (cloud info comes from the imager readers), so it takes no cloud-fraction input.
 IMAGER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER,
-    output_product_id=DataProductIdentifier.aux_fmatch_imager,
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager",
@@ -288,7 +280,6 @@ IMAGER_CONFIG = FmatchRunnerConfig(
 # _load_imager_camtime_footprints leaves the cloud fraction unread.
 IMAGER_CAMTIME_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER_CAMTIME,
-    output_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
     input_product_id=DataProductIdentifier.l2_cf_cam_camtime,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager_camtime",
@@ -300,7 +291,6 @@ IMAGER_CAMTIME_CONFIG = FmatchRunnerConfig(
 # cloud_fraction_camera (cloud info from the imager readers), so it takes no cloud-fraction input.
 IMAGER_FLASH_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER_FLASH,
-    output_product_id=DataProductIdentifier.aux_fmatch_imager_flash,
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager_flash",
@@ -383,8 +373,14 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     Raises
     ------
     ValueError
-        If the ``PROCESSING_PATH`` environment variable is not set, or if the manifest
-        references no usable L1B inputs.
+        If the ``PROCESSING_PATH`` or ``FMATCH_ANCILLARY_PATH`` environment variable is not
+        set, if the manifest references no input of ``config.input_product_id``, if an
+        ancillary granule is staged in S3, if a FMATCH-CAM-CAMTIME input has no
+        ``cloud_fraction``, or if an L1B input has no usable footprints.
+    FileNotFoundError
+        If the ancillary root or an active reader's directory under it is missing or empty.
+    MissingCamtimeVariablesError
+        If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
     """
     now = datetime.now(UTC)
     configure_task_logging(f"{config.log_prefix}_{now}")
@@ -401,13 +397,10 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
 
     # Step 2: Locate the staged ancillary granules for this mode.
     #
-    # These are resolved, inventoried in the log, and (when the tree collapses to one
-    # local granule per active reader; see _ancillary_source_file_paths) threaded into
-    # product assembly, where the PSF aggregation engine computes the external variables
-    # and coverage/QA columns from them. Logging the inventory first lets an operator
-    # confirm staging is correct from the task log. Resolution is non-strict: an absent
-    # or incomplete tree degrades those columns to placeholders rather than failing the
-    # product (TODO[LIBSDC-785]: enforce strict availability once staging is guaranteed).
+    # These are resolved, inventoried in the log, and threaded into product assembly,
+    # where the PSF aggregation engine computes the external variables and coverage/QA
+    # columns from them. Logging the inventory first lets an operator confirm staging is
+    # correct from the task log. A missing root or reader directory raises here.
     logger.info("Step 2: Locating staged ancillary inputs")
     ancillary_inputs = resolve_ancillary_inputs(config.mode)
     log_ancillary_inventory(ancillary_inputs)
@@ -473,7 +466,7 @@ def resolve_ancillary_inputs(
     mode: OperationalMode,
     root: str | Path | S3Path | None = None,
     *,
-    strict: bool = False,
+    strict: bool = True,
 ) -> dict[str, list[Path | S3Path]]:
     """Map each reader active for ``mode`` to its staged granule files.
 
@@ -513,31 +506,24 @@ def resolve_ancillary_inputs(
         Root of the staged ancillary tree. Defaults to the ``FMATCH_ANCILLARY_PATH``
         environment variable.
     strict : bool, optional
-        How to treat missing inputs. When False (the default) a missing root, a
-        missing reader subdirectory, or an empty one is logged as a warning and
-        yields an empty list. When True each of those raises.
-
-        The default is False **in this milestone** because the PSF aggregation engine
-        that consumes these granules is not implemented yet
-        (``product.aggregate_external_variables`` is still a ``TODO[LIBSDC-785]``
-        stub): a runner must not fail on inputs that nothing reads. Flip this default
-        to True in the same change that implements the aggregation engine, at which
-        point a missing granule genuinely invalidates the product.
+        How to treat missing inputs. When True (the default) a missing root, a missing
+        reader subdirectory, or an empty one raises. When False each is logged as a
+        warning and yields an empty list.
 
     Returns
     -------
     dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
         Mapping of reader registry key to the granule files staged for it, sorted by
         name so repeated runs process files in a deterministic order. Readers with no
-        staged files map to an empty list (when ``strict`` is False).
+        staged files map to an empty list (only when ``strict`` is False).
 
     Raises
     ------
     ValueError
-        If ``root`` is not given and ``FMATCH_ANCILLARY_PATH`` is unset, and ``strict``.
+        If ``root`` is not given and ``FMATCH_ANCILLARY_PATH`` is unset, when ``strict``.
     FileNotFoundError
         If the root or a required reader subdirectory does not exist, or a required
-        subdirectory is empty, and ``strict``.
+        subdirectory is empty, when ``strict``.
     """
     active_readers = ReaderRegistry.get_readers_for_mode(mode)
 
@@ -668,7 +654,9 @@ def run_footprint_matching(
     Raises
     ------
     ValueError
-        If a camera-timescale mode has no ``camera_footprint_loader`` configured.
+        If a camera-timescale mode has no ``camera_footprint_loader`` configured, if a
+        FMATCH-CAM-CAMTIME input has no ``cloud_fraction``, or if a radiometer-timescale L1B
+        file has no usable footprints (raised by :func:`load_l1b_radiometer_inputs`).
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
 
@@ -694,51 +682,49 @@ def run_footprint_matching(
 
 
 def _ancillary_source_file_paths(
-    ancillary_inputs: dict[str, list[Path | S3Path]] | None,
-) -> dict[str, list[Path]] | None:
-    """Reduce the resolved ancillary inventory to the per-reader granule lists assembly needs.
+    ancillary_inputs: dict[str, list[Path | S3Path]],
+) -> dict[str, list[Path]]:
+    """Reduce the resolved ancillary inventory to the per-reader local granule lists assembly needs.
 
     :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs` returns
     a *list* of staged granules per reader, and each reader takes the granule(s) of its
     source for the period (a reader that reads one granule per period raises when handed
-    more). This keeps every staged granule, returning ``None`` (so assembly falls back to
-    placeholders) whenever the tree is not usable as-is:
-
-    * no inventory at all (``FMATCH_ANCILLARY_PATH`` unset / nothing staged),
-    * any active reader with zero staged granules, or
-    * any granule in S3 (readers need a real local file; S3 materialization for
-      ancillary inputs is not implemented yet -- ``TODO[LIBSDC-785]``).
+    more). This keeps every staged granule as a local path.
 
     Parameters
     ----------
-    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]] or None
+    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
         The per-reader inventory from ``resolve_ancillary_inputs``.
 
     Returns
     -------
-    dict[str, list[pathlib.Path]] or None
-        Reader-key -> local granule(s), or ``None`` when the tree is unusable.
+    dict[str, list[pathlib.Path]]
+        Reader-key -> local granule(s).
+
+    Raises
+    ------
+    ValueError
+        If the inventory is empty, if a reader has no staged granule, or if a granule is in S3.
     """
     if not ancillary_inputs:
-        return None
+        raise ValueError(
+            "No ancillary inputs were given, so the external variables cannot be computed. Pass the inventory "
+            f"from resolve_ancillary_inputs, with granules staged under ${ANCILLARY_PATH_ENV}/<reader key>/."
+        )
     source_file_paths: dict[str, list[Path]] = {}
     for reader_key, files in ancillary_inputs.items():
         if not files:
-            logger.warning(
-                "Ancillary source %r has no staged granule. Writing external variables as placeholders for this "
-                "product.",
-                reader_key,
+            raise ValueError(
+                f"Ancillary source {reader_key!r} has no staged granule. Stage at least one granule under "
+                f"${ANCILLARY_PATH_ENV}/{reader_key}/."
             )
-            return None
         remote = [f for f in files if is_s3(f)]
         if remote:
-            logger.warning(
-                "Ancillary source %r is staged in S3 (%s); local materialization of ancillary granules is not "
-                "implemented yet. Writing external variables as placeholders.",
-                reader_key,
-                remote[0],
+            # TODO[LIBSDC-785]: materialize S3-staged ancillary granules locally instead of raising.
+            raise ValueError(
+                f"Ancillary source {reader_key!r} is staged in S3 ({remote[0]}), but the readers need local files. "
+                f"Stage the ancillary tree on local disk and point ${ANCILLARY_PATH_ENV} at it."
             )
-            return None
         source_file_paths[reader_key] = [Path(str(f)) for f in files]
     return source_file_paths
 
@@ -747,8 +733,8 @@ def create_and_write_data_product(
     input_file_path: str | Path | S3Path,
     output_path: str | Path | S3Path,
     config: FmatchRunnerConfig,
+    ancillary_inputs: dict[str, list[Path | S3Path]],
     cloud_fraction_file_paths: list[str] | None = None,
-    ancillary_inputs: dict[str, list[Path | S3Path]] | None = None,
 ) -> LiberaDataProductFilename:
     """Run footprint matching on one input file and write the FMATCH data product.
 
@@ -761,35 +747,37 @@ def create_and_write_data_product(
         Directory / prefix in the processing dropbox where the product file is written.
     config : FmatchRunnerConfig
         Runner parameters supplying the mode and input products.
+    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
+        The staged ancillary inventory from
+        :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs`:
+        at least one local granule for every reader active for the mode.
     cloud_fraction_file_paths : list[str], optional
         SEPARATE radiometer-timescale Camera Cloud Fraction files (CF-CAM) selected from the manifest,
         if any. Reading them is not implemented yet (``TODO[LIBSDC-785]``); they are logged as
         provenance and the ``cloud_fraction_camera`` variable is written as a placeholder. (Camera-
         timescale modes read real cloud fraction from ``input_file_path`` instead.)
-    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]], optional
-        The staged ancillary inventory from
-        :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs`.
-        When it resolves to one local granule per active reader, the external variables
-        and coverage/QA columns are computed; otherwise those columns are placeholders
-        (see :func:`_ancillary_source_file_paths`).
 
     Returns
     -------
     LiberaDataProductFilename
         The written data product file, with a proper Libera filename.
 
+    Raises
+    ------
+    ValueError
+        If ``ancillary_inputs`` is empty, a reader in it has no granule, or a granule is in S3; or
+        for any condition :func:`run_footprint_matching` raises it for.
+    MissingCamtimeVariablesError
+        If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
+
     Notes
     -----
-    Only the L1B-derived columns are written with real values. The external-reader
-    aggregates (``igbp_surface_type``, ``era5_*``, ``flashflux_*``, ``cldpix_*``, ...) and the
-    camera cloud-fraction values are **not** supplied here - the aggregation engine that
-    computes them is still ``TODO[LIBSDC-785]`` - so ``write_fmatch_product`` writes them as
-    conformant fill values. A product written by this
-    function is therefore **not yet consumable by SCENE-ID**: its placeholder
-    ``igbp_surface_type=0`` makes
-    :func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` raise.
-    These runners are intentionally non-operational end-to-end until that engine lands; see
-    the module ``Milestone note``.
+    The external-reader aggregates (``igbp_surface_type``, ``era5_*``, ``flashflux_*``,
+    ``cldpix_*``, ...) and the ``psf_coverage_fraction`` and ``q_flags`` columns are computed by
+    the PSF aggregation engine from ``ancillary_inputs``. The one placeholder is the
+    radiometer-timescale ``cloud_fraction_camera``, written as fill until the CF-CAM read
+    lands (``TODO[LIBSDC-785]``); camera-timescale modes carry the real cloud fraction from
+    their CF-CAM-CAMTIME input.
     """
     inputs, cloud_fraction_camera = run_footprint_matching(input_file_path, config)
 
@@ -807,14 +795,11 @@ def create_and_write_data_product(
             "cloud_fraction_camera will be written as a placeholder."
         )
 
-    # Collapse the staged ancillary inventory to the one-file-per-reader map the
-    # aggregation path needs; None means "aggregate nothing, placeholder those columns".
     source_file_paths = _ancillary_source_file_paths(ancillary_inputs)
-    if source_file_paths is not None:
-        provenance.extend(path.name for paths in source_file_paths.values() for path in paths)
-        logger.info("Aggregating external variables from %d staged ancillary source(s)", len(source_file_paths))
+    provenance.extend(path.name for paths in source_file_paths.values() for path in paths)
+    logger.info("Aggregating external variables from %d staged ancillary source(s)", len(source_file_paths))
 
-    logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)
+    logger.info("Writing %s data product for input %s", config.mode.value, input_file_name)
     output_file_path = write_fmatch_product(
         config.mode,
         inputs,
@@ -823,12 +808,9 @@ def create_and_write_data_product(
         input_files=",".join(provenance),
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
-        # Ancillary staging is non-strict (see the module "Ancillary inputs" note): with nothing usable staged,
-        # the external and coverage columns are written as fill values rather than failing the product.
-        allow_placeholders=source_file_paths is None,
         strict=True,
     )
-    logger.info(f"Wrote data product to {output_file_path.path}")
+    logger.info("Wrote %s data product to %s", output_file_path.data_product_id.value, output_file_path.path)
     return output_file_path
 
 

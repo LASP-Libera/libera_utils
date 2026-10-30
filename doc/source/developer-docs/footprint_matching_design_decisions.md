@@ -214,8 +214,9 @@ is one box query plus one PSF evaluation per sample.
 
 A reader that cannot read its source raises, and the run stops. The earlier design caught
 the exception and scored the footprint as partial coverage, which could publish a product
-with a source silently missing. The runner still writes placeholder columns, by an explicit
-opt-in, when no ancillary data is staged at all.
+with a source silently missing. The runner raises the same way when the ancillary tree is
+unset, a reader's directory is missing or empty, or a granule is staged in S3; only a direct
+call to `write_fmatch_product` with `allow_placeholders=True` writes those columns as fill.
 
 ### What a granule list means per reader
 
