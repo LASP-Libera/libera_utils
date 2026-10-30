@@ -343,7 +343,8 @@ class AncillaryReader(abc.ABC):
             attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
             registered to a different class, or declares a ``PRODUCT_STACKS`` entry that names
             a spec it does not produce, stacks a spec twice, takes the name of a product spec,
-            or stacks specs only some of which have standard-deviation companions.
+            stacks specs only some of which have standard-deviation companions, or stacks
+            specs whose ``modes`` differ.
         """
         super().__init_subclass__(**kwargs)
         # ABCMeta sets __abstractmethods__ only after type.__new__ returns, and this hook runs inside
@@ -445,10 +446,12 @@ class AncillaryReader(abc.ABC):
         ------
         TypeError
             If a stack names a spec the reader does not produce, a spec is stacked twice,
-            a stack takes the name of a product spec, or a stack's members have
-            standard-deviation companions for some members but not others.
+            a stack takes the name of a product spec, a stack's members have
+            standard-deviation companions for some members but not others, or a stack's
+            members do not all have the same ``modes``.
         """
-        product_names = {spec.name for spec in cls.product_variable_specs()}
+        product_specs = {spec.name: spec for spec in cls.product_variable_specs()}
+        product_names = set(product_specs)
         stacked: list[str] = []
         for stack in cls.PRODUCT_STACKS:
             unknown = [member for member in stack.members if member not in product_names]
@@ -469,6 +472,14 @@ class AncillaryReader(abc.ABC):
                     f"Reader {cls.__name__!r}: ProductStack {stack.name!r} mixes members with and without a "
                     "standard-deviation companion, so its companion stack would have gaps. Stack specs that "
                     "aggregate the same way."
+                )
+            # A companion spec carries its parent's modes, so checking the declared members covers the
+            # companion stack too.
+            if len({product_specs[member].modes for member in stack.members}) > 1:
+                raise TypeError(
+                    f"Reader {cls.__name__!r}: ProductStack {stack.name!r} stacks specs with different modes, so "
+                    "its product variable would be partly empty in some products. Give every member of a stack "
+                    "the same modes."
                 )
             stacked.extend(stack.members)
         repeated = sorted({name for name in stacked if stacked.count(name) > 1})
@@ -499,6 +510,16 @@ class AncillaryReader(abc.ABC):
     def file_paths(self) -> tuple[Path, ...]:
         """The staged granule paths passed at construction, in the order given."""
         return self._file_paths
+
+    def preload(self) -> None:
+        """Load whatever this reader holds for the whole run, ahead of the first query.
+
+        A process pool calls this before forking so the workers share one copy of the
+        loaded data. This base implementation loads nothing: a reader that loads by time
+        step or pass window loads on the query that needs it.
+        :class:`~libera_utils.footprint_matching.readers.base.StaticReader` overrides it
+        to load its whole source.
+        """
 
     @property
     def single_file_path(self) -> Path:
@@ -743,6 +764,18 @@ class StaticReader(AncillaryReader):
     source once in :meth:`_load_native`; this class indexes it (a point cloud into 1
     degree bins) and serves every query from memory.
     """
+
+    def preload(self) -> None:
+        """Load and index the whole source now, rather than on the first query.
+
+        Raises
+        ------
+        ValueError
+            If the loaded data carries a different number of variables than ``VARIABLES``.
+        TypeError
+            If :meth:`_load_native` returned none of the three native forms.
+        """
+        _ = self._native
 
     @cached_property
     def _native(self) -> _Native:

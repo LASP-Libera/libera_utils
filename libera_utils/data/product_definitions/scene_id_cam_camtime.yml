@@ -289,7 +289,8 @@ variables:
       units: degrees_east
 
   # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
-  # Each pseudo-footprint is a contiguous block of L1B camera pixels (camera_segmentation.PseudoFootprint). These four
+  # Each pseudo-footprint is a contiguous block of L1B camera pixels, segmented by the Camera Cloud Fraction algorithm
+  # (types.PseudoFootprint). These four
   # inclusive bounds trace a subsection back to its source pixels in the L1B Daily Camera grid (dimensions
   # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y): x_min..x_max along the column axis and y_min..y_max along the row
   # axis, both endpoints inclusive. NOTE: this (x_min, x_max, y_min, y_max) representation assumes each footprint is a

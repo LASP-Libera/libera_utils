@@ -54,6 +54,7 @@
     "11": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/jpss_sc_pos_l1a.yml"
   },
   "TEST_KEY": -999,
+  "FMATCH_WORKERS": 1,
   "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/trmm.csv",
   "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv",
   "UNFILTERING_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/unfiltering.csv",
