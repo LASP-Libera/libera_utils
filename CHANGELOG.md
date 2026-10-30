@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.19.0] - 2026-10-30
+
+### Added
+
+- `libera_utils.footprint_matching.sources.build_sources`, which instantiates the readers an `OperationalMode`'s product uses over their staged granules and returns them keyed by reader registry key. It raises `KeyError` when the staged mapping is missing a source the mode uses or names one it does not, `TypeError` when an entry is a single path rather than a list, `ValueError` when an entry holds no granule, and `FileNotFoundError` when a staged granule is not an existing file; construction opens no granule, so an unreadable one raises from the first `samples_in` that loads it. Each reader holds its source once (a static reader its whole indexed body of data, a stepped reader the one hourly step nearest the current footprint, a pass reader the granules in its time window).
+- `notebooks/04_sources_query.ipynb`, a demonstration of the box query and time matching.
+
 ## [5.18.0] - 2026-10-29
 
 ### Added
@@ -945,7 +952,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...HEAD
+[5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
 [5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
 [5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
 [5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
