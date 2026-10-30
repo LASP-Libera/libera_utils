@@ -246,7 +246,7 @@ class PixelWeigher(abc.ABC):
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
         sample_resolution_km: float,
-        viewing_zenith_deg: float = 0.0,
+        viewing_zenith_deg: float,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:
@@ -272,9 +272,10 @@ class PixelWeigher(abc.ABC):
         sample_resolution_km : float
             The source's native sample spacing (the reader's ``RESOLUTION_KM``). Sets
             the coverage reference bin so one native sample marks about one bin.
-        viewing_zenith_deg : float, optional
+        viewing_zenith_deg : float
             Viewing zenith angle, degrees. Elongates the ground footprint at oblique
-            views.
+            views. Required: it sets the slant range, the along-scan foreshortening and
+            the truncation radius, so no default stands in for a missing angle.
         cone_angle_rate : float, optional
             L1B ``Cone_Angle_Rate`` (deg/s). Its sign sets the scan direction and a
             (near-)zero value marks a stationary scanner. Required by
@@ -350,7 +351,7 @@ class RadialWeigher(PixelWeigher):
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
         sample_resolution_km: float,
-        viewing_zenith_deg: float = 0.0,
+        viewing_zenith_deg: float,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:
@@ -530,7 +531,7 @@ class AngularPSFWeigher(PixelWeigher):
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
         sample_resolution_km: float,
-        viewing_zenith_deg: float = 0.0,
+        viewing_zenith_deg: float,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:

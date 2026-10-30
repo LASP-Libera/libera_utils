@@ -17,13 +17,14 @@ from libera_utils.footprint_matching.weighting import (
 
 # Spacecraft distance from Earth's center (~835 km orbit), km.
 _SATELLITE_RADIUS_KM = 7213.0
-# Spacecraft geolocation the radial weigher needs only for its ground radius, plus a
-# 1 km sample spacing for the coverage reference grid.
+# Spacecraft geolocation the radial weigher needs only for its ground radius, a nadir
+# view, and a 1 km sample spacing for the coverage reference grid.
 _GEOM = dict(
     subsatellite_lat_deg=0.0,
     subsatellite_lon_deg=0.0,
     satellite_radius_km=_SATELLITE_RADIUS_KM,
     sample_resolution_km=1.0,
+    viewing_zenith_deg=0.0,
 )
 
 
@@ -142,7 +143,9 @@ class TestRadialWeigher:
         lats = np.array([-0.1, 0.1])
         lons = np.array([-0.1, 0.1])
         nadir = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
-        oblique = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, viewing_zenith_deg=70.0, **_GEOM)
+        oblique = RadialWeigher().weight_field(
+            _grid_samples(lats, lons), 0.0, 0.0, **{**_GEOM, "viewing_zenith_deg": 70.0}
+        )
         assert oblique.max_radius_km > nadir.max_radius_km
 
     def test_empty_samples_give_zero_energy_and_coverage(self):
@@ -436,7 +439,9 @@ class TestAngularPSFWeigher:
         and asserts they differ by more than 1e-3 somewhere.
         """
         samples, _, _ = self._grid()
-        radial = RadialWeigher().weight_field(samples, self.B_LAT, self.B_LON, viewing_zenith_deg=self.VZA, **_GEOM)
+        radial = RadialWeigher().weight_field(
+            samples, self.B_LAT, self.B_LON, **{**_GEOM, "viewing_zenith_deg": self.VZA}
+        )
         angular = self._wf()
         # Normalize both to unit sum before comparing spatial shape.
         r = radial.weights / radial.weights.sum()
@@ -475,6 +480,7 @@ class TestAngularPSFWeigher:
             subsatellite_lon_deg=self.S_LON,
             satellite_radius_km=_SATELLITE_RADIUS_KM,
             sample_resolution_km=1.0,
+            viewing_zenith_deg=self.VZA,
             cone_angle_rate=-1.0,
         )
         assert wf.total_energy == 0.0
