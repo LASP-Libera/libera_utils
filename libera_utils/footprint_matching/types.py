@@ -14,7 +14,7 @@ import numpy as np
 
 
 class OperationalMode(enum.Enum):
-    """Five operational modes for the FMATCH algorithm.
+    """Four operational modes for the FMATCH algorithm.
 
     Each mode produces a distinct data product with its own identifier.
     Members are declared in order of increasing data latency.
@@ -25,8 +25,6 @@ class OperationalMode(enum.Enum):
         Radiometer timescale, camera/NRT latency. Runs continuously from mission start.
     CAM_CAMTIME : str
         Camera timescale, camera/NRT latency. Runs continuously from mission start.
-    IMAGER_FLASH : str
-        Radiometer timescale, RBSP Flash latency. Available post-Year 1.
     IMAGER : str
         Radiometer timescale, RBSP Climate Quality latency. Available post-Year 1.
     IMAGER_CAMTIME : str
@@ -40,7 +38,6 @@ class OperationalMode(enum.Enum):
 
     CAM = "FMATCH-CAM"
     CAM_CAMTIME = "FMATCH-CAM-CAMTIME"
-    IMAGER_FLASH = "FMATCH-IMAGER-FLASH"
     IMAGER = "FMATCH-IMAGER"
     IMAGER_CAMTIME = "FMATCH-IMAGER-CAMTIME"
 

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Names used throughout footprint data processing and when emitting a Libera SCENE-ID product. FootprintData
 # carries data on the "RADIOMETER_TIME" dimension from creation onward: the radiometer-timescale scene-ID
-# products (CAM, IMAGER, FLASH) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
+# products (CAM, IMAGER) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
 # mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
 # the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
 # so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
@@ -1233,7 +1233,7 @@ class FootprintData:
     def to_time_product(self, time_variable: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
         """Return the footprint data ready to write on its record grid.
 
-        The radiometer-timescale scene-ID products (CAM/IMAGER/FLASH) contain exactly one footprint per observation
+        The radiometer-timescale scene-ID products (CAM/IMAGER) contain exactly one footprint per observation
         time and are written on the same 1-D time dimension as their upstream product, so downstream consumers can
         align scene IDs to the upstream records positionally. The camera-timescale product (CAM-CAMTIME) is instead
         written on a 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: one entry per image subsection. :class:`FootprintData`
