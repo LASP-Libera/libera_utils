@@ -214,8 +214,9 @@ is one box query plus one PSF evaluation per sample.
 
 A reader that cannot read its source raises, and the run stops. The earlier design caught
 the exception and scored the footprint as partial coverage, which could publish a product
-with a source silently missing. The runner still writes placeholder columns, by an explicit
-opt-in, when no ancillary data is staged at all.
+with a source silently missing. The runner raises the same way when the ancillary tree is
+unset, a reader's directory is missing or empty, or a granule is staged in S3; only a direct
+call to `write_fmatch_product` with `allow_placeholders=True` writes those columns as fill.
 
 ### What a granule list means per reader
 
@@ -247,7 +248,66 @@ runs the same segment 3.6 times faster with the parent's 2 GB of sources shared 
 0.7 GB touched per worker. Batch vectorization of the PSF evaluation across footprints is
 the next lever if the pool is not enough.
 
-## 9. Open questions for the science team
+## 9. Where configuration lives, and what to change for common updates
+
+Reader configuration is code, not a configuration file: each reader declares its key, its
+source and its variables as class attributes and field tables, and the product definitions
+are written to match. Two tests in `tests/unit/test_footprint_matching/test_product.py`
+hold the two sides together: `test_external_variables_match_readers` fails when a product
+definition is missing a reader variable or has a different dtype, and
+`test_reader_instrument_is_recorded_in_long_name` fails when a `long_name` does not carry
+the reader's `INSTRUMENT`. Run them after any of the changes below.
+
+### Swap the satellite or instrument a source comes from
+
+For example, moving the VIIRS readers from NOAA-20 to NOAA-21:
+
+1. In each affected reader under `libera_utils/footprint_matching/readers/`, set
+   `INSTRUMENT` (for example `INSTRUMENT = "NOAA21"` in `aod.py`, `brdf.py`, `viirs.py`,
+   `cldpix.py` and `flashflux.py`), and update the module docstring's product and file-naming
+   lines.
+2. In every `libera_utils/data/product_definitions/fmatch_*.yml`, change the instrument
+   in parentheses at the end of each affected `long_name`, for example `(NOAA20)` to
+   `(NOAA21)`.
+3. If the new product's file layout differs (group paths, variable names, dimension
+   order, fill or geolocation conventions), update the reader's field table and
+   `_load_granule` or `_load_native`, and add a cut of a real granule under
+   `tests/test_data/footprint_matching/real/` with a test that reads it.
+4. Stage the new granules under the same directory as before: the directory is named by
+   the reader key, not the instrument.
+
+The reader key and the product variable names do not change, so downstream consumers are
+unaffected unless step 3 changes a variable.
+
+### Add a variable to an existing reader
+
+1. Add the field to the reader's table: `_CLDPIX_FIELDS` in `cldpix.py`,
+   `_FLASHFLUX_BASE_FIELDS` or `_IMAGER_FLASHFLUX_SOURCES` in `flashflux.py`, `_D3_GROUP_MAP` and
+   `VARIABLES` in `viirs.py`, or the reader's `VARIABLES` elsewhere. Give it its
+   aggregation, the products that carry it in `modes`, its valid range with the document it
+   comes from, and for a mode-aggregated code `n_categories` and an `int16` dtype.
+2. Add the product variable `<reader key>_<variable name>` to each product definition
+   whose mode carries it, with a `long_name` ending in `(<INSTRUMENT>)` and its units. A
+   continuous variable also gets a `<reader key>_<variable name>_standard_deviation`
+   companion. A variable the reader stacks in `PRODUCT_STACKS` (ERA5's pressure levels) is
+   published as its stack instead, `<reader key>_<stack name>` on the stack's dimension.
+3. Extend the reader's synthetic fixture in `tests/plugins/footprint_matching_fixtures.py`
+   and its tests, and record the change under `## [Unreleased]` in `CHANGELOG.md`.
+
+### Add a reader or change which products a reader feeds
+
+1. Write the reader as a subclass of `StaticReader`, `SteppedGridReader` or `PassReader`
+   with a unique `READER_KEY`; importing it in `readers/__init__.py` registers it.
+2. Name the products it feeds in each of its variables' `modes`; `FMATCH_MODE_READERS` in
+   `readers/registry.py` is derived from them.
+3. Add its variables to those products' definitions, as above.
+4. Stage its granules under `$FMATCH_ANCILLARY_PATH/<reader key>/`; the runner derives the
+   directories it reads from the registry.
+
+Renaming a reader key renames its product variables and its staging directory, so it is a
+change consumers and the staging pipeline must follow.
+
+## 10. Open questions for the science team
 
 - The time windows in section 2, and whether ERA5 should be interpolated in time.
 - Whether a per-sample area weight (section 4) is wanted for the imager sources.

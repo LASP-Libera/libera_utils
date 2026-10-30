@@ -32,9 +32,15 @@ from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.geometry import MissingGeolocationError
 from libera_utils.footprint_matching.product import (
     _CAMERA_NOMINAL_SATELLITE_RADIUS_KM,
+    _CAMTIME_SEGMENTATION_VARIABLES,
     _RADIOMETER_L1B_VARIABLES,
+    CAMTIME_BBOX_TRUNCATED_BIT,
+    CAMTIME_BBOX_WRAPS_DATELINE_BIT,
+    CAMTIME_PSEUDOFOOTPRINT_VARIABLES,
     FMATCH_DEFINITION_FILENAMES,
     L1B_PASSTHROUGH_VARIABLES,
+    MissingCamtimeVariablesError,
+    _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     _footprint_geometry,
     assemble_fmatch_dataset,
@@ -42,16 +48,19 @@ from libera_utils.footprint_matching.product import (
     compute_derived_viewing_geometry,
     fmatch_time_variable,
     load_fmatch_definition,
+    pseudofootprints_from_camtime_dataset,
+    write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.base import AncillaryReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import (
     BoundingBox,
+    CameraFootprintQualityFlag,
     FmatchCoverageFlag,
     OperationalMode,
 )
 from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
-from tests.plugins.footprint_matching_fixtures import make_era5_surface_netcdf_fixture
+from tests.plugins.footprint_matching_fixtures import make_cf_cam_camtime_dataset, make_era5_surface_netcdf_fixture
 
 # The production reader keys. Intersecting with these makes the cross-check robust
 # against throwaway readers other tests register into the shared ReaderRegistry
@@ -349,6 +358,7 @@ class TestFmatchConformance:
 # Timescale split of the modes, so the assembly tests can drive each mode with the
 # right kind of input.
 RADIOMETER_MODES = tuple(mode for mode in ALL_MODES if fmatch_time_variable(mode) == "RADIOMETER_TIME")
+CAMTIME_MODES = tuple(mode for mode in ALL_MODES if fmatch_time_variable(mode) == "CAMERA_TIME")
 
 
 def _l1b_passthrough(n_footprints: int = 6) -> dict[str, np.ndarray]:
@@ -360,6 +370,11 @@ def _l1b_passthrough(n_footprints: int = 6) -> dict[str, np.ndarray]:
     for name in _RADIOMETER_L1B_VARIABLES:
         data[name] = np.linspace(1.0, 40.0, n_footprints, dtype=np.float32)
     return data
+
+
+def _pseudo_footprints() -> list:
+    """Pseudo-footprints rebuilt from a small synthetic CF-CAM-CAMTIME grid."""
+    return pseudofootprints_from_camtime_dataset(make_cf_cam_camtime_dataset(n_images=1, n_pixels_x=3, n_pixels_y=3))
 
 
 class TestRadiometerAssembly:
@@ -443,6 +458,83 @@ class TestRadiometerAssembly:
 class TestCamtimeAssembly:
     """Camera-timescale modes assemble from camera pseudo-footprints."""
 
+    @pytest.mark.parametrize("mode", CAMTIME_MODES)
+    def test_assembles_conformant_dataset(self, mode, definitions):
+        definition = definitions[mode]
+        dataset = assemble_fmatch_dataset(
+            mode, _pseudo_footprints(), algorithm_version="1.0.0", input_files="l1b_cam.nc", allow_placeholders=True
+        )
+
+        assert definition.check_dataset_conformance(dataset, strict=True) == []
+
+    def test_imager_camtime_uses_the_same_segmentation_path(self):
+        """CAM-CAMTIME and IMAGER-CAMTIME share the segmentation path; only the reader set differs."""
+        footprints = _pseudo_footprints()
+        cam = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints, allow_placeholders=True)
+        imager = assemble_fmatch_dataset(OperationalMode.IMAGER_CAMTIME, footprints, allow_placeholders=True)
+
+        assert cam.sizes["PSEUDOFOOTPRINT"] == imager.sizes["PSEUDOFOOTPRINT"] == len(footprints)
+        # Every segmentation-derived column is declared by BOTH camtime products, so all come out
+        # identical: same footprints, same code path.
+        for name in _CAMTIME_SEGMENTATION_VARIABLES:
+            np.testing.assert_array_equal(cam[name].values, imager[name].values)
+        # Only the CAM product carries the Libera WFOV cloud fraction.
+        assert "cloud_fraction_camera" in cam.variables
+        assert "cloud_fraction_camera" not in imager.variables
+
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_both_camtime_products_carry_pixel_block_provenance(self, mode, definitions):
+        """Both camera-timescale products carry the pixel-block provenance, filled with real segmentation values.
+
+        The block's inclusive pixel extent is carried as the four camera_pixel_{x,y}_{min,max} COORDINATES on the 2-D
+        (CAMERA_TIME, PSEUDOFOOTPRINT) grid; the boresight pixel is carried as the center_pixel_x/y variables. The four
+        retired *_start/_stop variables must be gone. All are computed by segmentation for every camera-timescale
+        mode, so both products carry them as real values rather than placeholders.
+        """
+        definition = definitions[mode]
+        footprints = _pseudo_footprints()
+        dataset = assemble_fmatch_dataset(mode, footprints, allow_placeholders=True)
+
+        # camera_pixel_{x,y}_{min,max} are four inclusive-bound COORDINATES on the 2-D grid. The single-image fixture
+        # yields one CAMERA_TIME row, so the footprints fill that row along PSEUDOFOOTPRINT (values raveled to compare).
+        expected_bounds = {
+            "camera_pixel_x_min": [f.slice_x.start for f in footprints],
+            "camera_pixel_x_max": [f.slice_x.stop - 1 for f in footprints],
+            "camera_pixel_y_min": [f.slice_y.start for f in footprints],
+            "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
+        }
+        for name, values in expected_bounds.items():
+            assert name in definition.coordinates, name
+            assert name in dataset.coords, name
+            assert dataset[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+            np.testing.assert_array_equal(dataset[name].values.ravel(), values)
+
+        # The boresight (center) pixel stays as FMATCH-only data variables (not carried downstream to SCENE-ID).
+        for name in ("center_pixel_x", "center_pixel_y"):
+            assert name in definition.variables, name
+            assert name in dataset.variables, name
+        np.testing.assert_array_equal(dataset["center_pixel_x"].values.ravel(), [f.center_ix for f in footprints])
+        np.testing.assert_array_equal(dataset["center_pixel_y"].values.ravel(), [f.center_iy for f in footprints])
+
+        # The old start/stop layout is retired from both products.
+        retired = {"camera_pixel_x_start", "camera_pixel_x_stop", "camera_pixel_y_start", "camera_pixel_y_stop"}
+        assert retired.isdisjoint(set(definition.variables) | set(definition.coordinates))
+        assert retired.isdisjoint(set(dataset.variables))
+
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_footprint_is_a_zero_based_coordinate(self, mode, definitions):
+        """PSEUDOFOOTPRINT is a declared int32 coordinate: a 0-based index over the subsection axis, generated at write
+        time. Matches SCENE-ID-CAM-CAMTIME so the shared axis is identical across producer and consumer.
+        """
+        definition = definitions[mode]
+        dataset = assemble_fmatch_dataset(mode, _pseudo_footprints(), allow_placeholders=True)
+
+        assert "PSEUDOFOOTPRINT" in definition.coordinates
+        assert "PSEUDOFOOTPRINT" in dataset.coords
+        assert dataset["PSEUDOFOOTPRINT"].dims == ("PSEUDOFOOTPRINT",)
+        assert dataset["PSEUDOFOOTPRINT"].dtype == np.int32
+        assert list(dataset["PSEUDOFOOTPRINT"].values) == list(range(dataset.sizes["PSEUDOFOOTPRINT"]))
+
     def test_ragged_images_pad_short_rows_on_the_grid(self):
         """Images with fewer subsections than the widest image pad along PSEUDOFOOTPRINT with fill values.
 
@@ -482,6 +574,32 @@ class TestCamtimeAssembly:
         assert np.isnan(latitude[1, 1])
         # Integer pixel-bound coordinates cannot hold NaN, and 0 is a real pixel index, so the padded cell takes -1.
         assert dataset["camera_pixel_x_min"].values[1, 1] == -1
+
+    def test_radiometer_mode_rejects_pseudo_footprints(self):
+        with pytest.raises(ValueError, match="not a camera-timescale mode"):
+            _assemble_camtime_dataset(_pseudo_footprints(), mode=OperationalMode.CAM, allow_placeholders=True)
+
+
+class TestWriteFmatchProduct:
+    """Every mode must write a strictly-conformant file under a proper Libera filename."""
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_writes_conformant_product(self, mode, tmp_path, definitions):
+        inputs = _pseudo_footprints() if fmatch_time_variable(mode) == "CAMERA_TIME" else _l1b_passthrough()
+
+        # strict=True: reaching the assertions below is itself the conformance guarantee.
+        written = write_fmatch_product(
+            mode,
+            inputs,
+            tmp_path,
+            algorithm_version="1.0.0",
+            input_files="l1b.nc",
+            strict=True,
+            allow_placeholders=True,
+        )
+
+        assert written.path.exists()
+        assert written.data_product_id.value == definitions[mode].attributes["ProductID"]
 
 
 class TestDerivedViewingGeometry:
@@ -735,3 +853,52 @@ class TestAssemblyWithAggregation:
         assert np.isnan(dataset["era5_surface_wind_u10"].values[0])
         np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
         assert int(dataset["q_flags"].values[0]) & int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
+
+
+class TestPseudofootprintsFromCamtime:
+    """Camera pseudo-footprints are rebuilt from the CF-CAM-CAMTIME grid the Camera Cloud Fraction algorithm writes."""
+
+    def test_rebuilds_one_footprint_per_real_cell_in_row_major_order(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2)
+
+        footprints = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert len(footprints) == 8
+        assert [f.time for f in footprints] == [dataset["CAMERA_TIME"].values[i] for i in (0, 0, 0, 0, 1, 1, 1, 1)]
+        assert [(f.center_ix, f.center_iy) for f in footprints[:4]] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    def test_inclusive_pixel_bounds_become_half_open_slices(self):
+        footprint = pseudofootprints_from_camtime_dataset(make_cf_cam_camtime_dataset(n_images=1))[0]
+
+        assert footprint.slice_x == slice(0, 1)
+        assert footprint.slice_y == slice(0, 1)
+
+    def test_padded_cells_are_skipped(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2, n_padded=3)
+
+        assert len(pseudofootprints_from_camtime_dataset(dataset)) == 5
+
+    def test_bbox_and_quality_flags_are_decoded(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=1, n_pixels_x=1, n_pixels_y=2)
+        dataset["psf_bbox_flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
+        dataset["q_flags"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
+
+        clean, flagged = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert (clean.bbox.wraps_dateline, clean.bbox.is_polar, clean.bbox.truncated) == (False, False, False)
+        assert (flagged.bbox.wraps_dateline, flagged.bbox.is_polar, flagged.bbox.truncated) == (True, False, True)
+        assert clean.q_flags == CameraFootprintQualityFlag(0)
+        assert flagged.q_flags == CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
+
+    def test_missing_variable_raises_naming_it(self):
+        dataset = make_cf_cam_camtime_dataset().drop_vars(["psf_bbox_flags", "camera_pixel_x_min"])
+
+        with pytest.raises(MissingCamtimeVariablesError, match="camera_pixel_x_min, psf_bbox_flags"):
+            pseudofootprints_from_camtime_dataset(dataset)
+
+    def test_every_required_name_is_one_the_fmatch_camtime_products_declare(self, definitions):
+        """FMATCH copies these straight into its camera-timescale products, so each must be declared there."""
+        for mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME):
+            declared = {*definitions[mode].variables, *definitions[mode].coordinates}
+            undeclared = set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"psf_bbox_flags"}
+            assert not undeclared, (mode, undeclared)

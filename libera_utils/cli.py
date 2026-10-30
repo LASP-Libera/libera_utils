@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
@@ -78,6 +79,17 @@ def parse_cli_args(cli_args: list):
     )
     scene_id_parser.set_defaults(func=scene_id_algorithm.scene_id_cli_handler)
     scene_id_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
+    # =========================
+    # FOOTPRINT MATCHING (FMATCH)
+    # =========================
+    fmatch_parser = subparsers.add_parser(
+        "fmatch",
+        help="run the Libera FMATCH footprint-matching algorithm variant named by LIBERA_FMATCH_VARIANT "
+        "from a manifest file",
+    )
+    fmatch_parser.set_defaults(func=footprint_match_algorithm.fmatch_cli_handler)
+    fmatch_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS

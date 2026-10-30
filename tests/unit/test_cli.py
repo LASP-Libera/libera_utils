@@ -8,6 +8,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.scene_identification import scene_id_algorithm
 
 
@@ -434,3 +435,21 @@ def test_scene_id_cli_dispatch(variant, monkeypatch):
 
     assert called_with["manifest_path"] == Path("file.manifest")
     assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]
+
+
+@pytest.mark.parametrize("variant", ["cam", "cam-camtime", "imager", "imager-camtime", "imager-flash"])
+def test_fmatch_cli_dispatch(variant, monkeypatch):
+    """``fmatch`` runs the variant named by LIBERA_FMATCH_VARIANT, passing ``run_algorithm`` the manifest path."""
+    called_with = {}
+    monkeypatch.setattr(
+        footprint_match_algorithm,
+        "run_algorithm",
+        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
+    )
+    monkeypatch.setenv(footprint_match_algorithm.FMATCH_VARIANT_ENV, variant)
+
+    args = cli.parse_cli_args(["fmatch", "file.manifest"])
+    args.func(args)
+
+    assert called_with["manifest_path"] == Path("file.manifest")
+    assert called_with["config"] is footprint_match_algorithm.RUNNER_CONFIGS[variant]
