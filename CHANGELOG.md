@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME/-FLASH) products, and the `aux_fmatch_imager_flash` `DataProductIdentifier` and `ProcessingStepIdentifier`. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, gated to IMAGER via `VariableSpec.only_modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `era5_pressure_temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `cloud_fraction_camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input.
+- `libera_utils.footprint_matching.aggregation.stack_product_values` collects a reader's stacked specs into one array per stacked product variable and raises `ValueError` when a member's scalar is missing.
+
+### Changed
+
+- **BREAKING:** The VIIRS BRDF reader's variables drop the repeated `brdf_` prefix (`brdf_shortwave_fiso` → `shortwave_fiso`, and likewise for each band and kernel weight), and the VIIRS AOD reader's `aod_550` is `optical_depth_550`, so the FMATCH product variables are `viirs_brdf_<band>_<param>` and `viirs_aod_optical_depth_550`.
+
 ## [5.20.0] - 2026-10-30
 
 ### Added

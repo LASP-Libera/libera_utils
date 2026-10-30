@@ -1,0 +1,396 @@
+# =============================================================================
+# FMATCH-CAM Data Product Definition
+# =============================================================================
+
+attributes:
+  ProductID: FMATCH-CAM
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Radiometer footprint observation time
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  # ---------------------------------------------------------------------------
+  # Geolocation and viewing angles: passed through unchanged from L1B Daily at
+  #     the footprint boresight.
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+  longitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+  altitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # This value is the L1B RAD `Altitude` field: the height above the WGS84 ellipsoid
+      # (EPSG:4979) of the boresight's geolocated point -- NOT the ~835 km spacecraft altitude.
+      long_name: Footprint boresight surface height above the WGS84 ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Solar zenith angle
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Viewing zenith angle
+      units: degrees
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # Derived viewing geometry: computed here from the angles above to
+  #     characterize the Sun-surface-sensor scattering geometry (CERES/SSF
+  #     heritage). They are stored on the product so downstream consumers
+  #     (Scene ID, ADM binning) do not have to recompute them.
+  # ---------------------------------------------------------------------------
+  sunglint_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the sensor view direction and the specular (mirror)
+      # reflection of the solar beam. Small values flag potential sun glint.
+      long_name: Sun glint angle
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # PSF-aggregated external variables: aggregated here from external sources
+  #     with the PSF weights, one value per footprint.
+  #     Variable names are <source_key>_<spec_name>; the source instrument is
+  #     recorded in each variable's long_name as "... (INSTRUMENT)".
+  # ---------------------------------------------------------------------------
+  # --- source reader: era5_surface (resolution 28.0 km) ---
+  era5_surface_wind_u10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Eastward wind component at 10 m (ECMWF)
+      units: m/s
+  era5_surface_wind_u10_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of eastward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
+      units: m/s
+  era5_surface_wind_v10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Northward wind component at 10 m (ECMWF)
+      units: m/s
+  era5_surface_wind_v10_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of northward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
+      units: m/s
+  # --- source reader: igbp (resolution 0.463 km) ---
+  igbp_surface_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: IGBP surface type classification (MODIS)
+  igbp_surface_type_primary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_secondary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Second most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_tertiary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Third most common IGBP surface type in footprint (MODIS)
+  # --- source reader: nise (resolution 25.0 km) ---
+  nise_sea_ice_concentration:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Sea ice concentration (fraction) (AMSR2)
+      units: "1"
+  nise_sea_ice_concentration_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of sea ice concentration (fraction), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_snow_free_land:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by snow-free land (NISE code 0) (AMSR2)
+      units: "1"
+  nise_snow_free_land_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow-free land (NISE code 0), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_permanent_ice:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (AMSR2)
+      units: "1"
+  nise_permanent_ice_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by permanent ice (NISE code 101), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_snow_on_land:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by snow on land (NISE codes 103-104) (AMSR2)
+      units: "1"
+  nise_snow_on_land_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow on land (NISE codes 103-104), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_open_ocean:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by ocean (NISE code 255) (AMSR2)
+      units: "1"
+  nise_open_ocean_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
+  # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
+  # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
+  # isotropic (fiso), volumetric (fvol) and geometric (fgeo), per broadband
+  # (shortwave/vis/nir), named viirs_brdf_<band>_<param>. Source: VIIRS BRDF/Albedo
+  # (VNP43) User Guide.
+  viirs_brdf_shortwave_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
+  viirs_cldprop_d3_cloud_optical_thickness:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical thickness (NOAA20)
+      units: "1"
+  viirs_cldprop_d3_cloud_optical_thickness_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud optical thickness, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_cldprop_d3_cloud_top_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud top pressure (NOAA20)
+      units: hPa
+  viirs_cldprop_d3_cloud_top_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud top pressure, PSF-weighted over within-footprint values (NOAA20)
+      units: hPa
+  # ---------------------------------------------------------------------------
+  # Libera WFOV CAM algorithm outputs: passed through from Libera's CF-CAM
+  #     product, already one value per footprint (NOT from external readers).
+  # ---------------------------------------------------------------------------
+  cloud_fraction_camera:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
+      # algorithm using Libera's Wide Field-of-View (WFOV) camera. Already
+      # aggregated to one value per footprint upstream, so it is attached
+      # directly to the FMATCH record (no reader / PSF step here). Carried in
+      # percent [0, 100] matching the CF-CAM input; SCENE-ID ingests it as-is.
+      long_name: Cloud fraction (Libera WFOV)
+      units: percent
+  # ---------------------------------------------------------------------------
+  # Coverage / QA: computed here from the PSF bounding box and each source's coverage.
+  # ---------------------------------------------------------------------------
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
+  psf_coverage_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+      units: "1"
+  q_flags:
+    # int32 (not int64): only a handful of bits are defined, so a 64-bit width is unnecessary.
+    dtype: int32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      # CF flag metadata for the bits set by FmatchCoverageFlag:
+      #   1 = partial_coverage       (75% <= PSF-energy coverage < 95%)
+      #   4 = insufficient_coverage  (PSF-energy coverage < 75%; retained but flagged)
+      #   8 = limb_truncated         (bounding box clipped at the Earth's limb)
+      #  16 = off_limb               (view centroid off the limb; no Earth footprint,
+      #                                external variables left at fill)
+      flag_masks: [1, 4, 8, 16]
+      flag_meanings: "partial_coverage insufficient_coverage limb_truncated off_limb"

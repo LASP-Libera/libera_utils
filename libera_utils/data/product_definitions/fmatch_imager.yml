@@ -1,0 +1,1019 @@
+# =============================================================================
+# FMATCH-IMAGER Data Product Definition
+# =============================================================================
+# The radiometer-timescale FMATCH-IMAGER product at RBSP Climate Quality latency:
+# one footprint per RADIOMETER_TIME. It carries the RBSP CLDPIX/FLASHFlux cloud fields
+# alongside the full ERA5 single-level and pressure-level field set and the VIIRS
+# imager fields. The pressure-level fields are 2-D on (RADIOMETER_TIME, PRESSURE_LEVEL),
+# all 37 levels (see _ERA5_PRESSURE_LEVELS in readers/era5_pressure.py).
+# The active reader set is declared in FMATCH_MODE_READERS[IMAGER]
+# (readers/registry.py).
+# =============================================================================
+
+attributes:
+  ProductID: FMATCH-IMAGER
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Radiometer footprint observation time
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+  PRESSURE_LEVEL:
+    dtype: float32
+    dimensions: ["PRESSURE_LEVEL"]
+    attributes:
+      long_name: ERA5 pressure level
+      standard_name: air_pressure
+      units: hPa
+      # CF positive: pressure increases downward, toward the surface, so 1000 hPa lies below 1 hPa.
+      positive: down
+
+variables:
+  # ---------------------------------------------------------------------------
+  # Geolocation and viewing angles: passed through unchanged from L1B Daily at
+  #     the footprint boresight.
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+  longitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+  altitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # This value is the L1B RAD `Altitude` field: the height above the WGS84 ellipsoid
+      # (EPSG:4979) of the boresight's geolocated point -- NOT the ~835 km spacecraft altitude.
+      long_name: Footprint boresight surface height above the WGS84 ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Solar zenith angle
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Viewing zenith angle
+      units: degrees
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # Derived viewing geometry: computed here from the angles above (CERES/SSF heritage).
+  # ---------------------------------------------------------------------------
+  sunglint_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Sun glint angle
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # PSF-aggregated external variables: aggregated here from external sources
+  #     with the PSF weights, one value per footprint.
+  #     Variable names are <source_key>_<spec_name>; the source instrument is
+  #     recorded in each variable's long_name as "... (INSTRUMENT)".
+  # ---------------------------------------------------------------------------
+  # --- source reader: cldpix (resolution 1.0 km) ---
+  cldpix_cloud_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (RBSP CLDPIX) (NOAA20)
+      units: "1"
+  cldpix_cloud_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud optical depth (RBSP CLDPIX), PSF-weighted over positive within-footprint values (NOAA20)
+      units: "1"
+  cldpix_cloud_water_path:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud water path (NOAA20)
+      units: "g/m^2"
+  cldpix_cloud_water_path_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud water path, PSF-weighted over within-footprint values (NOAA20)
+      units: "g/m^2"
+  cldpix_cloud_effective_temperature:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective temperature (NOAA20)
+      units: "K"
+  cldpix_cloud_effective_temperature_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud effective temperature, PSF-weighted over within-footprint values (NOAA20)
+      units: "K"
+  cldpix_cloud_effective_height:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective height (NOAA20)
+      units: "km"
+  cldpix_cloud_effective_height_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud effective height, PSF-weighted over within-footprint values (NOAA20)
+      units: "km"
+  cldpix_cloud_effective_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective pressure (NOAA20)
+      units: "hPa"
+  cldpix_cloud_effective_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud effective pressure, PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+  cldpix_cloud_top_height:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud top height (NOAA20)
+      units: "km"
+  cldpix_cloud_top_height_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud top height, PSF-weighted over within-footprint values (NOAA20)
+      units: "km"
+  cldpix_cloud_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius) (NOAA20)
+      units: "um"
+  cldpix_cloud_particle_radius_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of effective cloud particle radius blended (CLDPIX Cld_Radius), PSF-weighted over within-footprint values (NOAA20)
+      units: "um"
+  cldpix_cloud_particle_phase:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud particle phase (NOAA20)
+  cldpix_cloud_mask:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES cloud mask (NOAA20)
+  # --- source reader: era5_surface (resolution 28.0 km) ---
+  era5_surface_wind_u10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Eastward wind component at 10 m (ECMWF)
+      units: "m/s"
+  era5_surface_wind_u10_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of eastward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
+      units: "m/s"
+  era5_surface_wind_v10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Northward wind component at 10 m (ECMWF)
+      units: "m/s"
+  era5_surface_wind_v10_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of northward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
+      units: "m/s"
+  era5_surface_temperature_2m:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 2 m (ECMWF)
+      units: "K"
+  era5_surface_temperature_2m_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of air temperature at 2 m, PSF-weighted over within-footprint values (ECMWF)
+      units: "K"
+  era5_surface_dew_point_temperature_2m:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Dewpoint temperature at 2 m (ECMWF)
+      units: "K"
+  era5_surface_dew_point_temperature_2m_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of dewpoint temperature at 2 m, PSF-weighted over within-footprint values (ECMWF)
+      units: "K"
+  era5_surface_surface_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface pressure (ECMWF)
+      units: "Pa"
+  era5_surface_surface_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of surface pressure, PSF-weighted over within-footprint values (ECMWF)
+      units: "Pa"
+  era5_surface_surface_geopotential:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface geopotential (orography x standard gravity) (ECMWF)
+      units: "m^2/s^2"
+  era5_surface_surface_geopotential_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of surface geopotential (orography x standard gravity), PSF-weighted over within-footprint values (ECMWF)
+      units: "m^2/s^2"
+  era5_surface_forecast_albedo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Forecast albedo (broadband surface albedo) (ECMWF)
+      units: "1"
+  era5_surface_forecast_albedo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of forecast albedo (broadband surface albedo), PSF-weighted over within-footprint values (ECMWF)
+      units: "1"
+  # --- source reader: era5_pressure (resolution 28.0 km) ---
+  era5_pressure_temperature:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Air temperature on ERA5 pressure levels (ECMWF)
+      units: "K"
+  era5_pressure_temperature_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Standard deviation of air temperature on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
+      units: "K"
+  era5_pressure_geopotential:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Geopotential on ERA5 pressure levels (ECMWF)
+      units: "m^2/s^2"
+  era5_pressure_geopotential_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Standard deviation of geopotential on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
+      units: "m^2/s^2"
+  era5_pressure_ozone_mass_mixing_ratio:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Ozone mass mixing ratio on ERA5 pressure levels (ECMWF)
+      units: "kg/kg"
+  era5_pressure_ozone_mass_mixing_ratio_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Standard deviation of ozone mass mixing ratio on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
+      units: "kg/kg"
+  era5_pressure_specific_humidity:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Specific humidity on ERA5 pressure levels (ECMWF)
+      units: "kg/kg"
+  era5_pressure_specific_humidity_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Standard deviation of specific humidity on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
+      units: "kg/kg"
+  era5_pressure_relative_humidity:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Relative humidity on ERA5 pressure levels (ECMWF)
+      units: "percent"
+  era5_pressure_relative_humidity_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+    attributes:
+      long_name: Standard deviation of relative humidity on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
+      units: "percent"
+  # --- source reader: flashflux (resolution 20.0 km) ---
+  flashflux_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of aerosol optical depth (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_clear_coverage:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Clear-sky areal coverage (NOAA20)
+      units: "percent"
+  flashflux_clear_coverage_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of clear-sky areal coverage, PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_cloud_optical_depth_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (CERES FLASHFlux imager lower layer) (NOAA20)
+      units: "1"
+  flashflux_cloud_optical_depth_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud optical depth (CERES FLASHFlux imager lower layer), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_cloud_water_particle_radius_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      units: "um"
+  flashflux_cloud_water_particle_radius_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of effective cloud water particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
+      units: "um"
+  flashflux_cloud_classification:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES cloud classification code (encoded) (NOAA20)
+  flashflux_shortwave_adm_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES shortwave ADM scene type (encoded) (NOAA20)
+  flashflux_longwave_adm_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES longwave ADM scene type (encoded) (NOAA20)
+  flashflux_layer_coverage_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, lower layer (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_layer_coverage_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud layer areal coverage, lower layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_layer_coverage_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_layer_coverage_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud layer areal coverage, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_cloud_coverage_multilayer_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, lower layer (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_cloud_coverage_multilayer_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of multilayer cloud areal coverage, lower layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_cloud_coverage_multilayer_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_cloud_coverage_multilayer_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of multilayer cloud areal coverage, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_cloud_top_pressure_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, lower layer (CERES FLASHFlux) (NOAA20)
+      units: "hPa"
+  flashflux_cloud_top_pressure_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud top pressure, lower layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+  flashflux_cloud_top_pressure_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "hPa"
+  flashflux_cloud_top_pressure_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud top pressure, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+  flashflux_cloud_base_pressure_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, lower layer (CERES FLASHFlux) (NOAA20)
+      units: "hPa"
+  flashflux_cloud_base_pressure_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud base pressure, lower layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+  flashflux_cloud_base_pressure_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "hPa"
+  flashflux_cloud_base_pressure_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud base pressure, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+  flashflux_cloud_particle_phase_37um_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, lower layer (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_cloud_particle_phase_37um_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud particle phase at 3.7 um, lower layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_cloud_particle_phase_37um_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_cloud_particle_phase_37um_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of mean cloud particle phase at 3.7 um, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_cloud_optical_depth_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_cloud_optical_depth_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud optical depth, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_cloud_water_particle_radius_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "um"
+  flashflux_cloud_water_particle_radius_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of effective cloud water particle radius at 3.7 um, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um, upper layer (CERES FLASHFlux) (NOAA20)
+      units: "um"
+  flashflux_cloud_ice_particle_radius_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of effective cloud ice particle radius at 3.7 um, upper layer (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "um"
+  flashflux_match_aot:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: MATCH assimilated aerosol optical thickness (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_match_aot_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of MATCH assimilated aerosol optical thickness (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_aerosol_type_percentage_type0:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 0 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type0_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 0 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type1:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 1 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type1_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 1 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type2:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 2 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type2_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 2 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type3:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 3 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type3_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 3 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type4:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 4 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type4_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 4 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type5:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 5 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type5_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 5 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type6:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 6 (CERES FLASHFlux) (NOAA20)
+      units: "percent"
+  flashflux_aerosol_type_percentage_type6_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of assimilated aerosol type areal percentage, type 6 (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "percent"
+  flashflux_imager_dark_target_land_055um_corrected_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Dark Target corrected aerosol optical depth over land at 0.55 um (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_imager_dark_target_land_055um_corrected_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of imager Dark Target corrected aerosol optical depth over land at 0.55 um (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_imager_deep_blue_ocean_055um_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Deep Blue aerosol optical depth over ocean at 0.55 um (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_imager_deep_blue_ocean_055um_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of imager Deep Blue aerosol optical depth over ocean at 0.55 um (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_surface_albedo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface albedo (CERES FLASHFlux) (NOAA20)
+      units: "1"
+  flashflux_surface_albedo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of surface albedo (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  flashflux_toa_incoming_solar_radiation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: TOA incoming solar radiation (CERES FLASHFlux) (NOAA20)
+      units: "W m-2"
+  flashflux_toa_incoming_solar_radiation_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of TOA incoming solar radiation (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
+      units: "W m-2"
+  # --- source reader: igbp (resolution 0.463 km) ---
+  igbp_surface_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: IGBP surface type classification (MODIS)
+  igbp_surface_type_primary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_secondary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Second most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_tertiary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Third most common IGBP surface type in footprint (MODIS)
+  # --- source reader: nise (resolution 25.0 km) ---
+  nise_sea_ice_concentration:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Sea ice concentration (fraction) (AMSR2)
+      units: "1"
+  nise_sea_ice_concentration_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of sea ice concentration (fraction), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_snow_free_land:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by snow-free land (NISE code 0) (AMSR2)
+      units: "1"
+  nise_snow_free_land_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow-free land (NISE code 0), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_permanent_ice:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (AMSR2)
+      units: "1"
+  nise_permanent_ice_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by permanent ice (NISE code 101), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_snow_on_land:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by snow on land (NISE codes 103-104) (AMSR2)
+      units: "1"
+  nise_snow_on_land_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow on land (NISE codes 103-104), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  nise_open_ocean:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of footprint covered by ocean (NISE code 255) (AMSR2)
+      units: "1"
+  nise_open_ocean_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
+      units: "1"
+  # --- source reader: viirs_aod (resolution 111.0 km) ---
+  viirs_aod_optical_depth_550:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth at 550 nm (NOAA20)
+      units: "1"
+  viirs_aod_optical_depth_550_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of aerosol optical depth at 550 nm, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_aod_aerosol_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: "VIIRS Deep Blue aerosol type (land+ocean), modal value (0=dust 1=smoke 2=high-altitude smoke 3=pyrocumulonimbus 4=non-smoke fine mode 5=mixed 6=background maritime 7=fine dominated) (NOAA20)"
+  viirs_aod_aerosol_type_primary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
+  viirs_aod_aerosol_type_secondary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Second most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
+  viirs_aod_aerosol_type_tertiary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Third most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
+  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
+  # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
+  # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
+  # isotropic (fiso), volumetric (fvol) and geometric (fgeo), per broadband
+  # (shortwave/vis/nir), named viirs_brdf_<band>_<param>. Source: VIIRS BRDF/Albedo
+  # (VNP43) User Guide.
+  viirs_brdf_shortwave_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_shortwave_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of shortwave BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_vis_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of visible BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_nir_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
+  viirs_cldprop_d3_cloud_optical_thickness:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical thickness (NOAA20)
+      units: "1"
+  viirs_cldprop_d3_cloud_optical_thickness_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud optical thickness, PSF-weighted over within-footprint values (NOAA20)
+      units: "1"
+  viirs_cldprop_d3_cloud_top_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud top pressure (NOAA20)
+      units: "hPa"
+  viirs_cldprop_d3_cloud_top_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Standard deviation of cloud top pressure, PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+
+  # ---------------------------------------------------------------------------
+  # Coverage / QA: computed here from the PSF bounding box and each source's coverage.
+  # ---------------------------------------------------------------------------
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
+  psf_coverage_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+      units: "1"
+  q_flags:
+    # int32 (not int64): only a handful of bits are defined, so a 64-bit width is unnecessary.
+    dtype: int32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      # CF flag metadata for the bits set by FmatchCoverageFlag:
+      #   1 = partial_coverage       (75% <= PSF-energy coverage < 95%)
+      #   4 = insufficient_coverage  (PSF-energy coverage < 75%; retained but flagged)
+      #   8 = limb_truncated         (bounding box clipped at the Earth's limb)
+      #  16 = off_limb               (view centroid off the limb; no Earth footprint,
+      #                                external variables left at fill)
+      flag_masks: [1, 4, 8, 16]
+      flag_meanings: "partial_coverage insufficient_coverage limb_truncated off_limb"
