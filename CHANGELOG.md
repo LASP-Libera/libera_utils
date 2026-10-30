@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
 - `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
 
+### Fixed
+
+- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
+
 ## [5.19.0] - 2026-10-30
 
 ### Added
@@ -56,10 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **BREAKING:** `OperationalMode.rank`, `VariableSpec.required_mode`, `VariableSpec.only_modes` and `spec_active_in_mode`. A variable belongs to a product exactly when `mode in spec.modes`.
-
-### Fixed
-
-- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.17.0] - 2026-10-29
 
