@@ -26,7 +26,7 @@ from libera_utils.footprint_matching.types import (
     VariableSpec,
 )
 from libera_utils.footprint_matching.weighting import RadialWeigher
-from tests.unit.test_footprint_matching.fake_reader_fixtures import FakeFootprint
+from tests.plugins.footprint_matching_fixtures import FakeFootprint
 
 _LAT0, _LON0 = 40.0, -100.0
 _RNG_SEED = 20261020

@@ -560,6 +560,37 @@ class TestBoxQueriedNative:
             reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
 
 
+class TestPreload:
+    def test_static_reader_loads_its_source_once(self, monkeypatch):
+        """``StaticReader.preload`` loads the source, and the query that follows reuses it.
+
+        The process pool preloads every source before forking so the workers share one loaded copy; a preload that
+        did not hold the data would leave each worker loading its own.
+
+        Counts loader calls across a preload and a box query and asserts one load.
+        """
+        holder = _BoxHolder()
+        reader = _HeldReader(holder)
+        loads = []
+        monkeypatch.setattr(reader, "_load_native", lambda: loads.append(1) or holder)
+        reader.preload()
+        assert len(loads) == 1
+        reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+        assert len(loads) == 1
+
+    def test_stepped_reader_loads_nothing(self):
+        """A reader that loads by time step loads no step on ``preload``.
+
+        Which step a run needs depends on the footprint times, so loading one ahead of the queries would load the
+        wrong one.
+
+        Preloads a stepped reader and asserts its step loader was never called.
+        """
+        reader = _StepReader()
+        reader.preload()
+        assert reader.loads == []
+
+
 class TestNearestPass:
     @staticmethod
     def _two_passes() -> PointSamples:
@@ -933,7 +964,15 @@ def _stack(name: str, members: tuple[str, ...]) -> ProductStack:
     )
 
 
-_STACKED_SPECS = (_level_spec("t_1"), _level_spec("t_2"), _level_spec("c_1", "weighted_mode"), _level_spec("u"))
+_STACKED_SPECS = (
+    _level_spec("t_1"),
+    _level_spec("t_2"),
+    _level_spec("c_1", "weighted_mode"),
+    _level_spec("u"),
+    VariableSpec(
+        name="t_imager", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.IMAGER})
+    ),
+)
 
 
 class _Stacked(StaticReader):
@@ -1000,6 +1039,7 @@ class TestProductStacks:
             pytest.param((_stack("u", ("t_1", "t_2")),), "has the name", id="name-collides"),
             pytest.param((_stack("m", ("t_1", "c_1")),), "mixes members", id="mixed-companions"),
             pytest.param((_stack("a", ("t_1",)), _stack("b", ("t_1", "t_2"))), "more than one", id="stacked-twice"),
+            pytest.param((_stack("d", ("t_1", "t_imager")),), "different modes", id="mixed-modes"),
         ],
     )
     def test_invalid_stacks_are_rejected_at_import(self, stacks, message):
@@ -1007,7 +1047,8 @@ class TestProductStacks:
 
         A stack naming a spec the reader does not produce would leave a level empty, a stack named like a product
         spec would put two variables of one name in the product, a stack mixing continuous and categorical specs
-        would have a companion stack with gaps, and a spec in two stacks would be published twice.
+        would have a companion stack with gaps, a spec in two stacks would be published twice, and a stack whose
+        members belong to different products would be partly empty in the products only some members belong to.
 
         Each case defines a reader with the bad declaration inside ``pytest.raises`` and matches the message naming
         the defect.

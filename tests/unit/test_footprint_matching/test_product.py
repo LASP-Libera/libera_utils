@@ -31,7 +31,7 @@ from libera_utils.footprint_matching.product import (
 from libera_utils.footprint_matching.types import BoundingBox, FmatchCoverageFlag, OperationalMode
 from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 from libera_utils.io.product_definition import LiberaVariableDefinition
-from tests.unit.test_footprint_matching.fake_reader_fixtures import FakeFootprint, make_sources
+from tests.plugins.footprint_matching_fixtures import FakeFootprint
 
 _PARTIAL = int(FmatchCoverageFlag.PARTIAL_COVERAGE)
 _INSUFFICIENT = int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
@@ -272,23 +272,21 @@ class TestIntegerAggregatePlacement:
 
         monkeypatch.setattr(product, "aggregate_external_variables", fake_aggregate)
 
-    def test_radiometer_column(self, tmp_path, monkeypatch):
+    def test_radiometer_column(self, fake_sources, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
-        dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=make_sources(tmp_path))
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=fake_sources)
         assert dataset["igbp_surface_type"].dtype == np.int16
         np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [-1, 3, 3])
 
-    def test_camtime_grid(self, tmp_path, monkeypatch):
+    def test_camtime_grid(self, fake_sources, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
-        dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM_CAMTIME, _pseudo_footprints(), sources=make_sources(tmp_path)
-        )
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, _pseudo_footprints(), sources=fake_sources)
         # The first footprint's gap and the padded cell both take -1.
         np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [[-1, 3], [3, -1]])
 
 
 class TestRadiometerAggregation:
-    def test_defaults_to_angular_weigher(self, tmp_path, monkeypatch):
+    def test_defaults_to_angular_weigher(self, fake_sources, monkeypatch):
         calls = []
         original = AngularPSFWeigher.weight_field
 
@@ -297,21 +295,20 @@ class TestRadiometerAggregation:
             return original(self, *args, **kwargs)
 
         monkeypatch.setattr(AngularPSFWeigher, "weight_field", spy)
-        assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=make_sources(tmp_path))
+        assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=fake_sources)
         assert calls
         assert set(calls) == {AngularPSFWeigher}
 
 
 class TestWriteFmatchProduct:
-    def test_round_trip(self, tmp_path):
-        sources = make_sources(tmp_path)
+    def test_round_trip(self, tmp_path, fake_sources):
         filename = write_fmatch_product(
             OperationalMode.CAM,
             _l1b_inputs(),
             tmp_path,
             algorithm_version="1.0.0",
             input_files="x",
-            sources=sources,
+            sources=fake_sources,
         )
         assert filename.data_product_id == DataProductIdentifier.aux_fmatch_cam
 
