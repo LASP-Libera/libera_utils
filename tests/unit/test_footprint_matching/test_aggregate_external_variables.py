@@ -20,7 +20,7 @@ import pytest
 
 from libera_utils.footprint_matching.product import aggregate_external_variables, build_radiometer_footprints
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
-from tests.unit.test_footprint_matching.fake_reader_fixtures import FakeFootprint, make_sources
+from tests.plugins.footprint_matching_fixtures import FakeFootprint
 
 
 def _footprints() -> list[FakeFootprint]:
@@ -31,8 +31,8 @@ def _footprints() -> list[FakeFootprint]:
 
 
 class TestAggregateExternalVariables:
-    def test_output_keys_and_shapes(self, tmp_path):
-        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), make_sources(tmp_path))
+    def test_output_keys_and_shapes(self, fake_sources):
+        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)
         expected_keys = {
             "_fake_agg_mean_field_a",
             "_fake_agg_mean_field_a_standard_deviation",
@@ -46,15 +46,15 @@ class TestAggregateExternalVariables:
         for array in result.values():
             assert array.shape == (2,)
 
-    def test_weighted_mean_of_constant_field_is_that_constant(self, tmp_path):
-        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), make_sources(tmp_path))
+    def test_weighted_mean_of_constant_field_is_that_constant(self, fake_sources):
+        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)
         np.testing.assert_allclose(result["_fake_agg_mean_field_a"], [5.0, 5.0])
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0, 2.0])
         # Constant field -> zero within-footprint standard deviation.
         np.testing.assert_allclose(result["_fake_agg_mean_field_a_standard_deviation"], [0.0, 0.0], atol=1e-6)
 
-    def test_categorical_mode_and_ranked_scenes(self, tmp_path):
-        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), make_sources(tmp_path))
+    def test_categorical_mode_and_ranked_scenes(self, fake_sources):
+        result = aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)
         # Single-class field -> mode and primary are that class, secondary does not exist.
         # Integer variables come back as float64 so a missing value can stay NaN until the
         # product's integer fill replaces it.
@@ -64,11 +64,11 @@ class TestAggregateExternalVariables:
         # No second class -> NaN.
         assert np.isnan(result["_fake_agg_cat_surface_secondary"]).all()
 
-    def test_missing_data_yields_nan_fill(self, tmp_path):
+    def test_missing_data_yields_nan_fill(self, fake_sources):
         # A footprint whose box is far from the readers' grid gets no samples -> no usable
         # data -> NaN for float and integer variables alike.
         far = [FakeFootprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
-        result = aggregate_external_variables(OperationalMode.CAM, far, make_sources(tmp_path))
+        result = aggregate_external_variables(OperationalMode.CAM, far, fake_sources)
         assert np.isnan(result["_fake_agg_mean_field_a"][0])
         # The integer categorical stays NaN; the product's -1 integer fill replaces it on write.
         assert np.isnan(result["_fake_agg_cat_surface"][0])
@@ -77,7 +77,7 @@ class TestAggregateExternalVariables:
         with pytest.raises(ValueError, match="either sources or source_file_paths"):
             aggregate_external_variables(OperationalMode.CAM, _footprints())
 
-    def test_runs_end_to_end_with_angular_psf_weigher(self, tmp_path):
+    def test_runs_end_to_end_with_angular_psf_weigher(self, fake_sources):
         from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 
         # Footprints carrying the geometry the CERES-PSF weigher needs.
@@ -94,7 +94,7 @@ class TestAggregateExternalVariables:
             )
         ]
         result = aggregate_external_variables(
-            OperationalMode.CAM, footprints, make_sources(tmp_path), weigher=AngularPSFWeigher()
+            OperationalMode.CAM, footprints, fake_sources, weigher=AngularPSFWeigher()
         )
         # Constant input fields -> the weighted mean is that constant regardless of the
         # (PSF) weights, so the value is exact even with the real angular weighting.
@@ -102,15 +102,13 @@ class TestAggregateExternalVariables:
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0])
         np.testing.assert_array_equal(result["_fake_agg_cat_surface"], [3])
 
-    def test_angular_psf_weigher_rejects_footprints_without_ephemeris(self, tmp_path):
+    def test_angular_psf_weigher_rejects_footprints_without_ephemeris(self, fake_sources):
         from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 
         # A camera-style footprint carries no subsatellite point or satellite radius, so it has
         # no viewing frame to weight by.
         with pytest.raises(ValueError, match="ephemeris"):
-            aggregate_external_variables(
-                OperationalMode.CAM, _footprints(), make_sources(tmp_path), weigher=AngularPSFWeigher()
-            )
+            aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources, weigher=AngularPSFWeigher())
 
 
 class TestBuildRadiometerFootprints:
@@ -144,7 +142,7 @@ class TestBuildRadiometerFootprints:
         assert off_earth.cone_angle_rate is None
         assert off_earth.time == np.datetime64("2026-06-11T00:00:01", "ns")
 
-    def test_off_earth_view_aggregates_to_fill(self, tmp_path):
+    def test_off_earth_view_aggregates_to_fill(self, fake_sources):
         from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 
         # An L1B space view has no box and a NaN viewing zenith; aggregation leaves it at
@@ -158,7 +156,7 @@ class TestBuildRadiometerFootprints:
             )
         )
         values, coverage = aggregate_external_variables(
-            OperationalMode.CAM, footprints, make_sources(tmp_path), weigher=AngularPSFWeigher(), return_coverage=True
+            OperationalMode.CAM, footprints, fake_sources, weigher=AngularPSFWeigher(), return_coverage=True
         )
         np.testing.assert_allclose(values["_fake_agg_mean_field_a"], [5.0, np.nan])
         assert coverage[1] == 0.0
@@ -179,22 +177,18 @@ class TestBuildRadiometerFootprints:
 class TestAggregateReturnsCoverage:
     """return_coverage adds a per-footprint coverage array without changing the values."""
 
-    def test_covered_footprints_report_full_coverage(self, tmp_path):
+    def test_covered_footprints_report_full_coverage(self, fake_sources):
         # The fake readers serve a uniform 10 km grid that fills the footprint box, so every
         # reference bin of the radial weigher's contour holds a sample -> coverage 1.
         values, coverage = aggregate_external_variables(
-            OperationalMode.CAM, _footprints(), make_sources(tmp_path), return_coverage=True
+            OperationalMode.CAM, _footprints(), fake_sources, return_coverage=True
         )
         assert coverage.shape == (2,)
         np.testing.assert_allclose(coverage, [1.0, 1.0], atol=1e-6)
         # The values dict is exactly what the no-coverage call returns.
-        assert set(values) == set(
-            aggregate_external_variables(OperationalMode.CAM, _footprints(), make_sources(tmp_path))
-        )
+        assert set(values) == set(aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources))
 
-    def test_uncovered_footprint_reports_zero_coverage(self, tmp_path):
+    def test_uncovered_footprint_reports_zero_coverage(self, fake_sources):
         far = [FakeFootprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
-        _values, coverage = aggregate_external_variables(
-            OperationalMode.CAM, far, make_sources(tmp_path), return_coverage=True
-        )
+        _values, coverage = aggregate_external_variables(OperationalMode.CAM, far, fake_sources, return_coverage=True)
         np.testing.assert_allclose(coverage, [0.0])

@@ -572,13 +572,6 @@ def _aggregate_footprints(
             (name, spec, None) for name, spec in specs.items() if name not in stacked_members
         ]
         for stack in stacks:
-            in_mode = {mode in specs[member].modes for member in stack.members}
-            if len(in_mode) > 1:
-                raise ValueError(
-                    f"Reader {key!r}: ProductStack {stack.name!r} has members carried by {mode.value} and members "
-                    "that are not, so its product variable would be partly empty. Give every member of a stack "
-                    "the same modes."
-                )
             columns.append((stack.name, specs[stack.members[0]], len(stack.members)))
         entries: list[tuple[str, str]] = []
         for name, spec, width in columns:
@@ -664,15 +657,12 @@ def _worker_sources(
 
     A forked worker inherits the parent's loaded sources through :data:`_FORK_SOURCES`
     (copy-on-write, no reload). A spawned worker builds its own from the staged paths
-    once and keeps them in :data:`_WORKER_SOURCES_CACHE` for the chunks that follow.
+    once and keeps them in :data:`_WORKER_SOURCES_CACHE` for the chunks that follow;
+    ``source_file_paths`` is ``None`` only for a forked worker, since
+    :func:`_aggregate_in_parallel` refuses to spawn without it.
     """
     if _FORK_SOURCES is not None:
         return _FORK_SOURCES
-    if source_file_paths is None:
-        raise ValueError(
-            "A spawned worker has no sources to aggregate with: pass source_file_paths to "
-            "aggregate_external_variables when n_workers > 1 on a platform without fork."
-        )
     key = _source_paths_key(mode, source_file_paths)
     sources = _WORKER_SOURCES_CACHE.get(key)
     if sources is None:
@@ -729,8 +719,7 @@ def _aggregate_in_parallel(
         # Load every static source now, so the workers inherit the indexed data rather than
         # each loading it; a stepped source loads its first step on its first query.
         for reader in sources.values():
-            if hasattr(reader, "_native"):
-                _ = reader._native  # noqa: SLF001 - warming the reader's own cache before the fork.
+            reader.preload()
         _FORK_SOURCES = sources
     try:
         with ProcessPoolExecutor(max_workers=n_workers, mp_context=context) as pool:
@@ -1157,8 +1146,8 @@ def assemble_fmatch_dataset(
         a required pass-through key or its arrays have inconsistent lengths; if neither
         ``sources`` nor ``source_file_paths`` is given and ``allow_placeholders``
         is ``False``; if a footprint has no finite viewing zenith angle; if ``weigher``
-        needs a viewing frame and a footprint carries no L1B ephemeris; if a weight
-        time is NaT and a source selects by time.
+        needs a viewing frame and a footprint carries no L1B ephemeris; or if a
+        footprint's time is NaT and a source selects by time.
     MissingGeolocationError
         If a radiometer record's ephemeris is unusable or its footprint is not visible
         from the satellite (see :func:`build_radiometer_footprints`).
@@ -1778,9 +1767,9 @@ def write_fmatch_product(
     ValueError
         As :func:`assemble_fmatch_dataset` raises (empty or inconsistent inputs, no
         ancillary inputs without ``allow_placeholders``, a footprint with no viewing
-        zenith angle, a viewing-frame weigher without ephemeris, a weight field that does
-        time is NaT and a source selects by time), or, with ``strict``, if the assembled Dataset does not conform to
-        the product definition.
+        zenith angle, a viewing-frame weigher without ephemeris, a footprint whose time
+        is NaT when a source selects by time), or, with ``strict``, if the assembled
+        Dataset does not conform to the product definition.
     MissingGeolocationError
         If a radiometer record's ephemeris is unusable (see
         :func:`build_radiometer_footprints`).

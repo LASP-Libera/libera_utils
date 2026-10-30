@@ -16,7 +16,7 @@ import pytest
 from libera_utils.footprint_matching import product
 from libera_utils.footprint_matching.product import aggregate_external_variables
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
-from tests.unit.test_footprint_matching.fake_reader_fixtures import FakeFootprint, make_sources
+from tests.plugins.footprint_matching_fixtures import FakeFootprint
 
 _FORK_AVAILABLE = "fork" in multiprocessing.get_all_start_methods()
 
@@ -36,14 +36,13 @@ def _footprints(n: int) -> list[FakeFootprint]:
 
 @pytest.mark.skipif(not _FORK_AVAILABLE, reason="the forked pool needs a platform with fork")
 class TestForkedPool:
-    def test_matches_single_process_run(self, tmp_path):
+    def test_matches_single_process_run(self, fake_sources):
         footprints = _footprints(303)  # not a multiple of the chunk count
-        sources = make_sources(tmp_path)
         single, single_cov = aggregate_external_variables(
-            OperationalMode.CAM, footprints, sources, return_coverage=True, n_workers=1
+            OperationalMode.CAM, footprints, fake_sources, return_coverage=True, n_workers=1
         )
         pooled, pooled_cov = aggregate_external_variables(
-            OperationalMode.CAM, footprints, sources, return_coverage=True, n_workers=3
+            OperationalMode.CAM, footprints, fake_sources, return_coverage=True, n_workers=3
         )
         assert set(pooled) == set(single)
         for name in single:
@@ -55,18 +54,18 @@ class TestForkedPool:
         assert single_cov[2] == 0.0
         assert single_cov[0] == pytest.approx(1.0)
 
-    def test_values_only_return_shape(self, tmp_path):
+    def test_values_only_return_shape(self, fake_sources):
         footprints = _footprints(200)
-        pooled = aggregate_external_variables(OperationalMode.CAM, footprints, make_sources(tmp_path), n_workers=2)
+        pooled = aggregate_external_variables(OperationalMode.CAM, footprints, fake_sources, n_workers=2)
         assert all(array.shape == (200,) for array in pooled.values())
 
-    def test_fork_sources_are_cleared_after_the_run(self, tmp_path):
-        aggregate_external_variables(OperationalMode.CAM, _footprints(120), make_sources(tmp_path), n_workers=2)
+    def test_fork_sources_are_cleared_after_the_run(self, fake_sources):
+        aggregate_external_variables(OperationalMode.CAM, _footprints(120), fake_sources, n_workers=2)
         assert product._FORK_SOURCES is None
 
 
 class TestWorkerCount:
-    def test_default_comes_from_config(self, tmp_path, monkeypatch):
+    def test_default_comes_from_config(self, fake_sources, monkeypatch):
         monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, "1")
         seen = []
         original = product._aggregate_footprints
@@ -76,42 +75,41 @@ class TestWorkerCount:
             return original(*args, **kwargs)
 
         monkeypatch.setattr(product, "_aggregate_footprints", spy)
-        aggregate_external_variables(OperationalMode.CAM, _footprints(6), make_sources(tmp_path))
+        aggregate_external_variables(OperationalMode.CAM, _footprints(6), fake_sources)
         assert seen == [True]
 
-    def test_few_footprints_stay_in_process(self, tmp_path, monkeypatch):
+    def test_few_footprints_stay_in_process(self, fake_sources, monkeypatch):
         called = []
         monkeypatch.setattr(product, "_aggregate_in_parallel", lambda *a, **k: called.append(True))
-        result = aggregate_external_variables(OperationalMode.CAM, _footprints(10), make_sources(tmp_path), n_workers=4)
+        result = aggregate_external_variables(OperationalMode.CAM, _footprints(10), fake_sources, n_workers=4)
         assert called == []
         assert result["_fake_agg_mean_field_a"].shape == (10,)
 
-    def test_zero_workers_rejected(self, tmp_path):
+    def test_zero_workers_rejected(self, fake_sources):
         with pytest.raises(ValueError, match="n_workers must be at least 1"):
-            aggregate_external_variables(OperationalMode.CAM, _footprints(3), make_sources(tmp_path), n_workers=0)
+            aggregate_external_variables(OperationalMode.CAM, _footprints(3), fake_sources, n_workers=0)
 
-    def test_spawn_without_paths_rejected(self, tmp_path, monkeypatch):
+    def test_spawn_without_paths_rejected(self, fake_sources, monkeypatch):
         monkeypatch.setattr(product.multiprocessing, "get_all_start_methods", lambda: ["spawn"])
         with pytest.raises(ValueError, match="source_file_paths"):
-            aggregate_external_variables(OperationalMode.CAM, _footprints(200), make_sources(tmp_path), n_workers=2)
+            aggregate_external_variables(OperationalMode.CAM, _footprints(200), fake_sources, n_workers=2)
 
 
 class TestWorkerSources:
     """A worker finds its sources: the parent's after a fork, its own build after a spawn."""
 
-    def test_forked_worker_uses_the_parent_sources(self, tmp_path, monkeypatch):
-        sources = make_sources(tmp_path)
-        monkeypatch.setattr(product, "_FORK_SOURCES", sources)
-        assert product._worker_sources(OperationalMode.CAM, None) is sources
+    def test_forked_worker_uses_the_parent_sources(self, fake_sources, monkeypatch):
+        monkeypatch.setattr(product, "_FORK_SOURCES", fake_sources)
+        assert product._worker_sources(OperationalMode.CAM, None) is fake_sources
 
-    def test_spawned_worker_builds_once_per_staged_set(self, tmp_path, monkeypatch):
+    def test_spawned_worker_builds_once_per_staged_set(self, tmp_path, fake_sources, monkeypatch):
         monkeypatch.setattr(product, "_FORK_SOURCES", None)
         monkeypatch.setattr(product, "_WORKER_SOURCES_CACHE", {})
         builds = []
 
         def fake_build(mode, paths):
             builds.append((mode, tuple(sorted(paths))))
-            return make_sources(tmp_path)
+            return fake_sources
 
         monkeypatch.setattr(product, "build_sources", fake_build)
         paths = {"era5_surface": [tmp_path / "a.nc"], "igbp": [tmp_path / "b.hdf"]}
@@ -122,8 +120,3 @@ class TestWorkerSources:
         # A different staged set replaces the cached sources.
         product._worker_sources(OperationalMode.CAM, {"era5_surface": [tmp_path / "c.nc"]})
         assert len(builds) == 2
-
-    def test_spawned_worker_without_paths_raises(self, monkeypatch):
-        monkeypatch.setattr(product, "_FORK_SOURCES", None)
-        with pytest.raises(ValueError, match="spawned worker"):
-            product._worker_sources(OperationalMode.CAM, None)
