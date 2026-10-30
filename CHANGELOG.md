@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-10-30
+
 ### Added
 
 - `libera_utils.footprint_matching.weighting`: `RadialWeigher` and `AngularPSFWeigher` weight each native sample where it lies, and each `WeightField` carries the footprint's `coverage`: the share of the PSF's energy inside the native cell of at least one finite sample (each sample covers the square of half-width `RESOLUTION_KM / sqrt(2)`, foreshortened along-scan by `cos(VZA)` in the angular frame, measured on a reference grid in the weigher's own frame), so a swath gap or a source beyond its time window reads as missing coverage. `AngularPSFWeigher` raises `ValueError` when `cone_angle_rate` is missing or not finite, or the viewing zenith is not finite.
@@ -965,7 +967,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...HEAD
+[5.20.0]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...5.20.0
 [5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
 [5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
 [5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
