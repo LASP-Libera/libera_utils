@@ -1,0 +1,737 @@
+"""Unit tests for the FMATCH product definitions and their loaders.
+
+There is one SSF-style product definition per FMATCH operational mode. The
+radiometer-timescale FMATCH-IMAGER carries the RBSP CLDPIX/FLASHFlux cloud fields
+alongside the full ERA5 single-level and pressure-level fields and the VIIRS
+imager fields. These tests confirm, for every shipped definition, that:
+- The product ID is registered as an auxiliary (AUX) DataProductIdentifier and
+  matches the OperationalMode value string.
+- The product definition YAML loads and validates via LiberaDataProductDefinition.
+- The schema declares the expected geolocation, derived-geometry, and QA variables
+  on the correct (radiometer vs camera) time dimension.
+- The external (reader-sourced) variables stay in sync with the reader plugins'
+  VariableSpec definitions for the mode. Every reader-sourced variable is named
+  `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type,
+  cldpix_cloud_mask), or `<source_key>_<stack_name>` for a reader's stacked specs
+  (e.g. era5_pressure_temperature on PRESSURE_LEVEL); the reader's instrument is recorded in each variable's
+  ``long_name`` instead (e.g. "... (ECMWF)").
+- A small dummy dataset round-trips through create/enforce/check conformance.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+# Importing the readers subpackage registers all built-in readers so we can
+# cross-check the product definitions against their VariableSpecs.
+import libera_utils.footprint_matching.readers  # noqa: F401
+from libera_utils.constants import DataLevel, DataProductIdentifier
+from libera_utils.footprint_matching.geometry import MissingGeolocationError
+from libera_utils.footprint_matching.product import (
+    _CAMERA_NOMINAL_SATELLITE_RADIUS_KM,
+    _RADIOMETER_L1B_VARIABLES,
+    FMATCH_DEFINITION_FILENAMES,
+    L1B_PASSTHROUGH_VARIABLES,
+    _assemble_radiometer_dataset,
+    _footprint_geometry,
+    assemble_fmatch_dataset,
+    build_radiometer_footprints,
+    compute_derived_viewing_geometry,
+    fmatch_time_variable,
+    load_fmatch_definition,
+)
+from libera_utils.footprint_matching.readers.base import AncillaryReader
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    FmatchCoverageFlag,
+    OperationalMode,
+)
+from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
+from tests.plugins.footprint_matching_fixtures import make_era5_surface_netcdf_fixture
+
+# The production reader keys. Intersecting with these makes the cross-check robust
+# against throwaway readers other tests register into the shared ReaderRegistry
+# (e.g. _FakeReader in test_base.py).
+PRODUCTION_READER_KEYS = frozenset(
+    {
+        "era5_surface",
+        "era5_pressure",
+        "igbp",
+        "nise",
+        "viirs_brdf",
+        "viirs_cldprop_d3",
+        "flashflux",
+        "cldpix",
+        "viirs_aod",
+    }
+)
+
+# Variables that always appear regardless of mode.
+GEOLOCATION_VARIABLES = (
+    "latitude",
+    "longitude",
+    "altitude",
+    "solar_zenith_angle",
+    "viewing_zenith_angle",
+    "relative_azimuth_angle",
+)
+DERIVED_GEOMETRY_VARIABLES = ("sunglint_angle",)
+COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
+
+ALL_MODES = tuple(OperationalMode)
+
+
+def _production_readers_for_mode(mode: OperationalMode) -> dict:
+    """Active production readers for a mode (excludes test-injected readers)."""
+    return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
+
+
+def _expected_external_variables(mode: OperationalMode) -> dict[str, tuple[str, str | None]]:
+    """{output_variable_name: (dtype, stack dimension or None)} for every active production reader variable.
+
+    Mirrors the product-definition naming rule: every reader-sourced variable is
+    named `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type), or
+    `<source_key>_<stack_name>` for specs a reader stacks along a further dimension (e.g.
+    era5_pressure_temperature on PRESSURE_LEVEL). The reader's instrument is not part of the
+    name -- it is recorded in the variable's ``long_name`` instead (see
+    ``test_reader_instrument_is_recorded_in_long_name``). A spec is carried when ``mode`` is in
+    its ``modes`` (e.g. the extended FLASHFlux cloud/aerosol/albedo fields appear in
+    FMATCH-IMAGER only).
+    """
+    expected: dict[str, tuple[str, str | None]] = {}
+    for key, cls in _production_readers_for_mode(mode).items():
+        # product_variable_specs() == the read VARIABLES plus derived outputs
+        # (per-continuous-variable standard-deviation companions and reader-specific
+        # extras such as IGBP's ranked scenes). Less the stacked members plus the stacks,
+        # it is the full set that appears in the product definition, so this is what the
+        # YAMLs must match.
+        specs = {spec.name: spec for spec in cls.product_variable_specs()}
+        stacks = cls.product_stacks()
+        stacked_members = {member for stack in stacks for member in stack.members}
+        for name, spec in specs.items():
+            if name not in stacked_members and mode in spec.modes:
+                expected[f"{key}_{name}"] = (spec.dtype, None)
+        for stack in stacks:
+            member = specs[stack.members[0]]
+            if mode in member.modes:
+                expected[f"{key}_{stack.name}"] = (member.dtype, stack.dimension)
+    return expected
+
+
+@pytest.fixture(scope="module")
+def definitions() -> dict[OperationalMode, LiberaDataProductDefinition]:
+    """All shipped FMATCH product definitions keyed by mode."""
+    return {mode: load_fmatch_definition(mode) for mode in ALL_MODES}
+
+
+class TestFmatchIdentifiers:
+    """Every mode's product ID must be an AUX member matching the mode string."""
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_product_id_registered_as_aux(self, mode):
+        product = DataProductIdentifier(mode.value)
+        assert product.data_level is DataLevel.AUX
+
+    def test_all_modes_have_a_definition_file(self):
+        # The product module must map every operational mode to a YAML file.
+        assert set(FMATCH_DEFINITION_FILENAMES) == set(ALL_MODES)
+
+
+class TestImagerContent:
+    """Guards the FMATCH-IMAGER content: it carries both the RBSP and the ERA5 fields."""
+
+    def test_imager_has_rbsp_variables(self, definitions):
+        definition = definitions[OperationalMode.IMAGER]
+        assert any(name.startswith("cldpix_") for name in definition.variables)
+        assert any(name.startswith("flashflux_") for name in definition.variables)
+
+    def test_imager_keeps_full_era5_field_set(self, definitions):
+        definition = definitions[OperationalMode.IMAGER]
+        # The winds (every product), the single-level fields, and the pressure-level
+        # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
+        # (spot-check one per family; full sync is covered by
+        # test_external_variables_match_readers).
+        assert "era5_surface_wind_u10" in definition.variables
+        assert "era5_surface_temperature_2m" in definition.variables
+        assert "era5_surface_forecast_albedo" in definition.variables
+        assert "era5_pressure_temperature" in definition.variables
+        assert "era5_pressure_relative_humidity_standard_deviation" in definition.variables
+
+    def test_extended_flashflux_fields_are_imager_only(self, definitions):
+        # The extended FLASHFlux cloud-layer / aerosol / albedo fields are carried by
+        # FMATCH-IMAGER alone (their modes) and must NOT leak into the other products that
+        # also activate the flashflux reader (FLASH, IMAGER-CAMTIME). Spot-check one field
+        # per secondary axis (layer, aerosol type, albedo band) plus a std companion.
+        extended = (
+            "flashflux_layer_coverage_upper",
+            "flashflux_cloud_optical_depth_upper",
+            "flashflux_cloud_top_pressure_lower_standard_deviation",
+            "flashflux_match_aot",
+            "flashflux_aerosol_type_percentage_type6",
+            "flashflux_surface_albedo",
+        )
+        imager = definitions[OperationalMode.IMAGER]
+        for name in extended:
+            assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
+        for mode in (OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER_CAMTIME):
+            leaked = [name for name in extended if name in definitions[mode].variables]
+            assert leaked == [], f"{mode.value} must not declare IMAGER-only flashflux fields, found {leaked}"
+        # The base FLASHFlux fields, by contrast, still appear in FLASH and IMAGER-CAMTIME.
+        assert "flashflux_cloud_optical_depth_lower" in definitions[OperationalMode.IMAGER_FLASH].variables
+
+
+class TestFmatchDefinitions:
+    """Each YAML loads and declares the expected structure."""
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_definition_loads_with_matching_product_id(self, mode, definitions):
+        definition = definitions[mode]
+        assert isinstance(definition, LiberaDataProductDefinition)
+        assert definition.attributes["ProductID"] == mode.value
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_time_coordinate_matches_timescale(self, mode, definitions):
+        definition = definitions[mode]
+        time_var = fmatch_time_variable(mode)
+        assert time_var in definition.coordinates
+        assert definition.coordinates[time_var].dtype == "datetime64[ns]"
+        # Both timescales use a 1-D dimension coordinate (name == dimension): RADIOMETER_TIME for the radiometer
+        # products, CAMERA_TIME for the camera-timescale products' 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
+        assert definition.coordinates[time_var].dimensions == [time_var]
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_common_variables_present(self, mode, definitions):
+        definition = definitions[mode]
+        for name in GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES:
+            assert name in definition.variables, f"{mode.value} missing {name}"
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_external_variables_match_readers(self, mode, definitions):
+        definition = definitions[mode]
+        for name, (dtype, _) in _expected_external_variables(mode).items():
+            assert name in definition.variables, f"{mode.value} missing external variable {name}"
+            assert definition.variables[name].dtype == dtype, (
+                f"{mode.value} dtype drift for {name}: definition has "
+                f"{definition.variables[name].dtype}, reader has {dtype}"
+            )
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
+        # The instrument token is carried in the variable's long_name rather than the
+        # variable name (e.g. era5_surface_wind_u10 has long_name "... (ECMWF)"). Guard that every
+        # reader-sourced variable's long_name carries its reader's INSTRUMENT, so
+        # provenance is not silently lost from the ~hundreds of hand-written long_names.
+        definition = definitions[mode]
+        readers = _production_readers_for_mode(mode)
+        for name in _expected_external_variables(mode):
+            instrument = next(cls.INSTRUMENT for key, cls in readers.items() if name.startswith(f"{key}_"))
+            long_name = definition.variables[name].attributes.get("long_name", "")
+            assert instrument in long_name, (
+                f"{mode.value}/{name}: long_name {long_name!r} is missing the reader instrument {instrument!r}"
+            )
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_all_variables_use_mode_record_dimension(self, mode, definitions):
+        # Radiometer modes hang variables on the 1-D RADIOMETER_TIME axis; camera-timescale modes hang every variable
+        # on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. A reader's stacked variable adds its stack's dimension.
+        time_var = fmatch_time_variable(mode)
+        expected_dims = ["CAMERA_TIME", "PSEUDOFOOTPRINT"] if time_var == "CAMERA_TIME" else [time_var]
+        stacked = {name: dim for name, (_, dim) in _expected_external_variables(mode).items() if dim is not None}
+        for name, var_def in definitions[mode].variables.items():
+            dims = expected_dims + [stacked[name]] if name in stacked else expected_dims
+            assert var_def.dimensions == dims, f"{mode.value}/{name} wrong dimension"
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_no_duplicate_variable_names(self, mode, definitions):
+        # Sanity: collision prefixing must leave a unique variable set.
+        definition = definitions[mode]
+        all_names = list(definition.variables) + list(definition.coordinates)
+        assert len(all_names) == len(set(all_names))
+
+    def test_imager_camtime_has_no_era5_pressure_variables(self, definitions):
+        # The ERA5 pressure-level fields are a radiometer-timescale quantity: the
+        # camera-timescale FMATCH-IMAGER-CAMTIME product must not declare them, while
+        # the radiometer FMATCH-IMAGER product still does. Standing guard against the
+        # pressure block drifting back into the camtime YAML (there is no general
+        # no-extra-variables check).
+        camtime = definitions[OperationalMode.IMAGER_CAMTIME]
+        offenders = [name for name in camtime.variables if name.startswith("era5_pressure_")]
+        assert offenders == [], f"FMATCH-IMAGER-CAMTIME must not declare era5_pressure variables, found {offenders}"
+        imager = definitions[OperationalMode.IMAGER]
+        assert any(name.startswith("era5_pressure_") for name in imager.variables)
+
+
+class TestDerivedProductVariables:
+    """Guards the rules that turn read VARIABLES into product output variables."""
+
+    def test_continuous_variable_gets_standard_deviation_companion(self):
+        # ERA5 winds are mean-aggregated (continuous), so each must gain a
+        # `<name>_standard_deviation` companion in the product variable list.
+        era5 = ReaderRegistry.get("era5_surface")
+        names = {spec.name for spec in era5.product_variable_specs()}
+        assert "wind_u10" in names
+        assert "wind_u10_standard_deviation" in names
+        assert "wind_v10_standard_deviation" in names
+
+    def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
+        # FLASHFlux's encoded scene-type codes have n_categories=None but are
+        # weighted_mode, so a within-footprint standard deviation is meaningless
+        # and must NOT be generated. This guards the mean-only rule.
+        flashflux = ReaderRegistry.get("flashflux")
+        names = {spec.name for spec in flashflux.product_variable_specs()}
+        for encoded in ("cloud_classification", "shortwave_adm_type", "longwave_adm_type"):
+            assert encoded in names
+            assert f"{encoded}_standard_deviation" not in names
+
+    def test_igbp_reports_ranked_scenes_but_no_standard_deviation(self):
+        # IGBP keeps the single aggregated surface_type plus three ranked-scene
+        # outputs; being categorical (weighted_mode) it gets no std-dev companion.
+        igbp = ReaderRegistry.get("igbp")
+        names = {spec.name for spec in igbp.product_variable_specs()}
+        assert {
+            "surface_type",
+            "surface_type_primary",
+            "surface_type_secondary",
+            "surface_type_tertiary",
+        } <= names
+        assert "surface_type_standard_deviation" not in names
+
+
+class TestFmatchConformance:
+    """A dummy dataset must round-trip through create/enforce/check for every definition."""
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_roundtrip(self, mode, definitions):
+        definition = definitions[mode]
+        time_var = fmatch_time_variable(mode)
+        n_footprints = 4
+        times = np.array(
+            ["2026-06-11T00:00:00", "2026-06-11T00:00:01", "2026-06-11T00:00:02", "2026-06-11T00:00:03"],
+            dtype="datetime64[ns]",
+        )
+        # Sizes for every dimension a coordinate/variable may reference: the radiometer record axis (RADIOMETER_TIME),
+        # the camera-timescale grid axes (CAMERA_TIME, PSEUDOFOOTPRINT) and the fixed-size PRESSURE_LEVEL axis of the
+        # stacked ERA5 variables. CAMERA_TIME must match the length of the times array below (it is the 1-D
+        # camera-timescale dimension coordinate).
+        dimension_sizes = {
+            "RADIOMETER_TIME": n_footprints,
+            "CAMERA_TIME": n_footprints,
+            "PSEUDOFOOTPRINT": n_footprints,
+            "PRESSURE_LEVEL": LiberaVariableDefinition._get_standard_dimensions()["PRESSURE_LEVEL"].size,
+        }
+
+        def _zeros(var_def):
+            return np.zeros(tuple(dimension_sizes[d] for d in var_def.dimensions), dtype=var_def.dtype)
+
+        data: dict[str, np.ndarray] = {time_var: times}
+        # Every non-time coordinate (e.g. the camera_pixel_{x,y}_{min,max} coords on the camtime grid) and every
+        # variable must be present for the conformance check to pass.
+        for name, var_def in definition.coordinates.items():
+            if name != time_var:
+                data[name] = _zeros(var_def)
+        for name, var_def in definition.variables.items():
+            data[name] = _zeros(var_def)
+
+        dynamic_attrs = {
+            "algorithm_version": "1.0.0",
+            "InputGranules": "dummy_l1b.nc",
+        }
+        dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_attrs)
+        dataset = definition.enforce_dataset_conformance(dataset)
+        errors = definition.check_dataset_conformance(dataset, strict=True)
+        assert errors == []
+
+
+# Timescale split of the modes, so the assembly tests can drive each mode with the
+# right kind of input.
+RADIOMETER_MODES = tuple(mode for mode in ALL_MODES if fmatch_time_variable(mode) == "RADIOMETER_TIME")
+
+
+def _l1b_passthrough(n_footprints: int = 6) -> dict[str, np.ndarray]:
+    """Build a minimal, valid L1B pass-through dict of the shape the radiometer assembler expects."""
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    data: dict[str, np.ndarray] = {
+        "RADIOMETER_TIME": base_time + np.arange(n_footprints, dtype="int64") * np.timedelta64(10, "ms"),
+    }
+    for name in _RADIOMETER_L1B_VARIABLES:
+        data[name] = np.linspace(1.0, 40.0, n_footprints, dtype=np.float32)
+    return data
+
+
+class TestRadiometerAssembly:
+    """Radiometer-timescale modes assemble from L1B pass-through arrays."""
+
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_assembles_conformant_dataset(self, mode, definitions):
+        definition = definitions[mode]
+        dataset = assemble_fmatch_dataset(
+            mode, _l1b_passthrough(), algorithm_version="1.0.0", input_files="l1b.nc", allow_placeholders=True
+        )
+
+        assert definition.check_dataset_conformance(dataset, strict=True) == []
+
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_l1b_columns_are_carried_through_verbatim(self, mode):
+        """The L1B-derived columns are real values, not placeholders."""
+        l1b_inputs = _l1b_passthrough()
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
+
+        for name in _RADIOMETER_L1B_VARIABLES:
+            np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
+        np.testing.assert_array_equal(dataset["RADIOMETER_TIME"].values, l1b_inputs["RADIOMETER_TIME"])
+
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_altitude_is_the_l1b_altitude(self, mode):
+        """altitude is copied from L1B ``Altitude``, the boresight surface height in meters, not a placeholder."""
+        assert L1B_PASSTHROUGH_VARIABLES["altitude"] == "Altitude"
+        l1b_inputs = _l1b_passthrough()
+        l1b_inputs["altitude"] = np.array([0.0, 12.5, 150.0, 1200.0, 2500.0, 4000.0], dtype=np.float32)
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
+
+        np.testing.assert_array_equal(dataset["altitude"].values, l1b_inputs["altitude"])
+
+    def test_cloud_fraction_camera_is_merged_when_declared(self):
+        """FMATCH-CAM declares cloud_fraction_camera, so supplied values become real, not placeholder."""
+        n = 6
+        values = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.CAM, _l1b_passthrough(n), cloud_fraction_camera=values, allow_placeholders=True
+        )
+
+        np.testing.assert_allclose(dataset["cloud_fraction_camera"].values, values, rtol=1e-6)
+
+    def test_cloud_fraction_camera_is_ignored_when_undeclared(self):
+        """The IMAGER modes have no such variable; passing values must not raise or invent one."""
+        n = 6
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.IMAGER,
+            _l1b_passthrough(n),
+            cloud_fraction_camera=np.zeros(n, dtype=np.float32),
+            allow_placeholders=True,
+        )
+
+        assert "cloud_fraction_camera" not in dataset.variables
+
+    def test_missing_passthrough_key_names_what_is_missing(self):
+        l1b_inputs = _l1b_passthrough()
+        del l1b_inputs["latitude"]
+
+        with pytest.raises(ValueError, match="missing required key"):
+            assemble_fmatch_dataset(OperationalMode.CAM, l1b_inputs, allow_placeholders=True)
+
+    def test_inconsistent_lengths_raise(self):
+        l1b_inputs = _l1b_passthrough(6)
+        l1b_inputs["longitude"] = np.zeros(5, dtype=np.float32)
+
+        with pytest.raises(ValueError, match="inconsistent lengths"):
+            assemble_fmatch_dataset(OperationalMode.CAM, l1b_inputs, allow_placeholders=True)
+
+    def test_zero_footprints_raise(self):
+        with pytest.raises(ValueError, match="zero footprints"):
+            assemble_fmatch_dataset(OperationalMode.CAM, _l1b_passthrough(0), allow_placeholders=True)
+
+    def test_camera_timescale_mode_rejects_passthrough_inputs(self):
+        """Guards against handing the wrong kind of input to the wrong timescale."""
+        with pytest.raises(ValueError, match="camera-timescale mode"):
+            _assemble_radiometer_dataset(_l1b_passthrough(), mode=OperationalMode.CAM_CAMTIME, allow_placeholders=True)
+
+
+class TestCamtimeAssembly:
+    """Camera-timescale modes assemble from camera pseudo-footprints."""
+
+    def test_ragged_images_pad_short_rows_on_the_grid(self):
+        """Images with fewer subsections than the widest image pad along PSEUDOFOOTPRINT with fill values.
+
+        Real segmentation yields a variable number of subsections per image, but the product is a rectangular
+        (CAMERA_TIME, PSEUDOFOOTPRINT) grid. A shorter image's trailing PSEUDOFOOTPRINT cells must be padded: float variables
+        take NaN and the integer pixel-bound coordinates take their 0 fill.
+        """
+        from libera_utils.footprint_matching.types import BoundingBox, CameraFootprintQualityFlag, PseudoFootprint
+
+        def _footprint(image_index: int, subsection_index: int) -> PseudoFootprint:
+            start = subsection_index * 8
+            return PseudoFootprint(
+                time=np.datetime64("2026-06-11T00:00:00", "ns") + np.timedelta64(image_index, "s"),
+                slice_x=slice(start, start + 4),
+                slice_y=slice(0, 4),
+                center_ix=start + 2,
+                center_iy=2,
+                latitude=float(subsection_index + 1),
+                longitude=float(subsection_index + 1),
+                altitude=700000.0,
+                solar_zenith_angle=30.0,
+                viewing_zenith_angle=8.0,
+                relative_azimuth_angle=15.0,
+                bbox=BoundingBox(0.0, 1.0, 0.0, 1.0),
+                q_flags=CameraFootprintQualityFlag(0),
+            )
+
+        # Image 0 has two subsections; image 1 has one -> a 2 x 2 grid whose (image 1, subsection 1) cell is padded.
+        footprints = [_footprint(0, 0), _footprint(0, 1), _footprint(1, 0)]
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints, allow_placeholders=True)
+
+        assert dataset.sizes["CAMERA_TIME"] == 2
+        assert dataset.sizes["PSEUDOFOOTPRINT"] == 2
+        # Real cells carry the segmentation latitude; only the single padded cell is NaN.
+        latitude = dataset["latitude"].values
+        assert not np.isnan(latitude[[0, 0, 1], [0, 1, 0]]).any()
+        assert np.isnan(latitude[1, 1])
+        # Integer pixel-bound coordinates cannot hold NaN, and 0 is a real pixel index, so the padded cell takes -1.
+        assert dataset["camera_pixel_x_min"].values[1, 1] == -1
+
+
+class TestDerivedViewingGeometry:
+    """compute_derived_viewing_geometry produces the real sun-glint angle."""
+
+    def test_specular_geometry_is_zero_glint(self):
+        # View zenith == solar zenith and RAA == 180 is the specular direction.
+        result = compute_derived_viewing_geometry(np.array([30.0]), np.array([30.0]), np.array([180.0]))
+        np.testing.assert_allclose(result["sunglint_angle"], [0.0], atol=1e-6)
+
+    def test_backscatter_reduces_to_zenith_difference(self):
+        # RAA == 0 -> cos(glint) = cos(SZA)cos(VZA) - sin(SZA)sin(VZA) = cos(SZA + VZA).
+        result = compute_derived_viewing_geometry(np.array([40.0]), np.array([10.0]), np.array([0.0]))
+        np.testing.assert_allclose(result["sunglint_angle"], [50.0], atol=1e-4)
+
+    def test_result_is_bounded_and_nan_propagates(self):
+        result = compute_derived_viewing_geometry(
+            np.array([10.0, np.nan]), np.array([20.0, 20.0]), np.array([30.0, 30.0])
+        )
+        glint = result["sunglint_angle"]
+        assert 0.0 <= glint[0] <= 180.0
+        assert np.isnan(glint[1])
+
+
+# Spacecraft distance from Earth's center for an ~835 km orbit, km.
+_SATELLITE_RADIUS_KM = 7213.0
+
+
+def _with_ephemeris(l1b: dict, sub_lat, sub_lon) -> dict:
+    """``l1b`` plus the time and L1B ephemeris build_radiometer_footprints requires."""
+    n = len(l1b["latitude"])
+    return {
+        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")] * n),
+        **l1b,
+        "subsatellite_latitude": np.broadcast_to(np.asarray(sub_lat, dtype=np.float64), (n,)).copy(),
+        "subsatellite_longitude": np.broadcast_to(np.asarray(sub_lon, dtype=np.float64), (n,)).copy(),
+        "satellite_radius_km": np.full(n, _SATELLITE_RADIUS_KM),
+    }
+
+
+class TestBuildRadiometerFootprints:
+    """Radiometer footprints get a ray-traced bounding box + the L1B ephemeris."""
+
+    def test_each_footprint_gets_a_box_enclosing_its_boresight(self):
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0, -30.0], dtype=np.float32),
+                "longitude": np.array([11.0, 100.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
+            },
+            sub_lat=[1.5, -28.0],
+            sub_lon=[11.0, 100.0],
+        )
+        footprints = build_radiometer_footprints(l1b)
+
+        assert len(footprints) == 2
+        for footprint, lat, lon in zip(footprints, l1b["latitude"], l1b["longitude"], strict=True):
+            assert footprint.bbox.lat_min <= lat <= footprint.bbox.lat_max
+            assert footprint.bbox.lon_min <= lon <= footprint.bbox.lon_max
+            assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
+            # No Cone_Angle_Rate supplied -> unknown scan rate.
+            assert footprint.cone_angle_rate is None
+
+    def test_oblique_view_gives_a_larger_box(self):
+        boresight = {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        (nadir,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=0.0, sub_lon=0.0))
+        (oblique,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=8.0, sub_lon=0.0))
+        assert (oblique.bbox.lat_max - oblique.bbox.lat_min) > (nadir.bbox.lat_max - nadir.bbox.lat_min)
+
+    def test_ephemeris_and_scan_rate_are_carried_onto_the_footprint(self):
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0], dtype=np.float32),
+                "longitude": np.array([11.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
+                "cone_angle_rate": np.array([12.0], dtype=np.float64),
+            },
+            sub_lat=1.5,
+            sub_lon=11.0,
+        )
+        (footprint,) = build_radiometer_footprints(l1b)
+
+        assert footprint.bbox.lat_min <= 1.0 <= footprint.bbox.lat_max
+        assert footprint.subsatellite_latitude == 1.5
+        assert footprint.subsatellite_longitude == 11.0
+        assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
+        assert footprint.cone_angle_rate == 12.0
+
+    def test_oblique_ray_traced_box_is_not_centered_on_the_boresight(self):
+        """A ray-traced oblique footprint is skewed along the scan plane, not centered on the boresight."""
+        # Boresight at the equator, satellite offset to the north along the same meridian.
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([0.0], dtype=np.float32),
+                "longitude": np.array([0.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
+                "cone_angle_rate": np.array([np.nan], dtype=np.float64),
+            },
+            sub_lat=10.0,
+            sub_lon=0.0,
+        )
+        (ray_traced,) = build_radiometer_footprints(l1b)
+
+        assert ray_traced.bbox.lat_min <= 0.0 <= ray_traced.bbox.lat_max
+        assert abs(ray_traced.bbox.lat_max + ray_traced.bbox.lat_min) > 1e-2
+        # A fill cone-angle rate is normalized to None.
+        assert ray_traced.cone_angle_rate is None
+
+    def test_off_earth_record_keeps_its_index_flagged_off_limb(self):
+        """An off-Earth (NaN boresight) record is kept, flagged, never dropped."""
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([0.0, np.nan], dtype=np.float32),
+                "longitude": np.array([0.0, np.nan], dtype=np.float32),
+                "viewing_zenith_angle": np.array([20.0, np.nan], dtype=np.float32),
+                "cone_angle_rate": np.array([5.0, 5.0], dtype=np.float64),
+            },
+            sub_lat=1.0,
+            sub_lon=0.0,
+        )
+        footprints = build_radiometer_footprints(l1b)
+
+        assert len(footprints) == 2
+        # The off-Earth record is marked off_limb, with no box, so aggregation skips it
+        # (fill + zero coverage).
+        assert footprints[0].off_limb is False
+        assert footprints[1].off_limb is True
+        assert footprints[1].bbox is None
+
+    def test_footprint_beyond_the_horizon_raises(self):
+        # 30 deg from the subsatellite point is past the horizon of an ~835 km orbit.
+        l1b = _with_ephemeris(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+            sub_lat=30.0,
+            sub_lon=0.0,
+        )
+        with pytest.raises(MissingGeolocationError):
+            build_radiometer_footprints(l1b)
+
+    def test_missing_ephemeris_raises(self):
+        with pytest.raises(ValueError, match="subsatellite_latitude"):
+            build_radiometer_footprints(
+                {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+            )
+
+
+class TestFootprintGeometryEphemeris:
+    """The PSF geometry reads the L1B ephemeris, never a camera surface height."""
+
+    def test_radiometer_footprint_uses_its_satellite_radius(self):
+        (footprint,) = build_radiometer_footprints(
+            _with_ephemeris(
+                {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+                sub_lat=0.5,
+                sub_lon=0.0,
+            )
+        )
+        geom = _footprint_geometry(footprint)
+        assert geom.has_ephemeris
+        assert geom.satellite_radius_km == _SATELLITE_RADIUS_KM
+        assert geom.subsatellite_lat_deg == 0.5
+
+    def test_camera_surface_height_is_not_read_as_spacecraft_position(self):
+        # Regression: a camera PseudoFootprint carries ``altitude`` as the center-pixel
+        # *surface height in meters* (an output column), not a spacecraft position. With no
+        # ephemeris the extractor must fall back to the nominal orbit -- otherwise 835_000 m
+        # could be read as a radius in km, inflating the PSF ground radius ~100x.
+        camera_like = SimpleNamespace(
+            bbox=BoundingBox(0.0, 1.0, 0.0, 1.0),
+            latitude=0.5,
+            longitude=0.5,
+            altitude=835_000.0,  # meters of surface height
+            viewing_zenith_angle=0.0,
+        )
+        geom = _footprint_geometry(camera_like)
+        assert not geom.has_ephemeris
+        assert geom.satellite_radius_km == pytest.approx(_CAMERA_NOMINAL_SATELLITE_RADIUS_KM)
+
+
+def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
+    """A one-footprint L1B pass-through dict at a chosen boresight location."""
+    return {
+        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")]),
+        "latitude": np.array([lat], dtype=np.float32),
+        "longitude": np.array([lon], dtype=np.float32),
+        "altitude": np.array([0.0], dtype=np.float32),
+        "solar_zenith_angle": np.array([sza], dtype=np.float32),
+        "viewing_zenith_angle": np.array([vza], dtype=np.float32),
+        "relative_azimuth_angle": np.array([raa], dtype=np.float32),
+        # The satellite sits just north of the boresight, consistent with a small VZA.
+        "subsatellite_latitude": np.array([lat + 0.5], dtype=np.float64),
+        "subsatellite_longitude": np.array([lon], dtype=np.float64),
+        "satellite_radius_km": np.array([_SATELLITE_RADIUS_KM]),
+        "cone_angle_rate": np.array([-1.0]),
+    }
+
+
+class TestAssemblyWithAggregation:
+    """Supplying readers makes the external columns carry real aggregated values."""
+
+    def _era5_sources(self, tmp_path) -> dict[str, AncillaryReader]:
+        """CAM-mode readers holding only the real ERA5 surface reader over a constant-wind grid.
+
+        The grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
+        (~26 km) of the test boresight; u10 == 2.5 and v10 == -1.5 everywhere, so the
+        PSF-weighted mean is exactly those constants regardless of the weight kernel. The
+        fixture's one hourly step is the L1B time of ``_l1b_at``, so the step matches.
+        """
+        era5_cls = ReaderRegistry.get("era5_surface")
+        era5_file = make_era5_surface_netcdf_fixture(
+            tmp_path,
+            lat_min=0.0,
+            lat_max=2.0,
+            lon_min=10.0,
+            lon_max=12.0,
+            n_lat=21,
+            n_lon=21,
+            times=[np.datetime64("2026-06-11T00:00:00", "ns")],
+        )
+        return {"era5_surface": era5_cls([era5_file])}
+
+    def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
+        # Footprint sits inside the ERA5 grid so every PSF cell has data.
+        l1b = _l1b_at(lat=1.0, lon=11.0)
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.CAM,
+            l1b,
+            sources=self._era5_sources(tmp_path),
+            algorithm_version="1.0.0",
+            input_files="l1b.nc,era5.nc",
+        )
+
+        # Weighted mean of a constant field is that constant.
+        np.testing.assert_allclose(dataset["era5_surface_wind_u10"].values, [2.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_surface_wind_v10"].values, [-1.5], rtol=1e-4)
+        # A constant field has zero within-footprint spread.
+        np.testing.assert_allclose(dataset["era5_surface_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
+        # Fully covered -> coverage ~1 and no coverage QA bits set.
+        assert dataset["psf_coverage_fraction"].values[0] > 0.99
+        assert int(dataset["q_flags"].values[0]) == 0
+        # A source NOT in the subset sources (igbp) stays a placeholder (-1, the integer category fill).
+        assert int(dataset["igbp_surface_type"].values[0]) == -1
+        # The product still conforms strictly with the computed columns in place.
+        assert load_fmatch_definition(OperationalMode.CAM).check_dataset_conformance(dataset, strict=True) == []
+
+    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, tmp_path):
+        # Boresight far from the ERA5 grid -> no samples -> zero coverage.
+        l1b = _l1b_at(lat=1.0, lon=100.0)
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM, l1b, sources=self._era5_sources(tmp_path))
+
+        assert np.isnan(dataset["era5_surface_wind_u10"].values[0])
+        np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
+        assert int(dataset["q_flags"].values[0]) & int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
