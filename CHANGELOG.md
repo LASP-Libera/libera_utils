@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-10-30
+
+### Added
+
+- `libera_utils.footprint_matching.weighting`: `RadialWeigher` and `AngularPSFWeigher` weight each native sample where it lies, and each `WeightField` carries the footprint's `coverage`: the share of the PSF's energy inside the native cell of at least one finite sample (each sample covers the square of half-width `RESOLUTION_KM / sqrt(2)`, foreshortened along-scan by `cos(VZA)` in the angular frame, measured on a reference grid in the weigher's own frame), so a swath gap or a source beyond its time window reads as missing coverage. `AngularPSFWeigher` raises `ValueError` when `cone_angle_rate` is missing or not finite, or the viewing zenith is not finite.
+- `libera_utils.footprint_matching.aggregation.aggregate_sample_variables`, one scalar per product variable from a footprint's weighted samples, raising `ValueError` for a product variable it cannot map to a read variable or whose aggregation is not a registered strategy, and for values or weights that do not match the reader's variables and samples. `check_coverage(coverage)` applies the CERES 75 % / 95 % rule to `WeightField.coverage`.
+- The `weighted_positive_std` aggregation: the `_standard_deviation` companion of a `weighted_log_mean` variable is the spread of the same positive samples the geometric mean averages.
+- Optical depths are aggregated as CERES does: imager-pixel cloud optical depth (CLDPIX `cloud_optical_depth`) with the PSF-weighted log mean (CERES SSF-85), and every aerosol optical depth (VIIRS Deep Blue `aod_550`, SSF `aerosol_optical_depth`, `match_aot` and the imager land and ocean AODs) and every optical depth its source has already averaged (SSF `cloud_optical_depth_lower`/`_upper`, VIIRS L3 `cloud_optical_thickness`) with the PSF-weighted arithmetic mean (CERES SSF-137).
+- `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
+- `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
+
+### Changed
+
+- `notebooks/04_sources_query.ipynb` also demonstrates coverage.
+
 ## [5.19.0] - 2026-10-30
 
 ### Added
@@ -952,7 +967,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...HEAD
+[5.20.0]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...5.20.0
 [5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
 [5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
 [5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0

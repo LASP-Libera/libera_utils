@@ -129,3 +129,25 @@ class TestVariableSpec:
         _, companion = with_standard_deviation_companions((parent,))
         assert companion.name == "v_standard_deviation"
         assert companion.modes == modes
+
+    def test_log_mean_companion_is_positive_std(self):
+        """The ``_standard_deviation`` companion of a log-mean variable is aggregated with ``weighted_positive_std``.
+
+        The companion's strategy is set when the reader's specs are expanded, so that is where a log-mean variable must
+        be paired with the positive-sample spread rather than the plain one.
+
+        Expands one ``weighted_mean`` and one ``weighted_log_mean`` spec and asserts their companions use
+        ``weighted_std`` and ``weighted_positive_std`` respectively.
+        """
+        specs = with_standard_deviation_companions(
+            (
+                VariableSpec(
+                    name="a", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM})
+                ),
+                VariableSpec(
+                    name="b", dtype="float32", aggregation="weighted_log_mean", modes=frozenset({OperationalMode.CAM})
+                ),
+            )
+        )
+        companions = {spec.name: spec.aggregation for spec in specs if spec.name.endswith("_standard_deviation")}
+        assert companions == {"a_standard_deviation": "weighted_std", "b_standard_deviation": "weighted_positive_std"}

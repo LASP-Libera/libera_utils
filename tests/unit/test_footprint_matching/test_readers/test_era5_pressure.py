@@ -71,8 +71,8 @@ class TestERA5PressureLevelReaderErrors:
         A partial download must be fixed when it is acquired; substituting a neighboring level would publish values from
         the wrong altitude under that level's name.
 
-        Writes a file without the 975 and 1000 hPa levels and asserts a query raises ``ValueError`` naming the missing
-        configured levels.
+        Writes a file without the 975 and 1000 hPa levels and asserts a query raises ``ValueError`` reporting missing
+        configured pressure levels.
         """
         # Write a file that omits some configured levels: asserts the reader refuses it by raising
         # ValueError("missing configured pressure") rather than substituting neighboring levels.
@@ -88,7 +88,7 @@ class TestERA5PressureLevelReaderErrors:
         A download configured without a field would otherwise leave its planes unfilled, and the product would carry
         values that were never read.
 
-        Drops ``o3`` from a valid synthetic file and asserts a query raises ``KeyError`` naming the missing variable.
+        Drops ``o3`` from a valid synthetic file and asserts a query raises ``KeyError`` saying a variable is missing.
         """
         # Strip one required variable from an otherwise-valid fixture file.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)

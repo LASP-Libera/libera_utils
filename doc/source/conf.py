@@ -195,4 +195,5 @@ intersphinx_mapping = {
     "h5py": ("https://docs.h5py.org/en/stable", None),
     "pydantic": ("https://docs.pydantic.dev/latest/", None),
     "boto3": ("https://boto3.amazonaws.com/v1/documentation/api/latest/", None),
+    "pyproj": ("https://pyproj4.github.io/pyproj/stable/", None),
 }

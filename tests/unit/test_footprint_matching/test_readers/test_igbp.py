@@ -391,8 +391,7 @@ class TestIGBPTileHolder:
         All tiles are held in one ``(n_tiles, n_rows, n_cols)`` array, which cannot take tiles of mixed size, and
         mixed sizes mean the tiles are not from one MCD12Q1 product.
 
-        Stages one full-size and one half-size tile and asserts loading raises an error naming the shape
-        mismatch.
+        Stages a 60 x 60 tile and a 30 x 30 tile and asserts loading raises an error naming the shape mismatch.
         """
         first, _ = _tile(tmp_path, 17, 4)
         second, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N // 2, _N // 2), dtype=np.uint8))

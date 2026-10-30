@@ -17,7 +17,7 @@ FMATCH-IMAGER carries both **AOD** and **aerosol type**. The single-sensor Deep
 Blue granule carries both, so this one reader serves both:
 
 1. ``aod_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
-   and ocean (continuous, ``weighted_log_mean``).
+   and ocean (continuous, ``weighted_mean``).
 2. ``aerosol_type`` — the modal aerosol type over land and ocean (categorical,
    8 classes, ``weighted_mode``), plus three ranked companions
    (``aerosol_type_primary/secondary/tertiary``) declared in
@@ -108,7 +108,7 @@ class VIIRSAODReader(StaticReader):
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Two variables: ``aod_550`` (``weighted_log_mean``) and ``aerosol_type``
+        Two variables: ``aod_550`` (``weighted_mean``) and ``aerosol_type``
         (``weighted_mode``, 8 categories).
     ADDITIONAL_PRODUCT_VARIABLES : tuple[VariableSpec, ...]
         Three ranked aerosol-type outputs (primary/secondary/tertiary), derived
@@ -131,9 +131,11 @@ class VIIRSAODReader(StaticReader):
         VariableSpec(
             name="aod_550",
             dtype="float32",
-            # AOD is approximately log-normally distributed, so a geometric
-            # (log) mean is the appropriate spatial aggregation.
-            aggregation="weighted_log_mean",
+            # CERES averages aerosol optical depth arithmetically over its footprint:
+            # SSF-137 takes "an arithmetic mean ... of all imager pixels in the angular
+            # bin before they are weighted by the PSF" (CERES SSF Collection Guide,
+            # Release 2, p. 101, https://ceres.larc.nasa.gov/documents/collect_guide/pdf/SSF_CG_R2V1.pdf).
+            aggregation="weighted_mean",
             modes=_MODES,
             n_categories=None,
         ),
