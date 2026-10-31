@@ -230,9 +230,15 @@ All datetimes in this API are timezone-aware UTC. The day window is `[D − B, D
 
 ## Day completeness check
 
-`libera_utils.l1a.day_coverage.evaluate_day_coverage` scores L0 time spans against three
-regions: the **left buffer** `[D − B, D)`, the **day core** `[D, D+1)` and the **right buffer**
-`[D+1, D+1+B)`.
+`libera_utils.l1a.day_coverage.evaluate_day_coverage` scores L0 time spans against the buffered
+day window `[D − B, D + 1 + B]` with two checks:
+
+1. `covers_window`: the spans that touch the window start by its left edge and end by its right
+   edge.
+2. `window_frac_ok`: the spans cover at least `window_coverage_frac` of the window.
+
+`is_complete` is true when both pass. A gap counts the same against the fraction wherever it
+falls, in a buffer or in the day.
 
 Each APID's rule is the `day_coverage` block of its entry in `l1a_processing_configs.yml`, read
 as `get_packet_config(apid).day_coverage`. The block is required.
@@ -242,20 +248,20 @@ icie_nom_hk:
   # ...
   day_coverage:
     mode: "fraction"
-    day_coverage_frac: 0.99
-    buffer_coverage_frac: 0.99
+    window_coverage_frac: 0.95
 ```
 
-- `fraction` requires a minimum covered fraction of the day core and of each buffer.
-- `presence` passes all three regions when any span touches the day window
+- `fraction` applies both checks.
+- `presence` passes both checks when any span touches the day window
   (`overlaps_day_window`), since an APID that only runs during an event rarely has data at both
   midnights. A file whose start equals its end, such as a file holding one time, counts as
   present.
-- Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) count as continuous, because a file's
-  span runs from its first to its last sample and so falls one sample period short of the time
-  the file occupies. Spans further apart than the tolerance count as a gap, so an APID whose
-  cadence exceeds 1 s, such as WFOV, loses a few seconds per file seam. Pass
-  `seam_tolerance=timedelta(0)` to require exact abutment.
+- Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) count as continuous, and a span within
+  the tolerance of a window edge reaches it, because a file's span runs from its first to its
+  last sample and so falls one sample period short of the time the file occupies. Spans further
+  apart than the tolerance count as a gap, so an APID whose cadence exceeds 1 s, such as WFOV,
+  loses a few seconds per file seam. Pass `seam_tolerance=timedelta(0)` to require exact
+  abutment.
 - The check counts time covered, not files.
 - An incomplete day is skipped without error. `libera-utils l1a-processing` (see
   [Basic Usage](usage.md)) re-runs the check for a day, or combines it anyway with `--force`.
@@ -343,8 +349,7 @@ icie_nom_hk:
   packet_time_source: "ICIE"
   day_coverage:
     mode: "fraction"
-    day_coverage_frac: 0.99
-    buffer_coverage_frac: 0.99
+    window_coverage_frac: 0.95
 ```
 
 A JPSS packet using a different XTCE definition and time source:
@@ -360,8 +365,7 @@ jpss_sc_pos:
   packet_time_source: "JPSS"
   day_coverage:
     mode: "fraction"
-    day_coverage_frac: 0.99
-    buffer_coverage_frac: 0.99
+    window_coverage_frac: 0.95
   sample_groups:
     - ... # see SampleGroup below
 ```

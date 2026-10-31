@@ -89,13 +89,13 @@ def test_jpss1_gate_on_l0_spans(jpss1_files):
     policy = get_packet_config(LiberaApid.jpss_sc_pos).day_coverage
 
     result = evaluate_day_coverage(spans, day=day, policy=policy)
-    assert result.day_frac == pytest.approx(0.25, abs=1e-3)
-    assert result.left_frac == pytest.approx(0.000115, abs=1e-5)
-    assert result.right_frac == 0.0
+    assert result.window_frac == pytest.approx(21600 / 87600, abs=1e-3)
+    assert not result.covers_window
+    assert not result.window_frac_ok
     assert not result.is_complete
 
     abutting_only = evaluate_day_coverage(spans, day=day, policy=policy, seam_tolerance=timedelta(0))
-    assert abutting_only.day_frac < result.day_frac
+    assert abutting_only.window_frac < result.window_frac
 
 
 def test_wfov_trims_on_camera_time(test_ditl_camera_with_duplicate_packet, monkeypatch, tmp_path):

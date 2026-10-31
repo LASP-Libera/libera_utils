@@ -365,44 +365,36 @@ class DayCoveragePolicy(BaseModel):
     Attributes
     ----------
     mode : CoverageMode
-        ``FRACTION`` checks the fractions below. ``PRESENCE`` passes every region as soon
-        as any data overlaps the buffered day window, and takes no fractions.
-    day_coverage_frac : float | None
-        Minimum covered fraction of ``[D, D+1)``. Required for ``FRACTION``.
-    buffer_coverage_frac : float | None
-        Minimum covered fraction of each midnight buffer. Required for ``FRACTION``.
+        ``FRACTION`` requires the data to reach both edges of the buffered day window and to
+        cover at least ``window_coverage_frac`` of it. ``PRESENCE`` passes both checks as soon
+        as any data overlaps the buffered day window, and takes no fraction.
+    window_coverage_frac : float | None
+        Minimum covered fraction of the buffered day window ``[D - B, D + 1 + B]``. Required
+        for ``FRACTION``.
 
     Raises
     ------
     pydantic_core.ValidationError
-        If a ``FRACTION`` policy omits either fraction, a ``PRESENCE`` policy carries
-        one, or a fraction falls outside ``(0, 1]``.
+        If a ``FRACTION`` policy omits ``window_coverage_frac``, a ``PRESENCE`` policy carries
+        it, or it falls outside ``(0, 1]``.
     """
 
     model_config = ConfigDict(frozen=True)
 
     mode: CoverageMode
-    day_coverage_frac: float | None = None
-    buffer_coverage_frac: float | None = None
+    window_coverage_frac: float | None = None
 
     @model_validator(mode="after")
-    def _validate_fractions(self) -> "DayCoveragePolicy":
-        """Require fractions in ``(0, 1]`` for ``FRACTION`` and none for ``PRESENCE``."""
-        fractions = {
-            "day_coverage_frac": self.day_coverage_frac,
-            "buffer_coverage_frac": self.buffer_coverage_frac,
-        }
+    def _validate_fraction(self) -> "DayCoveragePolicy":
+        """Require a fraction in ``(0, 1]`` for ``FRACTION`` and none for ``PRESENCE``."""
+        frac = self.window_coverage_frac
         if self.mode is CoverageMode.FRACTION:
-            missing = [name for name, value in fractions.items() if value is None]
-            if missing:
-                raise ValueError(f"A {self.mode} policy requires {', '.join(missing)}.")
-            for name, value in fractions.items():
-                if not 0.0 < value <= 1.0:
-                    raise ValueError(f"{name} must be in (0, 1], got {value}.")
-        else:
-            supplied = [name for name, value in fractions.items() if value is not None]
-            if supplied:
-                raise ValueError(f"A {self.mode} policy checks presence alone; drop {', '.join(supplied)}.")
+            if frac is None:
+                raise ValueError(f"A {self.mode} policy requires window_coverage_frac.")
+            if not 0.0 < frac <= 1.0:
+                raise ValueError(f"window_coverage_frac must be in (0, 1], got {frac}.")
+        elif frac is not None:
+            raise ValueError(f"A {self.mode} policy checks presence alone; drop window_coverage_frac.")
         return self
 
 

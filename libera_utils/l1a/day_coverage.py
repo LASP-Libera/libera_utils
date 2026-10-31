@@ -22,38 +22,31 @@ DEFAULT_GAP_FACTOR = 5.0
 
 @dataclass(frozen=True, slots=True)
 class DayCoverageResult:
-    """Coverage fractions and pass/fail for left buffer, day core, and right buffer.
+    """Whether L0 spans reach both edges of the buffered day window, and how much of it they cover.
 
     Attributes
     ----------
     mode : CoverageMode
         Mode of the policy the result was judged under.
-    left_frac : float
-        Covered fraction, in ``[0, 1]``, of the left midnight buffer.
-    day_frac : float
-        Covered fraction, in ``[0, 1]``, of the day core ``[D, D+1)``.
-    right_frac : float
-        Covered fraction, in ``[0, 1]``, of the right midnight buffer.
-    left_ok : bool
-        Whether the left buffer passes the policy. Under ``PRESENCE`` all three ``*_ok`` equal presence.
-    day_ok : bool
-        Whether the day core passes the policy.
-    right_ok : bool
-        Whether the right buffer passes the policy.
+    covers_window : bool
+        Whether the spans that touch the buffered day window ``[D - B, D + 1 + B]`` reach both of
+        its edges. Under ``PRESENCE``, equals presence.
+    window_frac : float
+        Covered fraction, in ``[0, 1]``, of the buffered day window.
+    window_frac_ok : bool
+        Whether ``window_frac`` meets the policy's ``window_coverage_frac``. Under ``PRESENCE``,
+        equals presence.
     """
 
     mode: CoverageMode
-    left_frac: float
-    day_frac: float
-    right_frac: float
-    left_ok: bool
-    day_ok: bool
-    right_ok: bool
+    covers_window: bool
+    window_frac: float
+    window_frac_ok: bool
 
     @property
     def is_complete(self) -> bool:
-        """True when all three regions pass."""
-        return self.left_ok and self.day_ok and self.right_ok
+        """True when both checks pass."""
+        return self.covers_window and self.window_frac_ok
 
 
 def _coverage_fraction(
@@ -114,11 +107,16 @@ def evaluate_day_coverage(
     policy: DayCoveragePolicy,
     seam_tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
 ) -> DayCoverageResult:
-    """Evaluate L0 time-span coverage against day core and midnight buffers.
+    """Evaluate L0 time-span coverage of the buffered day window ``[D - B, D + 1 + B]``.
+
+    Under ``FRACTION`` a day passes two checks: the spans that touch the window start by its
+    left edge and end by its right edge (``covers_window``), and the spans cover at least
+    ``policy.window_coverage_frac`` of the window (``window_frac_ok``). A gap counts the same
+    against the fraction wherever it falls in the window.
 
     Pairs with a ``None`` endpoint and inverted pairs (``start > end``) are ignored. A span whose
-    start equals its end, such as a file holding one time, counts toward presence but adds nothing
-    to the fractions.
+    start equals its end, such as a file holding one time, counts toward presence and toward
+    reaching a window edge but adds nothing to the fraction.
 
     Parameters
     ----------
@@ -129,15 +127,15 @@ def evaluate_day_coverage(
     policy : DayCoveragePolicy
         Completeness rule for the APID being combined, ``get_packet_config(apid).day_coverage``.
     seam_tolerance : datetime.timedelta, optional
-        Spacing between two spans that still counts as continuous. Default
+        Spacing between two spans that still counts as continuous, and the distance by which a
+        span may fall short of a window edge and still reach it. Default
         ``DEFAULT_SEAM_TOLERANCE`` (1 s). Pass ``timedelta(0)`` to require exact abutment.
 
     Returns
     -------
     DayCoverageResult
-        Fractions and pass/fail for left buffer, day core, and right buffer. Under
-        ``PRESENCE`` all three ``*_ok`` equal presence: whether any span overlaps the day
-        window (:func:`overlaps_day_window`).
+        The window fraction and both checks. Under ``PRESENCE`` both checks equal presence:
+        whether any span overlaps the day window (:func:`overlaps_day_window`).
 
     Raises
     ------
@@ -148,27 +146,24 @@ def evaluate_day_coverage(
     spans = [(start, end) for start, end in intervals if start is not None and end is not None and start <= end]
 
     bounds = day_bounds(day)
-    left_frac = _coverage_fraction(spans, bounds.window_start, bounds.day_start, seam_tolerance)
-    day_frac = _coverage_fraction(spans, bounds.day_start, bounds.day_end, seam_tolerance)
-    right_frac = _coverage_fraction(spans, bounds.day_end, bounds.window_end, seam_tolerance)
+    in_window = [(start, end) for start, end in spans if overlaps_day_window(start, end, day=day)]
+    window_frac = _coverage_fraction(spans, bounds.window_start, bounds.window_end, seam_tolerance)
 
     if policy.mode is CoverageMode.PRESENCE:
         # An APID that is on only for an event almost never has data at both midnights.
-        present = any(overlaps_day_window(start, end, day=day) for start, end in spans)
-        left_ok = day_ok = right_ok = present
+        covers_window = window_frac_ok = bool(in_window)
     else:
-        left_ok = left_frac >= policy.buffer_coverage_frac
-        right_ok = right_frac >= policy.buffer_coverage_frac
-        day_ok = day_frac >= policy.day_coverage_frac
+        covers_window = bool(in_window) and (
+            min(start for start, _ in in_window) <= bounds.window_start + seam_tolerance
+            and max(end for _, end in in_window) >= bounds.window_end - seam_tolerance
+        )
+        window_frac_ok = window_frac >= policy.window_coverage_frac
 
     return DayCoverageResult(
         mode=policy.mode,
-        left_frac=left_frac,
-        day_frac=day_frac,
-        right_frac=right_frac,
-        left_ok=left_ok,
-        day_ok=day_ok,
-        right_ok=right_ok,
+        covers_window=covers_window,
+        window_frac=window_frac,
+        window_frac_ok=window_frac_ok,
     )
 
 

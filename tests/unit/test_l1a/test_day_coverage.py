@@ -11,12 +11,16 @@ from libera_utils.l1a.day_coverage import (
     measure_time_axis_coverage,
     overlaps_day_window,
 )
+from libera_utils.l1a.day_window import day_bounds
 from libera_utils.l1a.l1a_packet_configs import CoverageMode, DayCoveragePolicy
 
 # Stands in for the fraction-mode APIDs in the tests below that are about the coverage arithmetic
 # rather than about any one APID's thresholds.
-FRACTION_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=0.99)
+FRACTION_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, window_coverage_frac=0.9)
+STRICT_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, window_coverage_frac=1.0)
 PRESENCE_POLICY = DayCoveragePolicy(mode=CoverageMode.PRESENCE)
+
+WINDOW_SECONDS = 87600
 
 
 def test_full_day_and_buffers_complete():
@@ -27,10 +31,9 @@ def test_full_day_and_buffers_complete():
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
     result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
+    assert result.covers_window
+    assert result.window_frac == 1.0
     assert result.is_complete
-    assert result.left_frac == 1.0
-    assert result.day_frac == 1.0
-    assert result.right_frac == 1.0
 
 
 def test_missing_right_buffer_incomplete():
@@ -39,23 +42,23 @@ def test_missing_right_buffer_incomplete():
         (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 16, 0, 0, tzinfo=UTC)),
     ]
     result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
-    assert result.left_ok
-    assert result.day_ok
-    assert not result.right_ok
+    assert not result.covers_window
+    assert result.window_frac_ok
     assert not result.is_complete
 
 
 def test_half_day_fails_fraction_policy():
     day = date(2028, 2, 15)
-    # Only 12 hours of the day core
+    # Both buffers and 12 hours of the day
     intervals = [
         (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 15, 0, 0, tzinfo=UTC)),
         (datetime(2028, 2, 15, 0, 0, tzinfo=UTC), datetime(2028, 2, 15, 12, 0, tzinfo=UTC)),
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
     result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
-    assert result.day_frac == 0.5
-    assert not result.day_ok
+    assert result.covers_window
+    assert result.window_frac == pytest.approx(740 / 1460)
+    assert not result.window_frac_ok
     assert not result.is_complete
 
 
@@ -67,9 +70,10 @@ def test_short_span_passes_presence_but_not_fraction():
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
     fraction = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
-    assert not fraction.day_ok
+    assert not fraction.window_frac_ok
     presence = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
-    assert presence.day_ok
+    assert presence.covers_window
+    assert presence.window_frac_ok
     assert presence.is_complete
 
 
@@ -82,7 +86,7 @@ def test_overlapping_intervals_merged():
         (datetime(2028, 2, 15, 23, 55, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
     result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
-    assert result.day_frac == 1.0
+    assert result.window_frac == 1.0
     assert result.is_complete
 
 
@@ -92,81 +96,133 @@ _MEASURED_SEAMS_MS = (5, 15, 25)
 
 
 def _day_spanning_intervals(day: date, seam: timedelta) -> list[tuple[datetime, datetime]]:
-    """Three back-to-back files covering both buffers and the whole core, split by ``seam``."""
-    left_start = datetime.combine(day, datetime.min.time(), tzinfo=UTC) - timedelta(minutes=10)
-    right_end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=UTC) + timedelta(minutes=10)
-    midnight = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
-    next_midnight = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
-    # Seams land inside each buffer, where DITL2 two-hour chunk boundaries actually fall.
-    first_seam = midnight + timedelta(seconds=24)
-    second_seam = next_midnight + timedelta(seconds=45)
+    """Three back-to-back files covering the whole buffered day window, split by ``seam``."""
+    bounds = day_bounds(day)
+    # Seams land just after each midnight, where DITL2 two-hour chunk boundaries actually fall.
+    first_seam = bounds.day_start + timedelta(seconds=24)
+    second_seam = bounds.day_end + timedelta(seconds=45)
     return [
-        (left_start, first_seam),
+        (bounds.window_start, first_seam),
         (first_seam + seam, second_seam),
-        (second_seam + seam, right_end),
+        (second_seam + seam, bounds.window_end),
     ]
 
 
 @pytest.mark.parametrize("seam_ms", _MEASURED_SEAMS_MS)
-def test_measured_seams_reach_full_buffer_coverage(seam_ms):
-    """A seam at any measured size must still score 1.0, not merely clear the 0.99 threshold.
-
-    Demanding ``buffer_coverage_frac=1.0`` isolates the tolerance: every midnight crossing in
-    DITL2 puts a seam inside the right buffer.
-    """
+def test_measured_seams_reach_full_window_coverage(seam_ms):
+    """A seam at any measured size must still score 1.0, not merely clear a threshold below it."""
     day = date(2026, 7, 12)
     result = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(milliseconds=seam_ms)),
-        day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
+        _day_spanning_intervals(day, timedelta(milliseconds=seam_ms)), day=day, policy=STRICT_POLICY
     )
     assert result.is_complete
-    assert result.left_frac == 1.0
-    assert result.right_frac == 1.0
+    assert result.window_frac == 1.0
 
 
-def test_real_gap_in_right_buffer_fails():
+def test_gap_inside_a_buffer_passes_on_window_fraction():
+    """A gap in a buffer costs only its share of the whole window; both edges are still reached."""
     day = date(2026, 7, 12)
-    result = evaluate_day_coverage(_day_spanning_intervals(day, timedelta(seconds=30)), day=day, policy=FRACTION_POLICY)
-    assert result.left_ok
-    assert not result.right_ok
-    assert not result.is_complete
+    bounds = day_bounds(day)
+    gap_start = bounds.day_end + timedelta(seconds=45)
+    intervals = [
+        (bounds.window_start, gap_start),
+        (gap_start + timedelta(seconds=30), bounds.window_end),
+    ]
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
+    assert result.covers_window
+    assert result.window_frac == pytest.approx(1 - 30 / WINDOW_SECONDS)
+    assert result.is_complete
+    assert not evaluate_day_coverage(intervals, day=day, policy=STRICT_POLICY).window_frac_ok
 
 
 def test_gap_just_over_seam_tolerance_is_not_merged():
     day = date(2026, 7, 12)
     over = DEFAULT_SEAM_TOLERANCE + timedelta(milliseconds=1)
-    strict_buffer = DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0)
-    result = evaluate_day_coverage(_day_spanning_intervals(day, over), day=day, policy=strict_buffer)
-    assert not result.right_ok
+    result = evaluate_day_coverage(_day_spanning_intervals(day, over), day=day, policy=STRICT_POLICY)
+    assert not result.window_frac_ok
     under = DEFAULT_SEAM_TOLERANCE - timedelta(milliseconds=1)
-    merged = evaluate_day_coverage(_day_spanning_intervals(day, under), day=day, policy=strict_buffer)
+    merged = evaluate_day_coverage(_day_spanning_intervals(day, under), day=day, policy=STRICT_POLICY)
     assert merged.is_complete
 
 
 def test_seam_tolerance_is_tunable_per_caller():
     day = date(2026, 7, 12)
     intervals = _day_spanning_intervals(day, timedelta(milliseconds=15))
-    strict = evaluate_day_coverage(
-        intervals,
-        day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
-        seam_tolerance=timedelta(0),
-    )
+    strict = evaluate_day_coverage(intervals, day=day, policy=STRICT_POLICY, seam_tolerance=timedelta(0))
     assert not strict.is_complete
 
 
-def test_buffer_frac_absorbs_a_small_real_dropout():
-    """0.99 of a 600 s buffer allows a 6 s outage, which the tolerance alone would not."""
+@pytest.mark.parametrize("edge", ["left", "right"])
+def test_data_short_of_a_window_edge_fails_at_any_fraction(edge):
     day = date(2026, 7, 12)
-    six_seconds = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(seconds=6)), day=day, policy=FRACTION_POLICY
+    bounds = day_bounds(day)
+    short = timedelta(seconds=2)
+    if edge == "left":
+        span = (bounds.window_start + short, bounds.window_end)
+    else:
+        span = (bounds.window_start, bounds.window_end - short)
+    result = evaluate_day_coverage(
+        [span], day=day, policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, window_coverage_frac=0.01)
     )
-    assert six_seconds.is_complete
-    seven_seconds = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(seconds=7)), day=day, policy=FRACTION_POLICY
-    )
-    assert not seven_seconds.right_ok
+    assert result.window_frac_ok
+    assert not result.covers_window
+    assert not result.is_complete
+
+
+@pytest.mark.parametrize("edge", ["left", "right"])
+def test_window_edge_within_seam_tolerance_is_reached(edge):
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    short = timedelta(milliseconds=500)
+    if edge == "left":
+        span = (bounds.window_start + short, bounds.window_end)
+    else:
+        span = (bounds.window_start, bounds.window_end - short)
+    assert evaluate_day_coverage([span], day=day, policy=FRACTION_POLICY).covers_window
+
+
+def test_seam_straddling_window_start_reaches_the_edge():
+    """A file ending just before the window does not touch it, so the next file must reach the edge."""
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    intervals = [
+        (bounds.window_start - timedelta(hours=2), bounds.window_start - timedelta(milliseconds=300)),
+        (bounds.window_start + timedelta(milliseconds=200), bounds.window_end),
+    ]
+    assert evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY).covers_window
+
+
+def test_span_outside_the_window_does_not_reach_its_edge():
+    """A previous-day file that ends before the window says nothing about the window's left edge."""
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    intervals = [
+        (bounds.window_start - timedelta(hours=10), bounds.window_start - timedelta(hours=1)),
+        (bounds.window_start + timedelta(minutes=15), bounds.window_end),
+    ]
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
+    assert result.window_frac == pytest.approx(1 - 900 / WINDOW_SECONDS)
+    assert result.window_frac_ok
+    assert not result.covers_window
+
+
+def test_fraction_policy_with_no_span_in_the_window_is_incomplete():
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    intervals = [(bounds.window_start - timedelta(hours=3), bounds.window_start - timedelta(hours=1))]
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
+    assert result.window_frac == 0.0
+    assert not result.covers_window
+    assert not result.is_complete
+
+
+def test_zero_length_span_on_a_window_edge_reaches_it():
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    rest = (bounds.window_start + timedelta(minutes=5), bounds.window_end)
+    assert not evaluate_day_coverage([rest], day=day, policy=FRACTION_POLICY).covers_window
+    instant = (bounds.window_start, bounds.window_start)
+    assert evaluate_day_coverage([instant, rest], day=day, policy=FRACTION_POLICY).covers_window
 
 
 # The 14 APID-1036 File Metadata spans for 2026-07-12 from the DITL2 campaign, as read from the
@@ -195,9 +251,8 @@ def test_ditl2_full_day_gates_complete():
         for a, b in _DITL2_APID_1036_2026_07_12
     ]
     result = evaluate_day_coverage(intervals, day=date(2026, 7, 12), policy=FRACTION_POLICY)
-    assert result.left_frac == 1.0
-    assert result.day_frac == 1.0
-    assert result.right_frac == 1.0
+    assert result.covers_window
+    assert result.window_frac == 1.0
     assert result.is_complete
 
 
@@ -206,8 +261,9 @@ def test_presence_passes_buffers_it_does_not_cover():
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 12, 14, 0, tzinfo=UTC), datetime(2026, 7, 12, 14, 3, tzinfo=UTC))]
     result = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
-    assert result.left_frac == 0.0
-    assert result.right_frac == 0.0
+    assert result.window_frac == pytest.approx(180 / WINDOW_SECONDS)
+    assert result.covers_window
+    assert result.window_frac_ok
     assert result.is_complete
     assert result.mode is CoverageMode.PRESENCE
 
@@ -223,25 +279,25 @@ def test_presence_data_only_in_a_buffer_still_passes():
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 11, 23, 55, tzinfo=UTC), datetime(2026, 7, 11, 23, 58, tzinfo=UTC))]
     result = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
-    assert result.day_frac == 0.0
+    assert result.covers_window
+    assert result.window_frac_ok
     assert result.is_complete
 
 
 def test_fraction_just_under_its_threshold_fails():
     day = date(2026, 7, 12)
-    start = datetime(2026, 7, 12, 0, 0, tzinfo=UTC)
-    # 0.985 of the core, above the 0.90 policy and below the 0.99 one.
+    bounds = day_bounds(day)
+    # 0.985 of the window, above the 0.90 policy and below the 0.99 one.
+    gap = timedelta(seconds=round(WINDOW_SECONDS * 0.015))
     intervals = [
-        (start - timedelta(minutes=10), start),
-        (start, start + timedelta(seconds=round(86400 * 0.985))),
-        (start + timedelta(days=1), start + timedelta(days=1, minutes=10)),
+        (bounds.window_start, bounds.day_end - gap),
+        (bounds.day_end, bounds.window_end),
     ]
     strict = evaluate_day_coverage(
-        intervals,
-        day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.99, buffer_coverage_frac=0.99),
+        intervals, day=day, policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, window_coverage_frac=0.99)
     )
-    assert not strict.day_ok
+    assert strict.covers_window
+    assert not strict.window_frac_ok
     assert not strict.is_complete
     assert evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY).is_complete
 
@@ -269,14 +325,13 @@ def test_unusable_intervals_are_ignored():
 
 
 def test_non_utc_aware_intervals_compare_as_utc():
-    """19:00-05:00 on the 14th is 00:00 UTC on the 15th, so the span covers the whole core."""
+    """19:00-05:00 on the 14th is 00:00 UTC on the 15th, so the span covers the day but neither buffer."""
     day = date(2028, 2, 15)
     minus_five = timezone(timedelta(hours=-5))
     intervals = [(datetime(2028, 2, 14, 19, 0, tzinfo=minus_five), datetime(2028, 2, 15, 19, 0, tzinfo=minus_five))]
     result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
-    assert result.day_frac == 1.0
-    assert result.left_frac == 0.0
-    assert result.right_frac == 0.0
+    assert result.window_frac == pytest.approx(86400 / WINDOW_SECONDS)
+    assert not result.covers_window
 
 
 @pytest.mark.parametrize("policy", [FRACTION_POLICY, PRESENCE_POLICY], ids=["fraction", "presence"])
@@ -296,7 +351,7 @@ def test_zero_length_span_is_present_for_presence():
     instant = datetime(2028, 2, 15, 12, 0, tzinfo=UTC)
     result = evaluate_day_coverage([(instant, instant)], day=day, policy=PRESENCE_POLICY)
     assert result.is_complete
-    assert result.day_frac == 0.0
+    assert result.window_frac == 0.0
 
 
 def test_zero_length_span_leaves_fraction_policy_fractions_unchanged():
@@ -366,11 +421,12 @@ def test_measure_sees_a_gap_inside_the_axis():
     assert coverage.day_frac == pytest.approx(1 - 2 / 24, abs=1e-4)
     # The spacing across the hole is the two missing hours plus the one cadence that bridges it.
     assert coverage.max_gap == timedelta(hours=2, seconds=5)
-    # The same data as whole-file spans reads as a covered day, because the gap is inside a file.
+    # The same data as one whole-file span shows no hole and clears the fraction check, because the
+    # gap is inside the file.
     spans = [(axis[0].astype(datetime).replace(tzinfo=UTC), axis[-1].astype(datetime).replace(tzinfo=UTC))]
-    assert evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=FRACTION_POLICY).day_frac == pytest.approx(
-        1.0, abs=1e-4
-    )
+    from_spans = evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=FRACTION_POLICY)
+    assert from_spans.window_frac == pytest.approx(86395 / WINDOW_SECONDS)
+    assert from_spans.window_frac_ok
 
 
 def test_measure_wfov_cadence_is_not_read_as_gaps():

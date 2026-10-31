@@ -132,37 +132,35 @@ def test_configured_apids_loads_every_yaml_entry(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("apid", "mode", "day_frac", "buffer_frac"),
+    ("apid", "mode", "window_frac"),
     [
-        (LiberaApid.icie_nom_hk, CoverageMode.FRACTION, 0.99, 0.99),
-        (LiberaApid.icie_rad_sample, CoverageMode.FRACTION, 0.90, 0.95),
-        (LiberaApid.icie_wfov_sci, CoverageMode.FRACTION, 0.60, 0.60),
-        (LiberaApid.icie_rad_full, CoverageMode.PRESENCE, None, None),
-        (LiberaApid.icie_cal_sample, CoverageMode.PRESENCE, None, None),
+        (LiberaApid.icie_nom_hk, CoverageMode.FRACTION, 0.95),
+        (LiberaApid.icie_rad_sample, CoverageMode.FRACTION, 0.95),
+        (LiberaApid.icie_wfov_sci, CoverageMode.FRACTION, 0.95),
+        (LiberaApid.icie_rad_full, CoverageMode.PRESENCE, None),
+        (LiberaApid.icie_cal_sample, CoverageMode.PRESENCE, None),
     ],
 )
-def test_day_coverage_loaded_from_yaml(apid, mode, day_frac, buffer_frac):
+def test_day_coverage_loaded_from_yaml(apid, mode, window_frac):
     """The YAML day_coverage blocks load into the expected policies."""
     policy = get_packet_config(apid).day_coverage
     assert policy.mode is mode
-    assert policy.day_coverage_frac == day_frac
-    assert policy.buffer_coverage_frac == buffer_frac
+    assert policy.window_coverage_frac == window_frac
 
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"mode": CoverageMode.FRACTION}, "requires day_coverage_frac, buffer_coverage_frac"),
-        ({"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.9}, "requires buffer_coverage_frac"),
+        ({"mode": CoverageMode.FRACTION}, "requires window_coverage_frac"),
         (
-            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 1.5, "buffer_coverage_frac": 0.9},
-            r"day_coverage_frac must be in \(0, 1\], got 1.5",
+            {"mode": CoverageMode.FRACTION, "window_coverage_frac": 1.5},
+            r"window_coverage_frac must be in \(0, 1\], got 1.5",
         ),
         (
-            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.0, "buffer_coverage_frac": 0.9},
-            r"day_coverage_frac must be in \(0, 1\], got 0.0",
+            {"mode": CoverageMode.FRACTION, "window_coverage_frac": 0.0},
+            r"window_coverage_frac must be in \(0, 1\], got 0.0",
         ),
-        ({"mode": CoverageMode.PRESENCE, "day_coverage_frac": 0.9}, "drop day_coverage_frac"),
+        ({"mode": CoverageMode.PRESENCE, "window_coverage_frac": 0.9}, "drop window_coverage_frac"),
     ],
 )
 def test_malformed_policies_rejected(kwargs, match):
