@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from libera_utils import cli, kernel_maker
-from libera_utils.aws import algorithm_registration, ecr_upload, l1a_combine, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, l1a_join, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.scene_identification import scene_id_algorithm
 
@@ -408,14 +408,12 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
     ("cli_args", "parsed"),
     [
         (
-            ["force-l1a-combine", "2026-07-12", "--apid", "1057"],
+            ["l1a-processing", "2026-07-12", "--apid", "1057"],
             argparse.Namespace(
-                func=l1a_combine.force_l1a_combine_cli_handler,
-                applicable_dates=["2026-07-12"],
+                func=l1a_join.l1a_processing_cli_handler,
+                applicable_date="2026-07-12",
                 apid=1057,
-                start=None,
-                end=None,
-                force=True,
+                force=False,
                 ground_data=False,
                 reason=None,
                 profile=None,
@@ -423,22 +421,19 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
         ),
         (
             [
-                "force-l1a-combine",
+                "l1a-processing",
+                "2026-07-01",
                 "--apid=1035",
-                "--start=2026-07-01",
-                "--end=2026-07-03",
-                "--no-force",
+                "--force",
                 "--ground-data",
                 "--reason=DITL2 backfill",
                 "--profile=test-profile",
             ],
             argparse.Namespace(
-                func=l1a_combine.force_l1a_combine_cli_handler,
-                applicable_dates=[],
+                func=l1a_join.l1a_processing_cli_handler,
+                applicable_date="2026-07-01",
                 apid=1035,
-                start="2026-07-01",
-                end="2026-07-03",
-                force=False,
+                force=True,
                 ground_data=True,
                 reason="DITL2 backfill",
                 profile="test-profile",
@@ -446,7 +441,7 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
         ),
     ],
 )
-def test_force_l1a_combine_parse_cli_args(cli_args, parsed):
+def test_l1a_processing_parse_cli_args(cli_args, parsed):
     assert cli.parse_cli_args(cli_args) == parsed
 
 
@@ -457,9 +452,11 @@ def test_force_l1a_combine_parse_cli_args(cli_args, parsed):
         ["ecr-upload", "not-an-alg", "test-image"],
         ["step-function-trigger", "not-an-alg", "2030-01-01"],
         ["manual-processing", "2026-06-01", "--start-steps", "not-a-step"],
-        ["force-l1a-combine", "2026-07-12", "--apid", "4321"],
-        ["force-l1a-combine", "2026-07-12", "--apid", "1013"],
-        ["force-l1a-combine", "2026-07-12"],
+        ["l1a-processing", "2026-07-12", "--apid", "4321"],
+        ["l1a-processing", "2026-07-12", "--apid", "1013"],
+        ["l1a-processing", "2026-07-12"],
+        ["l1a-processing", "--apid", "1057"],
+        ["l1a-processing", "2026-07-12", "2026-07-13", "--apid", "1057"],
     ],
 )
 def test_wrong_libera_ids(cli_args):

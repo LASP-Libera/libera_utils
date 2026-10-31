@@ -257,8 +257,8 @@ icie_nom_hk:
   cadence exceeds 1 s, such as WFOV, loses a few seconds per file seam. Pass
   `seam_tolerance=timedelta(0)` to require exact abutment.
 - The check counts time covered, not files.
-- An incomplete day is skipped without error. `libera-utils force-l1a-combine` (see
-  [Basic Usage](usage.md)) combines a day anyway, or re-runs the check for it with `--no-force`.
+- An incomplete day is skipped without error. `libera-utils l1a-processing` (see
+  [Basic Usage](usage.md)) re-runs the check for a day, or combines it anyway with `--force`.
 
 ## Day-window trim and data-time check
 
