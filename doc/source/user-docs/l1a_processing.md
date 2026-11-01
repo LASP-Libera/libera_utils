@@ -290,7 +290,9 @@ day window through `packet_slicing.slice_l1a_dataset_to_time_window`:
   `PACKET_IMAGE_ID` raises `ValueError`.
 
 `check_data_times(day_ds)` then reads the same axes and logs a warning for each one that repeats
-a time, listing up to 10 repeated values, or steps backwards. It does not raise.
+a time, listing up to 10 repeated values, or steps backwards. It does not raise. Decode drops
+repeated times on every packet and sample axis and sorts them, so only WFOV `CAMERA_TIME` can
+trigger a warning: it follows packet order, not camera time, and keeps an image whose time repeats.
 
 ## Measuring a granule's time-axis coverage
 
