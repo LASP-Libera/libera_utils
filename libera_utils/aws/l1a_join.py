@@ -1,13 +1,13 @@
 """Operator-triggered L1A day assembly.
 
-The L1A Preprocessor normally combines a day on its own, once the L0 files covering that day
+The L1A Preprocessor normally assembles a day on its own, once the L0 files covering that day
 meet the APID's coverage policy (see :mod:`libera_utils.l1a.day_coverage`). This module sends
 the event that asks the L1A Preprocessor to re-evaluate the completeness check for a day, or,
-with ``force=True``, to combine a day whose L0 files do not meet that policy, such as a partial
+with ``force=True``, to assemble a day whose L0 files do not meet that policy, such as a partial
 campaign or a ground capture.
 
 It emits a single ``ManualL1APreprocessing`` event to the SDC central EventBridge bus (the
-``LiberaSDCEventBus``); the L1A Preprocessor consumes it and runs one combine for the applicable
+``LiberaSDCEventBus``); the L1A Preprocessor consumes it and runs day assembly for the applicable
 date. The L0 files are assumed to already be ingested into the SDC (File Metadata rows exist)
 before the event is sent, exactly as for the automatic path.
 """
@@ -22,12 +22,11 @@ import boto3
 from libera_utils.aws.utils import (
     SDC_EVENT_BUS_PARTIAL_NAME,
     find_event_bus_in_account_by_partial_name,
-    get_l2_team_role_session,
-    to_date,
 )
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.l1a_packet_configs import configured_apids
 from libera_utils.logutil import configure_task_logging
+from libera_utils.time import to_date
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +54,12 @@ def request_l1a_processing(
     applicable_date : str, datetime.date, or datetime
         UTC calendar day to process.
     boto_session : boto3.Session
-        Boto3 session used for all AWS interactions. Created once by the CLI handler (with the
-        LiberaUtils role assumed) and passed in so the same authenticated session is used
-        throughout.
+        Boto3 session used for all AWS interactions. The CLI handler builds it from the
+        ``--profile`` profile, or the default profile, and assumes no role.
     force : bool, optional
         When False (default), the Preprocessor re-evaluates the completeness check -- the way to
         retry a day without waiting for new L0 to arrive. When True, it skips the check and
-        combines whatever overlapping L0 is already indexed.
+        assembles whatever overlapping L0 is already indexed.
     ground_data : bool, optional
         When True, assemble in ground CCSDS mode. Default False (flight PDS).
     reason : str, optional
@@ -144,7 +142,7 @@ def l1a_processing_cli_handler(parsed_args: argparse.Namespace) -> None:
     configure_task_logging(f"l1a_processing_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
 
-    boto_session = get_l2_team_role_session(profile_name=parsed_args.profile)
+    boto_session = boto3.Session(profile_name=parsed_args.profile)
     request_l1a_processing(
         parsed_args.apid,
         parsed_args.applicable_date,

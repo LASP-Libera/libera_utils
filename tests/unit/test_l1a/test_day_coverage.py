@@ -192,6 +192,26 @@ def test_seam_straddling_window_start_reaches_the_edge():
     assert evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY).covers_window
 
 
+@pytest.mark.parametrize("edge", ["left", "right"])
+def test_seam_straddling_a_window_edge_keeps_full_coverage(edge):
+    """A 0.8 s seam across a window edge merges like one inside the window, so 1.0 is reachable."""
+    day = date(2026, 7, 12)
+    bounds = day_bounds(day)
+    if edge == "left":
+        intervals = [
+            (bounds.window_start - timedelta(hours=2), bounds.window_start - timedelta(milliseconds=300)),
+            (bounds.window_start + timedelta(milliseconds=500), bounds.window_end),
+        ]
+    else:
+        intervals = [
+            (bounds.window_start, bounds.window_end - timedelta(milliseconds=300)),
+            (bounds.window_end + timedelta(milliseconds=500), bounds.window_end + timedelta(hours=2)),
+        ]
+    result = evaluate_day_coverage(intervals, day=day, policy=STRICT_POLICY)
+    assert result.window_frac == 1.0
+    assert result.is_complete
+
+
 def test_span_outside_the_window_does_not_reach_its_edge():
     """A previous-day file that ends before the window says nothing about the window's left edge."""
     day = date(2026, 7, 12)
@@ -275,7 +295,7 @@ def test_presence_with_no_overlapping_data_is_incomplete():
 
 
 def test_presence_data_only_in_a_buffer_still_passes():
-    """Data inside the buffer belongs to this day's combine window, so it must trigger one."""
+    """Data inside the buffer belongs to this day's assembly window, so it must trigger one."""
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 11, 23, 55, tzinfo=UTC), datetime(2026, 7, 11, 23, 58, tzinfo=UTC))]
     result = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)

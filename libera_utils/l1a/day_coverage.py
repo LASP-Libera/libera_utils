@@ -1,4 +1,4 @@
-"""Day-coverage evaluation for the L1A combine completeness check."""
+"""Day-coverage evaluation for the L1A day-assembly completeness check."""
 
 from __future__ import annotations
 
@@ -55,21 +55,37 @@ def _coverage_fraction(
     window_end: datetime,
     tolerance: timedelta,
 ) -> float:
-    """Fraction of ``[window_start, window_end)`` covered by ``spans``, joining gaps up to ``tolerance``."""
-    covered = timedelta(0)
-    run: tuple[datetime, datetime] | None = None
-    for start, end in sorted((max(s, window_start), min(e, window_end)) for s, e in spans):
-        if start >= end:
-            continue
-        if run is not None and start <= run[1] + tolerance:
-            run = (run[0], max(run[1], end))
-            continue
-        if run is not None:
-            covered += run[1] - run[0]
-        run = (start, end)
-    if run is not None:
-        covered += run[1] - run[0]
-    return min(1.0, covered / (window_end - window_start))
+    """Return the fraction of ``[window_start, window_end)`` that ``spans`` cover.
+
+    Parameters
+    ----------
+    spans : list of tuple of datetime
+        ``(start, end)`` pairs with ``start <= end``, timezone-aware, in any order. A span may
+        extend past either window edge.
+    window_start, window_end : datetime
+        Window edges, timezone-aware.
+    tolerance : datetime.timedelta
+        Largest gap between two spans that still counts as covered.
+
+    Returns
+    -------
+    float
+        Covered fraction, in ``[0, 1]``.
+    """
+    # Merge before clipping to the window, so a seam within tolerance just outside an edge still
+    # joins the span beyond the edge to the one inside it.
+    runs: list[list[datetime]] = []
+    for start, end in sorted(spans):
+        if runs and start <= runs[-1][1] + tolerance:
+            runs[-1][1] = max(runs[-1][1], end)
+        else:
+            runs.append([start, end])
+    # Runs are disjoint, so their overlaps with the window sum to at most its length.
+    covered = sum(
+        (max(timedelta(0), min(end, window_end) - max(start, window_start)) for start, end in runs),
+        timedelta(0),
+    )
+    return covered / (window_end - window_start)
 
 
 def overlaps_day_window(start: datetime, end: datetime, *, day: date) -> bool:
@@ -125,7 +141,7 @@ def evaluate_day_coverage(
     day : datetime.date
         Applicable UTC calendar day.
     policy : DayCoveragePolicy
-        Completeness rule for the APID being combined, ``get_packet_config(apid).day_coverage``.
+        Completeness rule for the APID being assembled, ``get_packet_config(apid).day_coverage``.
     seam_tolerance : datetime.timedelta, optional
         Spacing between two spans that still counts as continuous, and the distance by which a
         span may fall short of a window edge and still reach it. Default
@@ -142,7 +158,9 @@ def evaluate_day_coverage(
     TypeError
         If an endpoint is timezone-naive.
     """
-    # TODO[LIBSDC-878]: measure the time each L0 file occupies; its span cannot show a gap inside it.
+    # TODO[LIBSDC-878]: judge completeness on data time plus packet counting: keep the window span
+    # check and add the fraction of packets received, from the SSC gaps the data ingester records per
+    # L0 file. A file's data-time span cannot show packets lost inside it.
     spans = [(start, end) for start, end in intervals if start is not None and end is not None and start <= end]
 
     bounds = day_bounds(day)

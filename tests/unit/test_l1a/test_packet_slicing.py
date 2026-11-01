@@ -10,7 +10,6 @@ from libera_utils.l1a import packet_slicing
 from libera_utils.l1a.packet_slicing import (
     data_time_axes,
     find_sample_dims,
-    packet_time_coordinate,
     sample_to_packet_index,
     select_packets,
     slice_l1a_dataset_to_time_window,
@@ -129,6 +128,14 @@ class TestWfovCameraTime:
     def test_sample_to_packet_index_is_the_sop(self):
         np.testing.assert_array_equal(sample_to_packet_index(_wfov_product(), "CAMERA_TIME"), [0, 4, 7])
 
+    def test_select_packets_from_a_selection_with_no_images(self):
+        """Selecting only the unowned packet leaves no CAMERA_TIME rows; the result can be selected from again."""
+        unowned = select_packets(_wfov_product(), np.array([3]))
+        assert unowned.sizes["CAMERA_TIME"] == 0
+        out = select_packets(unowned, np.array([0]))
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values, [-1])
+        assert out["PACKET_IMAGE_ID"].dtype == np.int32
+
     def test_select_packets_renumbers_camera_packet_index(self):
         out = select_packets(_wfov_product(), np.arange(4, 10))
         np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0, 3])
@@ -188,28 +195,6 @@ class TestWfovCameraTime:
             )
 
 
-class TestPacketTimeCoordinate:
-    """The packet time coordinate comes from the packet configuration of the dataset's APID."""
-
-    @pytest.mark.parametrize(("apid", "expected"), [(1002, "PACKET_ICIE_TIME"), (11, "PACKET_JPSS_TIME")])
-    def test_named_by_apid(self, apid, expected):
-        ds = _packet_only_product(n_packets=2)
-        ds["PKT_APID"] = ("PACKET", np.full(2, apid, dtype=np.uint16))
-        assert packet_time_coordinate(ds) == expected
-
-    def test_unconfigured_apid_raises(self):
-        with pytest.raises(ValueError, match="APID 1408 has no entry"):
-            packet_time_coordinate(_sample_product())
-
-    def test_no_apid_raises(self):
-        with pytest.raises(ValueError, match="no 'PKT_APID' variable"):
-            packet_time_coordinate(_packet_only_product().drop_vars("PKT_APID"))
-
-    def test_no_packets_raises(self):
-        with pytest.raises(ValueError, match="has no packets"):
-            packet_time_coordinate(_packet_only_product(n_packets=0))
-
-
 class TestDataTimeAxes:
     """Sample axes place packets in time; a product with none is placed by its packet time."""
 
@@ -218,8 +203,21 @@ class TestDataTimeAxes:
         ds = ds.assign_coords(ADCFA_SC_TIME=("ADCFA_SC_TIME", ds["RAD_SAMPLE_FPE_TIME"].values))
         assert data_time_axes(ds) == ["ADCFA_SC_TIME", "RAD_SAMPLE_FPE_TIME"]
 
-    def test_packet_only_product_uses_packet_time(self):
-        assert data_time_axes(_packet_only_product()) == ["PACKET_ICIE_TIME"]
+    @pytest.mark.parametrize(("apid", "expected"), [(1002, "PACKET_ICIE_TIME"), (11, "PACKET_JPSS_TIME")])
+    def test_packet_only_product_uses_the_packet_time_its_apid_names(self, apid, expected):
+        ds = _packet_only_product(n_packets=2).rename({"PACKET_ICIE_TIME": expected})
+        ds["PKT_APID"] = ("PACKET", np.full(2, apid, dtype=np.uint16))
+        assert data_time_axes(ds) == [expected]
+
+    def test_packet_only_product_with_unconfigured_apid_raises(self):
+        ds = _packet_only_product(n_packets=2)
+        ds["PKT_APID"] = ("PACKET", np.full(2, 1408, dtype=np.uint16))
+        with pytest.raises(ValueError, match="APID 1408 has no entry"):
+            data_time_axes(ds)
+
+    def test_packet_only_product_without_apid_raises(self):
+        with pytest.raises(ValueError, match="no 'PKT_APID' variable"):
+            data_time_axes(_packet_only_product().drop_vars("PKT_APID"))
 
     def test_packet_only_product_without_packets_has_none(self):
         assert data_time_axes(_packet_only_product(n_packets=0).drop_vars("PKT_APID")) == []

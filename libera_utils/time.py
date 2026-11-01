@@ -12,7 +12,7 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 """
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -65,6 +65,7 @@ __all__ = [
     "utc2et_wrapper",
     "convert_cds_integer_to_datetime",
     "multipart_to_dt64",
+    "to_date",
     "CCSDS_EPOCH",
     "ISOT_REGEX",
     "PRINTABLE_TS_REGEX",
@@ -175,3 +176,31 @@ def dt64_to_utc_datetime(value: np.datetime64) -> datetime:
     if np.isnat(value):
         raise ValueError("Encountered NaT datetime64 value")
     return pd.Timestamp(value).to_pydatetime().replace(tzinfo=UTC)
+
+
+def to_date(value: str | date | datetime) -> date:
+    """Normalize a date-like value to its UTC calendar date.
+
+    Parameters
+    ----------
+    value : str, datetime.date, or datetime
+        An ISO 8601 date or datetime string, a ``datetime``, or a ``date``. A timezone-aware
+        datetime is converted to UTC first; a naive one is taken as UTC.
+
+    Returns
+    -------
+    datetime.date
+        The UTC calendar date.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is a string that is not ISO 8601.
+    """
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
+        value = value.date()
+    return value

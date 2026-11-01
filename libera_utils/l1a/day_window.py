@@ -96,7 +96,7 @@ def check_data_times(dataset: xr.Dataset) -> None:
     ValueError
         As :func:`~libera_utils.l1a.packet_slicing.data_time_axes` raises it.
     """
-    # TODO[LIBSDC-877]: report repeated and backwards data times per granule, not only in the log.
+    # TODO[LIBSDC-877]: write repeated and backwards data times to a report file for each L1A granule.
     for axis in data_time_axes(dataset):
         times = np.asarray(dataset[axis].values)
         if times.size < 2:

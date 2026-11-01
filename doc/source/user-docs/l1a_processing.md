@@ -209,7 +209,7 @@ A daily L1A granule for one APID and one UTC day `D` is built in six steps:
 5. [Measure](#measuring-a-granules-time-axis-coverage): `measure_time_axis_coverage` on each
    data-time axis.
 6. Report: not yet implemented. What steps 1, 4 and 5 find about a granule goes only to the
-   log and the return values; LIBSDC-877 tracks reporting it per granule.
+   log and the return values; LIBSDC-877 tracks writing a report file for each L1A granule.
 
 ```python
 from libera_utils.l1a.day_coverage import evaluate_day_coverage, measure_time_axis_coverage
@@ -240,8 +240,10 @@ day window `[D − B, D + 1 + B]` with two checks:
 `is_complete` is true when both pass. A gap counts the same against the fraction wherever it
 falls, in a buffer or in the day.
 
-Each APID's rule is the `day_coverage` block of its entry in `l1a_processing_configs.yml`, read
-as `get_packet_config(apid).day_coverage`. The block is required.
+Each APID's rule is the `day_coverage` block of its entry in
+[`l1a_processing_configs.yml`](#l1a-packet-processing-configurations), read as
+`get_packet_config(apid).day_coverage`. The block is required and has two keys, `mode` and
+`window_coverage_frac`.
 
 ```yaml
 icie_nom_hk:
@@ -251,11 +253,17 @@ icie_nom_hk:
     window_coverage_frac: 0.95
 ```
 
-- `fraction` applies both checks.
+`mode` takes one of two values:
+
+- `fraction` applies both checks; `window_coverage_frac`, in (0, 1], is the threshold for check 2
+  and is required.
 - `presence` passes both checks when any span touches the day window
   (`overlaps_day_window`), since an APID that only runs during an event rarely has data at both
   midnights. A file whose start equals its end, such as a file holding one time, counts as
-  present.
+  present. It takes no `window_coverage_frac`.
+
+The check also follows these rules:
+
 - Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) count as continuous, and a span within
   the tolerance of a window edge reaches it, because a file's span runs from its first to its
   last sample and so falls one sample period short of the time the file occupies. Spans further
@@ -264,7 +272,7 @@ icie_nom_hk:
   abutment.
 - The check counts time covered, not files.
 - An incomplete day is skipped without error. `libera-utils l1a-processing` (see
-  [Basic Usage](usage.md)) re-runs the check for a day, or combines it anyway with `--force`.
+  [Basic Usage](usage.md)) re-runs the check for a day, or assembles it anyway with `--force`.
 
 ## Day-window trim and data-time check
 
@@ -330,7 +338,7 @@ The top-level object describing how to process one packet type.
 | `sample_groups`                | list[`SampleGroup`]      | Zero or more sample group configurations                                             |
 | `aggregation_groups`           | list[`AggregationGroup`] | Zero or more aggregation group configurations                                        |
 | `array_groups`                 | list[`ArrayGroup`]       | Zero or more array group configurations                                              |
-| `day_coverage`                 | `DayCoveragePolicy`      | Required. Completeness rule for combining one day; see Day completeness check        |
+| `day_coverage`                 | `DayCoveragePolicy`      | Required. Completeness rule for assembling one day; see Day completeness check       |
 
 The computed property `packet_time_coordinate` returns `PACKET_{time_source}_TIME`
 (e.g. `PACKET_ICIE_TIME` for `packet_time_source: "ICIE"`). This is the non-dimension coordinate
@@ -682,9 +690,10 @@ during normal operations, so each one is logged as a warning and dropped: the pa
 arriving mid-collection also abandons the image in progress. There is no dedicated file-level
 counter — use the warning in the logs and `PACKET_IMAGE_ID == -1` to investigate.
 
-File-level quality attributes. They count the packets passed to `parse_packets_to_l1a_dataset`;
-`trim_l1a_to_day_window` carries them over unchanged, so after a day trim they describe the whole
-parse input, not the trimmed day.
+File-level quality attributes. They count the packets of every L0 file passed to
+`parse_packets_to_l1a_dataset`, including packets outside the day window.
+`trim_l1a_to_day_window` keeps them unchanged, so after a trim they describe all the parsed files,
+not the window `[D − B, D + 1 + B]`.
 
 - `PacketCountNotUsedInImages` (integer ≥ 0): total packets swept up in a rejected/incomplete
   SOP→EOP attempt due to a genuine anomaly (dangling SOP aborted by a new SOP, offset gap, orphan

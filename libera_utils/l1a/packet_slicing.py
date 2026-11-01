@@ -75,36 +75,12 @@ def _packet_config(dataset: xr.Dataset) -> PacketConfiguration:
         ) from err
 
 
-def packet_time_coordinate(dataset: xr.Dataset) -> str:
-    """Return the name of a decoded L1A Dataset's packet time coordinate.
-
-    The name comes from the packet configuration of the APID in the Dataset's ``PKT_APID``
-    variable, e.g. ``PACKET_JPSS_TIME`` for ``jpss_sc_pos``.
-
-    Parameters
-    ----------
-    dataset : xr.Dataset
-        Decoded L1A Dataset of one APID, with at least one packet.
-
-    Returns
-    -------
-    str
-        Packet time coordinate name.
-
-    Raises
-    ------
-    ValueError
-        If ``dataset`` has no ``PKT_APID`` variable, has no packets, or its APID has no packet
-        configuration.
-    """
-    return _packet_config(dataset).packet_time_coordinate
-
-
 def data_time_axes(dataset: xr.Dataset) -> list[str]:
     """Return the axes that place a decoded L1A Dataset's packets in time.
 
     These are the sample axes (:func:`find_sample_dims`; ``CAMERA_TIME`` for WFOV SCI). A Dataset
-    with no sample axis is placed by its packet time coordinate (:func:`packet_time_coordinate`).
+    with no sample axis is placed by the packet time coordinate its APID's packet configuration
+    names, e.g. ``PACKET_JPSS_TIME`` for ``jpss_sc_pos``.
 
     Parameters
     ----------
@@ -119,8 +95,9 @@ def data_time_axes(dataset: xr.Dataset) -> list[str]:
     Raises
     ------
     ValueError
-        If ``dataset`` has no ``PACKET`` dimension, or it has no sample axis and its packet time
-        coordinate cannot be resolved or is absent.
+        If ``dataset`` has no ``PACKET`` dimension. If it has no sample axis and at least one
+        packet, and it has no ``PKT_APID`` variable, its APID has no packet configuration, or it
+        lacks the packet time variable that configuration names.
     """
     if PACKET_DIM not in dataset.dims:
         raise ValueError(f"Dataset is missing required dimension {PACKET_DIM!r}")
@@ -129,7 +106,7 @@ def data_time_axes(dataset: xr.Dataset) -> list[str]:
         return sample_dims
     if dataset.sizes[PACKET_DIM] == 0:
         return []
-    packet_time_var = packet_time_coordinate(dataset)
+    packet_time_var = _packet_config(dataset).packet_time_coordinate
     if packet_time_var not in dataset:
         raise ValueError(
             f"Dataset has no sample axis and is missing {packet_time_var!r}, the packet time coordinate its APID's "
@@ -410,10 +387,9 @@ def _select_packets(
         old_ids = original.values
         in_kept_image = old_ids >= 0
         in_kept_image[in_kept_image] = image_kept[old_ids[in_kept_image]]
-        new_ids = np.where(in_kept_image, image_renumber[np.where(in_kept_image, old_ids, 0)], -1)
-        selected[PACKET_IMAGE_ID_VAR] = xr.DataArray(
-            data=new_ids.astype(original.dtype), dims=[PACKET_DIM], attrs=dict(original.attrs)
-        )
+        new_ids = np.full(old_ids.shape, -1, dtype=original.dtype)
+        new_ids[in_kept_image] = image_renumber[old_ids[in_kept_image]]
+        selected[PACKET_IMAGE_ID_VAR] = xr.DataArray(data=new_ids, dims=[PACKET_DIM], attrs=dict(original.attrs))
         selected[PACKET_IMAGE_ID_VAR].encoding = {}
 
     return selected
@@ -429,7 +405,7 @@ def slice_l1a_dataset_to_time_window(
     When the Dataset has sample axes, a packet is selected if any of its samples falls inside
     the window; the union across sample groups is taken so no group loses data another group
     kept. When the Dataset has no sample axes (e.g. PEC-SW-STAT), the window is applied to its
-    packet time coordinate (:func:`packet_time_coordinate`) instead.
+    packet time coordinate, named by its APID's packet configuration, instead.
 
     On ``CAMERA_TIME``, an image in the window keeps all of its packets, SOP through EOP. A packet
     in no image (``PACKET_IMAGE_ID == -1``) has no data time and is not selected.

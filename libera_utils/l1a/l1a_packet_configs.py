@@ -425,7 +425,7 @@ class PacketConfiguration(BaseModel):
     packet_time_source : SampleTimeSource
         The time source for packet timestamps.
     day_coverage : DayCoveragePolicy
-        Completeness rule the L1A combine applies to one day of this APID.
+        Completeness rule L1A day assembly applies to one day of this APID.
     """
 
     model_config = ConfigDict(frozen=True)

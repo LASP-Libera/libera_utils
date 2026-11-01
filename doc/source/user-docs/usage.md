@@ -260,8 +260,8 @@ options:
 
 ### Sub-Command `l1a-processing`
 
-Emits one `ManualL1APreprocessing` event to the SDC event bus. The L1A Preprocessor then runs one
-day combine for the given APID and applicable date. By default the combine runs the completeness
+Emits one `ManualL1APreprocessing` event to the SDC event bus. The L1A Preprocessor then runs day
+assembly for the given APID and applicable date. By default day assembly runs the completeness
 check, which retries a day without waiting for new L0; `--force` skips the check, for a day whose
 L0 will never be complete. The L0 files must already be ingested.
 
@@ -278,7 +278,7 @@ options:
   -h, --help            show this help message and exit
   --apid {11,1000,1002,1035,1036,1040,1043,1044,1048,1051,1057,1060}
                         APID to assemble into day products.
-  --force               Bypass the completeness check. Combines all available L0 data for the
+  --force               Bypass the completeness check. Assembles all available L0 data for the
                         applicable date.
   --ground-data         Assemble from ground CCSDS captures rather than flight PDS files.
   --reason REASON       Reason for the request, carried on the event for ops and audit logging.
@@ -287,7 +287,7 @@ options:
 ```
 
 ```shell
-# Combine a partial day of RAD samples regardless of coverage:
+# Assemble a partial day of RAD samples regardless of coverage:
 libera-utils l1a-processing --apid 1036 2026-07-12 --force --reason "campaign ended mid-day"
 # Re-run the completeness check for a day of ground NOM-HK captures:
 libera-utils l1a-processing --apid 1057 2026-07-06 --ground-data

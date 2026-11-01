@@ -277,7 +277,7 @@ def parse_cli_args(cli_args: list):
         "--force",
         action="store_true",
         dest="force",
-        help="Bypass the completeness check. Combines all available L0 data for the applicable date.",
+        help="Bypass the completeness check. Assembles all available L0 data for the applicable date.",
     )
     l1a_processing_parser.add_argument(
         "--ground-data",

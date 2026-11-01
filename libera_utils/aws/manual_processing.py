@@ -29,10 +29,10 @@ from libera_utils.aws.utils import (
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
     get_l2_team_role_session,
-    to_date,
 )
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
+from libera_utils.time import to_date
 
 logger = logging.getLogger(__name__)
 
