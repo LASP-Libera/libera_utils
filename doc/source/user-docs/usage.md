@@ -337,7 +337,7 @@ its SCID, first APID, created time and numeric ID, which share one event whateve
 CR ahead of the PDS files that read it only within a single event. PDS files whose construction record is not in the
 batch are split at the same limit.
 
-Each path must be a properly named Libera L0, daily or non-daily data product file (manifests and other filename types
+Each path must be a properly named Libera L0, daily, or non-daily data product file (manifests and other filename types
 are rejected).
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
