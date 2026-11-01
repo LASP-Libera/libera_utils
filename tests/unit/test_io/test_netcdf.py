@@ -606,6 +606,22 @@ class TestWriteLiberaDataProduct:
         assert list(tmp_path.iterdir()) == [result.path]
         assert LIBERA_DYNAMIC_DATA_PRODUCT_REGEX.match(result.path.name)
         assert result.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+        with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
+            date_created = datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE])
+        assert date_created == result.filename_parts.revision
+
+    def test_write_dynamic_product_warning_points_at_caller(self, dynamic_product_definition, test_data_dict, tmp_path):
+        """The unused time_variable warning is attributed to the caller of write_libera_data_product"""
+        with pytest.warns(UserWarning, match="time_variable 'radiometer_time' is not used") as record:
+            write_libera_data_product(
+                data_product_definition=dynamic_product_definition,
+                data=test_data_dict,
+                time_variable="radiometer_time",
+                output_path=tmp_path,
+            )
+        unused = [w for w in record if "is not used" in str(w.message)]
+        assert len(unused) == 1
+        assert unused[0].filename == __file__
 
     def test_write_dynamic_product_with_archive_prefix(self, dynamic_product_definition, test_data_dict, tmp_path):
         """A non-daily product's archive prefix is its product name and version"""

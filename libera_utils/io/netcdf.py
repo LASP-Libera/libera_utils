@@ -90,9 +90,8 @@ def write_libera_data_product(
         Base path (directory or S3 prefix) at which to write the product file
     time_variable : str | None
         Name of the datetime64 variable that indicates time. Required for a daily product, whose filename carries
-        the start and end time of this variable. Omit it for a non-daily product, whose DataProductIdentifier
-        ``is_dynamic``: its filename carries no time range, and a time variable given for it is unused and warned
-        about.
+        the start and end time of this variable. Not used for a non-daily product, one whose DataProductIdentifier
+        has ``is_dynamic`` set, and a ``UserWarning`` is issued if it is given.
     dynamic_product_attributes : dict[str, Any] | None
         Optional dictionary of additional global attributes to add to the data product file. Must conform to the data
         product definition.

@@ -165,17 +165,16 @@ The function automatically:
 
 - Validates data against the product definition
 - Sets the `date_created` attribute to the creation time, overwriting (with a warning) any value already set
-- Generates a standardized filename from the product, algorithm version, and time range, whose revision is that
-  `date_created`
-- Generates a standardized filename: for a daily product, from the time range of `time_variable`; for a non-daily
-  product (one whose `DataProductIdentifier` has `is_dynamic` set, such as an ADM), from its product ID, version and
-  revision alone
+- Generates a standardized filename whose revision is that `date_created`: for a non-daily product (one whose
+  `DataProductIdentifier` has `is_dynamic` set, such as an ADM), this only includes the product ID, version, and
+  revision. Daily products include the data time range from `time_variable` and the data level in addition to
+  product ID, version, and revision.
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 
 `time_variable` is required for a daily product, and `write_libera_data_product` raises a `ValueError` without it.
-Omit it for a non-daily product: its filename carries no time range, and a `time_variable` given for it is unused and
-issues a `UserWarning`. The function returns a `LiberaDataProductFilename` for a daily product and a
+`time_variable` is not used for non-daily products and `write_libera_data_product` issues a `UserWarning` if it is
+given. The function returns a `LiberaDataProductFilename` for a daily product and a
 `LiberaDynamicDataProductFilename` for a non-daily one.
 
 ## Advanced Usage

@@ -370,6 +370,7 @@ def parse_cli_args(cli_args: list):
         help="Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file. "
         "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata.",
     )
+    # TODO[LIBSDC-880]: support non-daily data product files in --verify, then drop the note from the help text.
     s3_put_parser.add_argument(
         "--verify",
         action="store_true",
