@@ -10,7 +10,7 @@ import pytest
 from cloudpathlib import S3Path
 from ulid import ULID
 
-from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType
+from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType, ProcessingStepIdentifier
 from libera_utils.io import filenaming
 
 
@@ -39,10 +39,16 @@ from libera_utils.io import filenaming
             "/some/foobar/path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R20270103T080910654321.bc",
             filenaming.LiberaDataProductFilename,
         ),
-        ("/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc", filenaming.LiberaDynamicDataProductFilename),
-        ("s3://fake-bucket/LIBERA_ADM-IMAGER_V1-0-0_R27002112233.nc", filenaming.LiberaDynamicDataProductFilename),
         (
-            "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc",
+            "/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
+            filenaming.LiberaDynamicDataProductFilename,
+        ),
+        (
+            "s3://fake-bucket/LIBERA_ADM-IMAGER_V1-0-0_R20270102T112233000000.nc",
+            filenaming.LiberaDynamicDataProductFilename,
+        ),
+        (
+            "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_20270102T000000_20270103T000000_R20270102T112233000000.nc",
             filenaming.LiberaDataProductFilename,
         ),
     ],
@@ -106,9 +112,9 @@ def test_from_filename(filename, filename_type):
             ),
         ),
         (
-            "/ignore/this/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
+            "/ignore/this/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
             "s3://my-aux-bucket",
-            S3Path("s3://my-aux-bucket/ADM-CAM/V3-14-159/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"),
+            S3Path("s3://my-aux-bucket/ADM-CAM/V3-14-159/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc"),
         ),
         (
             "/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json",
@@ -1026,10 +1032,10 @@ def test_hash_changes_when_path_is_reassigned():
 @pytest.mark.parametrize(
     "filename",
     [
-        "/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
-        Path("/fake-path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"),
-        "s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159RC1_R27002112233.nc",
-        S3Path("s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159_R27002112233.nc"),
+        "/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
+        Path("/fake-path/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc"),
+        "s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159RC1_R20270102T112233000000.nc",
+        S3Path("s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159_R20270102T112233000000.nc"),
     ],
 )
 def test_LiberaDynamicDataProductFilename(filename):
@@ -1061,8 +1067,8 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
 @pytest.mark.parametrize(
     "filename",
     [
-        "LIBERA_RAD-4CH_V1-2-3_R27002112233.nc",
-        "LIBERA_CF-CAM_V1-2-3_R27002112233.nc",
+        "LIBERA_RAD-4CH_V1-2-3_R20270102T112233000000.nc",
+        "LIBERA_CF-CAM_V1-2-3_R20270102T112233000000.nc",
     ],
 )
 def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
@@ -1086,7 +1092,7 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
                 version="1.2.3",
                 revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
             ),
-            "LIBERA_ADM-CAM_V1-2-3_R28002112233.nc",
+            "LIBERA_ADM-CAM_V1-2-3_R20280102T112233000000.nc",
         ),
         (
             dict(
@@ -1095,7 +1101,7 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33),
                 basepath="s3://bucket/prefix",
             ),
-            "s3://bucket/prefix/LIBERA_ADM-IMAGER_V3-14-159_R27002112233.nc",
+            "s3://bucket/prefix/LIBERA_ADM-IMAGER_V3-14-159_R20270102T112233000000.nc",
         ),
     ],
 )
@@ -1122,5 +1128,45 @@ def test_LiberaDynamicDataProductFilename_revision_defaults_to_call_time():
 
 def test_LiberaDynamicDataProductFilename_archive_prefix():
     """A non-daily file has one archive location, its product name and version"""
-    fn = filenaming.LiberaDynamicDataProductFilename("s3://dropbox/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc")
+    fn = filenaming.LiberaDynamicDataProductFilename("s3://dropbox/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc")
     assert fn.archive_prefix == "ADM-CAM/V3-14-159"
+
+
+@pytest.mark.parametrize(
+    ("filename", "match"),
+    [
+        # Second-resolution revision
+        ("LIBERA_ADM-CAM_V3-14-159_R27002112233.nc", "failed validation against regex pattern"),
+        # Microsecond revision without the T separator
+        ("LIBERA_ADM-CAM_V3-14-159_R20270103080910123456.nc", "failed validation against regex pattern"),
+        # Revision without the R prefix
+        ("LIBERA_ADM-CAM_V3-14-159_20270103T080910123456.nc", "failed validation against regex pattern"),
+        # Revision in month 13
+        ("LIBERA_ADM-CAM_V3-14-159_R20271303T080910123456.nc", "is not a real UTC time"),
+    ],
+)
+def test_LiberaDynamicDataProductFilename_invalid(filename, match):
+    """Test that malformed non-daily data product filenames are rejected"""
+    with pytest.raises(ValueError, match=match):
+        filenaming.LiberaDynamicDataProductFilename(filename)
+
+
+def test_LiberaDynamicDataProductFilename_impossible_date_leaves_path_unchanged():
+    """Test that assigning a name with an impossible revision raises and keeps the original path"""
+    original = "LIBERA_ADM-CAM_V3-14-159_R20270103T080910123456.nc"
+    fn = filenaming.LiberaDynamicDataProductFilename(original)
+    with pytest.raises(ValueError, match="is not a real UTC time"):
+        fn.path = "LIBERA_ADM-CAM_V3-14-159_R20271303T080910123456.nc"
+    assert fn.path.name == original
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("LIBERA_ADM-CAM_V3-14-159_R20270103T080910123456.nc", ProcessingStepIdentifier.aux_adm_cam),
+        ("LIBERA_ADM-IMAGER_V3-14-159_R20270103T080910123456.nc", ProcessingStepIdentifier.aux_adm_imager),
+    ],
+)
+def test_LiberaDynamicDataProductFilename_processing_step_id(filename, expected):
+    """A non-daily file names the processing step that produces its product"""
+    assert filenaming.LiberaDynamicDataProductFilename(filename).processing_step_id == expected

@@ -280,7 +280,7 @@ metadata and data availability records — exactly as it does for files produced
 command returns once the files are staged and the event is emitted; the ingest itself runs asynchronously, so it may
 take a few minutes for files to appear in their archive bucket.
 
-Each path must be a properly named Libera L0, daily or non-daily data product file (manifests and other filename types
+Each path must be a properly named Libera L0, daily, or non-daily data product file (manifests and other filename types
 are rejected).
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead

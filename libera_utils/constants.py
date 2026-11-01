@@ -78,10 +78,12 @@ class DataProductIdentifier(StrEnum):
     upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
     Each member is defined as a tuple: (product_name, data_level) or (product_name, data_level, dynamic)
+
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
-    - dynamic: True for a non-daily product, whose files are valid over a period other than one day and are
-      named by LiberaDynamicDataProductFilename with no time range. Omitted, and so False, for a daily product.
+    - dynamic: True for a non-daily product, whose files are valid over more than one day (indefinitely until the
+      next version update) and are named by LiberaDynamicDataProductFilename with no time range. Omitted, and
+      therefore False, for a daily product.
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -302,7 +304,7 @@ class DataProductIdentifier(StrEnum):
     aux_adm_cam = (
         "ADM-CAM",
         DataLevel.AUX,
-        True,
+        True,  # non-daily product
     )  # ERBE-like ADMs using Libera camera data for cloud fraction
 
     # L2 Products using RBSP + VIIRS data for cloud properties
@@ -349,7 +351,7 @@ class DataProductIdentifier(StrEnum):
     aux_adm_imager = (
         "ADM-IMAGER",
         DataLevel.AUX,
-        True,
+        True,  # non-daily product
     )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
 
     # Ancillary Products: externally produced inputs, ingested from their upstream providers
@@ -406,8 +408,8 @@ class DataProductIdentifier(StrEnum):
     def is_dynamic(self) -> bool:
         """Whether this is a non-daily data product.
 
-        A non-daily product's files are valid over a period other than one day. They are named by
-        LiberaDynamicDataProductFilename, with no time range, and written without a time variable.
+        A non-daily product's files are valid over more than one day (indefinitely until the next version update).
+        They are named by LiberaDynamicDataProductFilename, with no time range, and written without a time variable.
 
         Returns
         -------

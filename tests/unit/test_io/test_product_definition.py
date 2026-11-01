@@ -131,6 +131,7 @@ class TestLiberaDataProductDefinition:
         fn = dynamic_product_definition.generate_data_product_filename(dataset)
         assert isinstance(fn, LiberaDynamicDataProductFilename)
         assert fn.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+        assert fn.filename_parts.revision == datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
     def test_generate_filename_dynamic_warns_on_unused_time_variable(self, dynamic_product_definition, test_dataset):
         """A time variable given for a non-daily product is unused and warned about"""

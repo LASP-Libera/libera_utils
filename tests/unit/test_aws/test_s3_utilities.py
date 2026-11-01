@@ -75,7 +75,7 @@ class TestManualIngestPut:
             # Demuxed ground CCSDS basename (single APID, no extension)
             ["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"],
             # Non-daily data product
-            ["LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"],
+            ["LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc"],
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -197,8 +197,8 @@ class TestManualIngestPut:
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
             file_paths=[
-                "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "some/dir/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
+                "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc",
+                "some/dir/LIBERA_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
             ],
             profile=None,
             verify=True,

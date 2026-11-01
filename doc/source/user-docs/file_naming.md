@@ -59,11 +59,12 @@ A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename`
 range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revision>.<ext>`. It is archived under the
 date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date` property gives.
 
-A non-daily data product, such as an ADM, is valid over a period other than one day. It is named by
-`LiberaDynamicDataProductFilename` with no data level and no time range, `LIBERA_<ProductID>_V<Version>_R<Revision>.nc`,
-and archived once under `<ProductID>/<Version>`. It has no `applicable_date`; the period it covers is recorded in the
-file's variables and attributes. A product is non-daily when its `DataProductIdentifier` has `is_dynamic` set, and
-`LiberaDynamicDataProductFilename` rejects any other product.
+A non-daily data product, such as an ADM, is valid over more than one day (indefinitely until the next version
+update). It is named by `LiberaDynamicDataProductFilename` with no data level and no time range,
+`LIBERA_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
+`applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
+non-daily when its `DataProductIdentifier` has `is_dynamic` set, and `LiberaDynamicDataProductFilename` does not
+accept products without this flag.
 
 ```python
 from libera_utils.io import filenaming
