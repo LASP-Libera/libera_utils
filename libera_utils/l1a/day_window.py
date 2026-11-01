@@ -71,6 +71,8 @@ def trim_l1a_to_day_window(dataset: xr.Dataset, *, day: date) -> xr.Dataset:
     ValueError
         As :func:`~libera_utils.l1a.packet_slicing.slice_l1a_dataset_to_time_window` raises it.
     """
+    # TODO[LIBSDC-877]: re-evaluate the WFOV file-level quality attributes, which the trim keeps
+    # unchanged, so they count every parsed L0 file rather than only the packets in the day window.
     bounds = day_bounds(day)
     # The data axes are datetime64, which carries no timezone; the bounds are UTC by construction.
     return slice_l1a_dataset_to_time_window(

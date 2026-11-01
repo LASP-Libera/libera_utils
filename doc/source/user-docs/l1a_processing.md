@@ -691,9 +691,9 @@ arriving mid-collection also abandons the image in progress. There is no dedicat
 counter — use the warning in the logs and `PACKET_IMAGE_ID == -1` to investigate.
 
 File-level quality attributes. They count the packets of every L0 file passed to
-`parse_packets_to_l1a_dataset`, including packets outside the day window.
-`trim_l1a_to_day_window` keeps them unchanged, so after a trim they describe all the parsed files,
-not the window `[D − B, D + 1 + B]`.
+`parse_packets_to_l1a_dataset`, including packets outside the day window, and
+`trim_l1a_to_day_window` keeps them unchanged, so a trimmed product's counts are not limited to
+the window `[D − B, D + 1 + B]`. LIBSDC-877 tracks re-evaluating them for the window.
 
 - `PacketCountNotUsedInImages` (integer ≥ 0): total packets swept up in a rejected/incomplete
   SOP→EOP attempt due to a genuine anomaly (dangling SOP aborted by a new SOP, offset gap, orphan
