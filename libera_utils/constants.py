@@ -77,9 +77,13 @@ class DataProductIdentifier(StrEnum):
     mission name fits (``NSIDC``), and PRODUCT names the product within it, led by the observing platform where the
     upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
-    Each member is defined as a tuple: (product_name, data_level)
+    Each member is defined as a tuple: (product_name, data_level) or (product_name, data_level, dynamic)
+
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
+    - dynamic: True for a non-daily product, whose files are valid over more than one day (indefinitely until the
+      next version update) and are named by LiberaDynamicDataProductFilename with no time range. Omitted, and
+      therefore False, for a daily product.
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -88,13 +92,15 @@ class DataProductIdentifier(StrEnum):
         >>> product.data_level.archive_bucket_name  # Returns "libera-l1b-data"
 
     When adding new products:
-        1. Add the enum member with its product name and DataLevel
+        1. Add the enum member with its product name and DataLevel, and True as a third element for a non-daily
+           product
         2. No need to update any lookup dictionaries - metadata is embedded!
     """
 
     _level: DataLevel
+    _dynamic: bool
 
-    def __new__(cls, value: str, level: DataLevel = None):  # type: ignore
+    def __new__(cls, value: str, level: DataLevel = None, dynamic: bool = False):  # type: ignore
         """Create a new DataProductIdentifier with embedded metadata.
 
         Parameters
@@ -103,6 +109,13 @@ class DataProductIdentifier(StrEnum):
             The string value for this data product (used in filenames)
         level : DataLevel
             The processing level for this data product
+        dynamic : bool
+            True for a non-daily product, whose filenames carry no time range. Default False.
+
+        Raises
+        ------
+        ValueError
+            If `value` is not uppercase.
         """
         if value != value.upper():
             raise ValueError(
@@ -111,6 +124,7 @@ class DataProductIdentifier(StrEnum):
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj._level = level
+        obj._dynamic = dynamic
         return obj
 
     # L0 2hr PDS Products (Binary CCSDS)
@@ -287,7 +301,11 @@ class DataProductIdentifier(StrEnum):
         "ADM-STATS-CAM",
         DataLevel.AUX,
     )  # ERBE-like ADM daily binned statistics using Libera camera data for cloud fraction
-    aux_adm_cam = ("ADM-CAM", DataLevel.AUX)  # ERBE-like ADMs using Libera camera data for cloud fraction
+    aux_adm_cam = (
+        "ADM-CAM",
+        DataLevel.AUX,
+        True,  # non-daily product
+    )  # ERBE-like ADMs using Libera camera data for cloud fraction
 
     # L2 Products using RBSP + VIIRS data for cloud properties
     # ========================================================
@@ -333,6 +351,7 @@ class DataProductIdentifier(StrEnum):
     aux_adm_imager = (
         "ADM-IMAGER",
         DataLevel.AUX,
+        True,  # non-daily product
     )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
 
     # Ancillary Products: externally produced inputs, ingested from their upstream providers
@@ -384,6 +403,20 @@ class DataProductIdentifier(StrEnum):
             The processing level of this data product
         """
         return self._level
+
+    @property
+    def is_dynamic(self) -> bool:
+        """Whether this is a non-daily data product.
+
+        A non-daily product's files are valid over more than one day (indefinitely until the next version update).
+        They are named by LiberaDynamicDataProductFilename, with no time range, and written without a time variable.
+
+        Returns
+        -------
+        bool
+            True for a non-daily product, False for a daily one
+        """
+        return self._dynamic
 
     @property
     def associated_apid(self) -> Union["LiberaApid", None]:

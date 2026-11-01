@@ -16,7 +16,7 @@ from xarray import DataArray, Dataset
 
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
+from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename, PathType
 from libera_utils.version import ALGORITHM_VERSION_REGEX
 
 logger = logging.getLogger(__name__)
@@ -760,29 +760,69 @@ class LiberaDataProductDefinition(BaseModel):
         """
         return {k: v for k, v in self.attributes.items() if v is None}
 
-    def generate_data_product_filename(self, dataset: Dataset, time_variable: str) -> LiberaDataProductFilename:
+    def generate_data_product_filename(
+        self, dataset: Dataset, time_variable: str | None = None
+    ) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
         """Generate a standardized Libera data product filename.
+
+        A daily product is named with its data level and the time range of its data, taken from `time_variable`. A
+        non-daily product, one whose DataProductIdentifier has ``is_dynamic`` set (such as an ADM), is named with only
+        its product ID, version and revision, so it needs no time variable.
 
         Parameters
         ----------
         dataset : Dataset
-            The Dataset for which to create a filename. Used to extract the product ID, algorithm version, start and
-            end times, and the revision, which is the dataset's ``date_created`` attribute.
-        time_variable : str
-            Name of the time dimension to use for determining the start and end time.
+            The Dataset for which to create a filename. Used to extract the product ID, the algorithm version, for a
+            daily product the start and end times, and the revision, which is the dataset's ``date_created``
+            attribute.
+        time_variable : str | None
+            Name of the datetime64 time variable to use for determining the start and end time. Required for a daily
+            product. Not used for a non-daily product, and a ``UserWarning`` is issued if it is given.
 
         Returns
         -------
-        LiberaDataProductFilename
-            Properly formatted filename object
+        LiberaDataProductFilename | LiberaDynamicDataProductFilename
+            Properly formatted filename object: LiberaDynamicDataProductFilename for a non-daily product,
+            LiberaDataProductFilename otherwise.
+
+        Warns
+        -----
+        UserWarning
+            If `time_variable` is given for a non-daily product.
 
         Raises
         ------
         KeyError
             If the dataset lacks the ``ProductID``, ``algorithm_version`` or ``date_created`` attribute.
         ValueError
-            If ``date_created`` is not an ISO 8601 datetime string.
+            If ``date_created`` is not an ISO 8601 datetime string, if the product is daily and `time_variable` is
+            None, or if `time_variable` does not have a datetime64 dtype.
         """
+        product_id = DataProductIdentifier(dataset.attrs["ProductID"])
+        version = dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE]
+        revision = datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
+
+        if product_id.is_dynamic:
+            if time_variable is not None:
+                # stacklevel 3 points the warning at the caller of write_libera_data_product.
+                warnings.warn(
+                    f"time_variable {time_variable!r} is not used: {product_id} is a non-daily product, whose filename "
+                    "carries no time range. Omit time_variable when writing it.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            return LiberaDynamicDataProductFilename.from_filename_parts(
+                product_name=product_id, version=version, revision=revision
+            )
+
+        if time_variable is None:
+            raise ValueError(
+                f"{product_id} is a daily product, and its filename needs the time range of its data, but no "
+                "time_variable was given. Pass time_variable, the name of the datetime64 variable spanning the data."
+            )
+        if "datetime64" not in str(dataset[time_variable].dtype):
+            raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")
+
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -792,11 +832,11 @@ class LiberaDataProductDefinition(BaseModel):
             utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
 
         return LiberaDataProductFilename.from_filename_parts(
-            product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
-            version=dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE],
+            product_name=product_id,
+            version=version,
             utc_start=utc_start,
             utc_end=utc_end,
-            revision=datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE]),
+            revision=revision,
         )
 
     def _check_dataset_attrs(self, dataset_attrs: dict[str, Any]) -> list[str]:
