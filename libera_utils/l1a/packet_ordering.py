@@ -4,6 +4,18 @@
 wraps from 16383 back to 0. The order the instrument built its packets in is the counter's order once
 its wraps are counted. Packet time is not an order: it can step backward while the counter advances.
 It is used only to tell which wrap of the counter a packet falls in.
+
+:func:`~libera_utils.l1a.packets.parse_packets_to_l1a_dataset` calls :func:`sort_by_sequence_counter` to put
+each APID's ``PACKET`` axis in counter order and drop packets received twice, then
+:func:`check_packet_order` to warn where packet time steps backward along that order.
+:func:`~libera_utils.l1a.nom_hk_trim.find_obsid_runs` calls :func:`out_of_order_positions` and refuses a
+product whose axis is not in counter order.
+
+The order is found by taking packets in packet-time order and cutting them into segments wherever packet
+time jumps by more than :data:`SEGMENT_GAP`. Inside a segment each counter step is read modulo 16384, so a
+packet whose time is slightly out of order still lands by its counter. Segments are stacked in packet-time
+order, each starting at the smallest forward counter step from the one before it, so counters that continue
+across a gap read as no wrap and no lost packets.
 """
 
 import logging
@@ -12,7 +24,7 @@ import warnings
 import numpy as np
 import xarray as xr
 
-from libera_utils.l1a.packet_slicing import PACKET_DIM
+from libera_utils.l1a.packet_slicing import PACKET_APID_VAR, PACKET_DIM
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +36,13 @@ SEQUENCE_COUNTER_MODULUS = 1 << 14
 #: Packets in packet-time order are cut into segments wherever packet time jumps by more than this,
 #: either way: across such a gap the counter may have wrapped unseen, or restarted. Within a segment a
 #: counter step is read modulo the counter, which is unambiguous only while neighbours in packet time are
-#: fewer than half the modulus (8,192 packets) apart. WFOV SCI (APID 1040), the fastest APID at ~85
-#: packets/s in the WFOV captures of the second Day-in-the-Life ground test (DITL2), takes ~96 s to send
-#: that many, so this must stay below 96 s. It must also exceed the largest backward packet-time step
-#: between neighbours in counter order, or those packets are split into segments ordered by packet time:
-#: across the 33 DITL2 WFOV SCI files that step is at most 1.99 s, and across DITL2 NOM-HK at most 3.7 ms.
+#: fewer than half the modulus (8,192 packets) apart. So an APID's sustained packet rate times this gap
+#: must stay below 8,192 packets: about 136 packets/s at 60 s. WFOV SCI (APID 1040) is the fastest APID;
+#: it reached ~85 packets/s in the WFOV captures of the second Day-in-the-Life ground test (DITL2), a
+#: ground-test rate, not a flight one. The gap must also exceed the largest backward
+#: packet-time step between neighbours in counter order, or those packets are split into segments ordered
+#: by packet time: in DITL2, again ground-test data, that step is at most 1.99 s across the 33 WFOV SCI
+#: files and 3.7 ms across NOM-HK.
 SEGMENT_GAP = np.timedelta64(60, "s")
 
 
@@ -154,12 +168,15 @@ def sort_by_sequence_counter(
     wrong_wraps = np.flatnonzero((_signed_counter_steps(counters) == 1) & (np.diff(keys) != 1))
     if wrong_wraps.size:
         first = int(wrong_wraps[0])
+        apid = f"APID {int(packet_ds[PACKET_APID_VAR].values[0])}: " if PACKET_APID_VAR in packet_ds.variables else ""
         raise ValueError(
-            f"{wrong_wraps.size} pair(s) of packets adjacent in the input with consecutive {SEQUENCE_COUNTER_VAR} "
+            f"{apid}{wrong_wraps.size} pair(s) of packets adjacent in the input with consecutive {SEQUENCE_COUNTER_VAR} "
             f"were placed a counter wrap apart, because their packet times differ by more than the counter can "
             f"resolve; first at input position {first + 1}: {SEQUENCE_COUNTER_VAR} {counters[first]} -> "
             f"{counters[first + 1]}, packet time {times[first]} -> {times[first + 1]}. The packet clock is wrong "
-            f"for these packets. Check the packet time fields of the input files around those counters."
+            f"for these packets, so they cannot be placed in counter order and this APID's data cannot be "
+            f"processed from these files. Report the APID, the input files and the counters and packet times "
+            f"above to the Libera SDC."
         )
 
     order = np.argsort(keys, kind="stable")
@@ -171,6 +188,7 @@ def sort_by_sequence_counter(
     if repeats.size:
         run_starts = repeats[np.concatenate(([True], np.diff(repeats) > 1))] - 1
         packet_vars = [name for name, var in packet_ds.data_vars.items() if PACKET_DIM in var.dims]
+        n_differing = 0
         for start in run_starts:
             end = start + 1
             while end < order.size and sorted_keys[end] == sorted_keys[start]:
@@ -193,10 +211,25 @@ def sort_by_sequence_counter(
                     f"or corrupt L0: check the input files for overlapping captures of different sessions. "
                     f"For a ground capture, pass ground_data=True to keep the first packet."
                 )
+            same_as_first = np.ones(end - start - 1, dtype=bool)
+            for name in differing:
+                values = packet_ds[name].values
+                same_as_first &= (values[rows[1:]] == values[rows[0]]).reshape(end - start - 1, -1).all(axis=1)
+            n_differing += int(np.count_nonzero(~same_as_first))
             if verbose:
                 warnings.warn(f"{detail} Keeping the first because ground_data=True.")
 
-        message = f"Detected {repeats.size} duplicate {SEQUENCE_COUNTER_VAR} packets; the first of each is kept."
+        if n_differing:
+            message = (
+                f"Dropped {repeats.size} packet(s) that repeat a kept packet's {SEQUENCE_COUNTER_VAR}: "
+                f"{repeats.size - n_differing} with the same contents, {n_differing} with different contents, "
+                f"kept first because ground_data=True."
+            )
+        else:
+            message = (
+                f"Dropped {repeats.size} packet(s) received twice: same {SEQUENCE_COUNTER_VAR} and contents as a "
+                f"kept packet."
+            )
         warnings.warn(message)
         logger.warning(message)
 
@@ -270,7 +303,8 @@ def check_packet_order(packet_ds: xr.Dataset, packet_time_coordinate: str) -> No
     backward = np.flatnonzero(time_steps < np.timedelta64(0, "us"))
     if not backward.size:
         return
-    # TODO[LIBSDC-830]: report each backward step and carry the counts on the granule.
+    # TODO[LIBSDC-830]: report each backward step and the missing-packet count (counter steps above 1
+    #  between packets within SEGMENT_GAP), and carry both counts on the granule.
     first = int(backward[0])
     message = (
         f"{packet_time_coordinate} steps backward at {backward.size} position(s) along {SEQUENCE_COUNTER_VAR} "

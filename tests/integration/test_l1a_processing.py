@@ -1,6 +1,7 @@
 """Integration tests for libera_utils.packets module"""
 
 import multiprocessing as mp
+import shutil
 import time
 import warnings
 from pathlib import Path
@@ -160,7 +161,7 @@ def test_process_packets_to_l1a_product(
 
     print("Parsing packets to L1A dataset...")
     if apid == LiberaApid.icie_wfov_sci:
-        with pytest.warns(UserWarning, match=r"Detected 1 duplicate SRC_SEQ_CTR packets"):
+        with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) received twice"):
             dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
     else:
         dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
@@ -181,7 +182,7 @@ def test_process_packets_to_l1a_product(
         for r in caplog.records
         if r.name == "libera_utils.l1a.packet_ordering"
         and r.levelname == "WARNING"
-        and "duplicate SRC_SEQ_CTR" not in r.getMessage()
+        and "received twice" not in r.getMessage()
     ]
     assert order_warnings == [], "packet time or the counter disagrees with SRC_SEQ_CTR order on this fixture"
 
@@ -276,7 +277,7 @@ def test_wfov_sci_filename_uses_image_time_bounds(
     apid = LiberaApid.icie_wfov_sci
     packet_config = get_packet_config(apid)
 
-    with pytest.warns(UserWarning, match=r"Detected 1 duplicate SRC_SEQ_CTR packets"):
+    with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) received twice"):
         dataset = packets.parse_packets_to_l1a_dataset(
             packet_files=[test_ditl_camera_with_duplicate_packet],
             apid=apid.value,
@@ -320,7 +321,7 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
     apid = LiberaApid.icie_wfov_sci
 
-    with pytest.warns(UserWarning, match=r"Detected 1 duplicate SRC_SEQ_CTR packets"):
+    with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) received twice"):
         dataset = packets.parse_packets_to_l1a_dataset(
             packet_files=[test_ditl_camera_with_duplicate_packet],
             apid=apid.value,
@@ -405,7 +406,7 @@ def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
 
     with pytest.warns(
         UserWarning,
-        match=r"Detected 1 duplicate SRC_SEQ_CTR packets",
+        match=r"Dropped 1 packet\(s\) received twice",
     ):
         dataset = packets.parse_packets_to_l1a_dataset(
             packet_files=[test_ditl_camera_with_duplicate_packet],
@@ -544,13 +545,17 @@ def test_parse_packets_to_l1a_dataset_stitches_wfov_images_when_packet_time_step
 
 
 def test_jpss1_file_order_does_not_change_the_product(
-    test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
+    tmp_path, test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
 ):
+    """Three files named so they sort against the time order of their data parse as they do in time order."""
     files = [test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3]
     forward = packets.parse_packets_to_l1a_dataset(packet_files=files, apid=LiberaApid.jpss_sc_pos.value)
-    reversed_ = packets.parse_packets_to_l1a_dataset(packet_files=files[::-1], apid=LiberaApid.jpss_sc_pos.value)
-    xr.testing.assert_identical(forward.drop_attrs(), reversed_.drop_attrs())
-    assert forward.attrs["input_files"] == reversed_.attrs["input_files"] == [f.name for f in files]
+    renamed = [tmp_path / name for name in ("c.PDS", "b.PDS", "a.PDS")]
+    for source, target in zip(files, renamed, strict=True):
+        shutil.copyfile(source, target)
+    out_of_order = packets.parse_packets_to_l1a_dataset(packet_files=renamed, apid=LiberaApid.jpss_sc_pos.value)
+    xr.testing.assert_identical(forward.drop_attrs(), out_of_order.drop_attrs())
+    assert out_of_order.attrs["input_files"] == ["a.PDS", "b.PDS", "c.PDS"]
     assert forward.sizes["PACKET"] == 21600, "the three files cross a SRC_SEQ_CTR wrap"
 
 
@@ -562,11 +567,12 @@ def test_jpss1_file_order_does_not_change_the_product(
     ],
 )
 def test_jpss1_split_files_parse_like_the_whole_file(tmp_path, test_jpss1_pds_file_1, first, second):
-    """Overlapping or gap-filling pieces of one file, passed in reverse, parse to the whole file's product."""
+    """Overlapping or gap-filling pieces of one file, the later-starting piece named to sort first, parse to the
+    whole file's product."""
     with open(test_jpss1_pds_file_1, "rb") as stream:
         whole = list(spp.ccsds_generator(stream, skip_header_bytes=0))
     pieces = []
-    for name, spans in (("a.PDS", first), ("b.PDS", second)):
+    for name, spans in (("b.PDS", first), ("a.PDS", second)):
         spans = spans if isinstance(spans, list) else [spans]
         (tmp_path / name).write_bytes(b"".join(bytes(packet) for span in spans for packet in whole[span]))
         pieces.append(tmp_path / name)
@@ -574,33 +580,54 @@ def test_jpss1_split_files_parse_like_the_whole_file(tmp_path, test_jpss1_pds_fi
     apid = LiberaApid.jpss_sc_pos.value
     expected = packets.parse_packets_to_l1a_dataset(packet_files=[test_jpss1_pds_file_1], apid=apid)
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="Detected .* duplicate SRC_SEQ_CTR packets")
-        result = packets.parse_packets_to_l1a_dataset(packet_files=pieces[::-1], apid=apid)
+        warnings.filterwarnings("ignore", message=r"Dropped .* packet\(s\) received twice")
+        result = packets.parse_packets_to_l1a_dataset(packet_files=pieces, apid=apid)
     xr.testing.assert_identical(result.drop_attrs(), expected.drop_attrs())
 
 
-def test_jpss1_files_one_counter_wrap_apart_parse_in_any_order(
-    tmp_path, test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
-):
-    """Two files one counter wrap apart, passed later file first, parse as they do in time order.
-
-    The 1 Hz capture runs 21,600 packets with no break in SRC_SEQ_CTR. The early file holds packets 0-99 and
-    the late file packets 16,284-16,383, so the late file's last counter is one below the early file's first:
-    in the order given, that join reads as two packets built one after the other but placed a wrap apart.
-    """
+def _jpss1_files_one_counter_wrap_apart(directory, early_name, late_name, fixtures):
+    """Write the first 100 packets of the 1 Hz JPSS-1 capture and packets 16,284-16,383 to two files."""
     whole = []
-    for path in (test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3):
+    for path in fixtures:
         with open(path, "rb") as stream:
             whole.extend(spp.ccsds_generator(stream, skip_header_bytes=0))
-    early, late = tmp_path / "a.PDS", tmp_path / "b.PDS"
+    early, late = directory / early_name, directory / late_name
     early.write_bytes(b"".join(bytes(packet) for packet in whole[:100]))
     late.write_bytes(b"".join(bytes(packet) for packet in whole[16284:16384]))
+    return early, late
+
+
+def test_jpss1_files_one_counter_wrap_apart_named_in_time_order_parse_in_any_order(
+    tmp_path, test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
+):
+    """Two files one counter wrap apart, named in time order, parse alike whichever is passed first.
+
+    The 1 Hz capture runs 21,600 packets with no break in SRC_SEQ_CTR. The early file holds packets 0-99 and
+    the late file packets 16,284-16,383, so the late file's last counter is one below the early file's first.
+    """
+    fixtures = (test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3)
+    early, late = _jpss1_files_one_counter_wrap_apart(tmp_path, "a.PDS", "b.PDS", fixtures)
 
     apid = LiberaApid.jpss_sc_pos.value
     in_time_order = packets.parse_packets_to_l1a_dataset(packet_files=[early, late], apid=apid)
     later_first = packets.parse_packets_to_l1a_dataset(packet_files=[late, early], apid=apid)
     assert (int(later_first["SRC_SEQ_CTR"].values[-1]) + 1) % 16384 == int(later_first["SRC_SEQ_CTR"].values[0])
     xr.testing.assert_identical(later_first, in_time_order)
+
+
+def test_jpss1_files_one_counter_wrap_apart_named_against_time_order_raise(
+    tmp_path, test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
+):
+    """The same two files, the late one named to sort first, raise at their join.
+
+    Parsed in name order, the late file's last counter 16,383 is followed by the early file's 0: consecutive
+    counters whose packet times put them a wrap apart.
+    """
+    fixtures = (test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3)
+    early, late = _jpss1_files_one_counter_wrap_apart(tmp_path, "b.PDS", "a.PDS", fixtures)
+    apid = LiberaApid.jpss_sc_pos.value
+    with pytest.raises(ValueError, match=rf"^APID {apid}: 1 pair\(s\) .* placed a counter wrap apart"):
+        packets.parse_packets_to_l1a_dataset(packet_files=[early, late], apid=apid)
 
 
 @pytest.mark.parametrize(

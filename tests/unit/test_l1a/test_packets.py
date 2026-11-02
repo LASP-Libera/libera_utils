@@ -1141,7 +1141,7 @@ def test_parse_packets_to_l1a_dataset_repeated_counter_with_differing_contents(c
         with pytest.raises(ValueError, match="share SRC_SEQ_CTR 101"):
             _parse_counter_disordered()
         return
-    with pytest.warns(UserWarning, match="Detected 1 duplicate SRC_SEQ_CTR packets"):
+    with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) that repeat"):
         result = _parse_counter_disordered(ground_data=True)
     assert result["OTHER_FIELD"].values.tolist() == [10, 30, 20]
 

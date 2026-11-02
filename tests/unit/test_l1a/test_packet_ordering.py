@@ -166,7 +166,7 @@ class TestSortBySequenceCounter:
 
     def test_identical_repeat_is_dropped_with_one_warning(self):
         ds = self._with_data([10, 11, 11, 12], offsets_s=[0, 1, 1, 2])
-        with pytest.warns(UserWarning, match="Detected 1 duplicate SRC_SEQ_CTR packets") as caught:
+        with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) received twice") as caught:
             result = sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
         assert len(caught) == 1
         assert result["SRC_SEQ_CTR"].values.tolist() == [10, 11, 12]
@@ -191,8 +191,19 @@ class TestSortBySequenceCounter:
         with pytest.warns(UserWarning, match="SRC_SEQ_CTR") as caught:
             result = sort_by_sequence_counter(ds, "PACKET_ICIE_TIME", ground_data=True, verbose=True)
         assert len(caught) == 3
-        assert "Detected 2 duplicate SRC_SEQ_CTR packets" in str(caught[-1].message)
+        assert "Dropped 2 packet(s) that repeat" in str(caught[-1].message)
         assert result["DATA"].values.tolist() == [0, 2, 3]
+
+    def test_mixed_identical_and_differing_repeats_with_ground_data_are_counted_apart(self):
+        # Counter 11 arrives three times: the second copy matches the first, the third differs.
+        ds = self._with_data([10, 11, 11, 11, 12], offsets_s=[0, 1, 1, 1.5, 2], data=[0, 1, 1, 2, 3])
+        with pytest.warns(UserWarning, match="SRC_SEQ_CTR") as caught:
+            result = sort_by_sequence_counter(ds, "PACKET_ICIE_TIME", ground_data=True)
+        assert str(caught[-1].message) == (
+            "Dropped 2 packet(s) that repeat a kept packet's SRC_SEQ_CTR: 1 with the same contents, "
+            "1 with different contents, kept first because ground_data=True."
+        )
+        assert result["DATA"].values.tolist() == [0, 1, 3]
 
     @pytest.mark.parametrize(("verbose", "n_warnings"), [(False, 1), (True, 2)])
     def test_differing_repeat_with_ground_data_keeps_the_first(self, verbose, n_warnings):
@@ -217,3 +228,4 @@ class TestSortBySequenceCounter:
             sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
         assert "2 pair(s)" in str(excinfo.value)
         assert "first at input position 1: SRC_SEQ_CTR 10 -> 11" in str(excinfo.value)
+        assert "Report the APID" in str(excinfo.value)

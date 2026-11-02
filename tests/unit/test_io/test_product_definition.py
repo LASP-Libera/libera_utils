@@ -125,7 +125,9 @@ class TestLiberaDataProductDefinition:
             with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
                 definition.check_dataset_conformance(test_dataset, strict=True)
 
-    def test_generate_filename_uses_time_extremes_not_endpoints(self, test_product_definition, test_dataset):
+    def test_generate_filename_uses_time_variable_extremes_not_first_and_last_in_array(
+        self, test_product_definition, test_dataset
+    ):
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
         n = test_dataset.sizes["RADIOMETER_TIME"]
         unordered = test_dataset.isel(RADIOMETER_TIME=[n - 2, 0, n - 1, 1])
