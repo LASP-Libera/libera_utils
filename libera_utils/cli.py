@@ -3,9 +3,10 @@
 import argparse
 
 from libera_utils import kernel_maker
-from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, l1a_join, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.l1a.l1a_packet_configs import configured_apids
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
@@ -244,6 +245,51 @@ def parse_cli_args(cli_args: list):
         "Default is 60.",
     )
     manual_processing_parser.add_argument(
+        "--profile",
+        type=str,
+        help="AWS profile name to use for the session. If not set, the default profile is used.",
+    )
+
+    # ===========================
+    # L1A Processing
+    # ===========================
+    l1a_processing_parser = subparsers.add_parser(
+        "l1a-processing",
+        help="Request L1A 24-hour processing for an APID and an applicable date",
+        description="Request L1A day assembly by emitting an L1AProcessingRequest event to the SDC event bus. By "
+        "default the L1A Preprocessor's completeness check is run. For days whose data is not and will never be "
+        "complete pass --force to bypass the check instead. L0 files must already be ingested into the SDC.",
+    )
+    l1a_processing_parser.set_defaults(func=l1a_join.l1a_processing_cli_handler)
+    l1a_processing_parser.add_argument(
+        "applicable_date",
+        type=str,
+        help="Applicable date to process. Format: YYYY-MM-DD.",
+    )
+    l1a_processing_parser.add_argument(
+        "--apid",
+        type=int,
+        required=True,
+        choices=[int(apid) for apid in configured_apids()],
+        help="APID to assemble into day products.",
+    )
+    l1a_processing_parser.add_argument(
+        "--force",
+        action="store_true",
+        dest="force",
+        help="Bypass the completeness check. Assembles all available L0 data for the applicable date.",
+    )
+    l1a_processing_parser.add_argument(
+        "--ground-data",
+        action="store_true",
+        help="Assemble from ground CCSDS captures rather than flight PDS files.",
+    )
+    l1a_processing_parser.add_argument(
+        "--reason",
+        type=str,
+        help="Reason for the request, carried on the event for ops and audit logging.",
+    )
+    l1a_processing_parser.add_argument(
         "--profile",
         type=str,
         help="AWS profile name to use for the session. If not set, the default profile is used.",

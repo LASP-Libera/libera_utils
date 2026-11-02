@@ -24,6 +24,9 @@ LIBERA_UTILS_ROLE_NAME = f"{L2_DEVELOPER_ROLE_PATH}/LiberaUtils"
 # Both the manual ingest (s3-utils put) and manual processing flows emit events to this single bus.
 SDC_EVENT_BUS_PARTIAL_NAME = "LiberaSDCEventBus"
 
+# Number of applicable dates above which a CLI asks the user to confirm before submitting.
+MAX_UNCONFIRMED_APPLICABLE_DATES = 3
+
 
 def get_l2_team_role_session(
     profile_name: str | None = None, *, role_name: str = LIBERA_UTILS_ROLE_NAME

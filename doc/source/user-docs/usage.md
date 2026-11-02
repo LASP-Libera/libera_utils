@@ -10,7 +10,7 @@ This is the top level command that contains all the nested sub-commands.
 
 ```shell
 usage: libera-utils [-h] [--version]
-                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils} ...
+                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,l1a-processing,register-algorithm-image,s3-utils} ...
 
 Libera SDC utilities CLI
 
@@ -21,13 +21,14 @@ options:
 subcommands:
   sub-commands for libera-utils CLI
 
-  {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils}
+  {make-kernel,ecr-upload,step-function-trigger,manual-processing,l1a-processing,register-algorithm-image,s3-utils}
     make-kernel         generate SPICE kernels from a manifest file
     ecr-upload          Upload a docker image to the ECR repository for a specific algorithm and register its
                         version(s)
     step-function-trigger
                         Manually trigger a single processing step for one applicable date
     manual-processing   Manually run a custom processing DAG (or the default DAG) for one or more applicable dates
+    l1a-processing      Request L1A 24-hour processing for an APID and an applicable date
     register-algorithm-image
                         Emit a NewAlgorithmImage event for an already-uploaded ECR image so the SDC Registrar
                         creates its versioned Batch job definition
@@ -255,6 +256,41 @@ options:
   --wait-time WAIT_TIME
                         Maximum verification wait in seconds. Default is 60.
   --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+```
+
+### Sub-Command `l1a-processing`
+
+Emits one `L1AProcessingRequest` event to the SDC event bus. The L1A Preprocessor then runs day
+assembly for the given APID and applicable date. By default day assembly runs the completeness
+check, which retries a day without waiting for new L0; `--force` skips the check, for a day whose
+L0 will never be complete. The L0 files must already be ingested.
+
+```shell
+usage: libera-utils l1a-processing [-h]
+                                   --apid {11,1000,1002,1035,1036,1040,1043,1044,1048,1051,1057,1060}
+                                   [--force] [--ground-data] [--reason REASON] [--profile PROFILE]
+                                   applicable_date
+
+positional arguments:
+  applicable_date       Applicable date to process. Format: YYYY-MM-DD.
+
+options:
+  -h, --help            show this help message and exit
+  --apid {11,1000,1002,1035,1036,1040,1043,1044,1048,1051,1057,1060}
+                        APID to assemble into day products.
+  --force               Bypass the completeness check. Assembles all available L0 data for the
+                        applicable date.
+  --ground-data         Assemble from ground CCSDS captures rather than flight PDS files.
+  --reason REASON       Reason for the request, carried on the event for ops and audit logging.
+  --profile PROFILE     AWS profile name to use for the session. If not set, the default profile
+                        is used.
+```
+
+```shell
+# Assemble a partial day of RAD samples regardless of coverage:
+libera-utils l1a-processing --apid 1036 2026-07-12 --force --reason "campaign ended mid-day"
+# Re-run the completeness check for a day of ground NOM-HK captures:
+libera-utils l1a-processing --apid 1057 2026-07-06 --ground-data
 ```
 
 ### Sub-Command `s3-utils`
