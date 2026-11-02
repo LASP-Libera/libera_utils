@@ -4,6 +4,7 @@ import errno
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import xarray as xr
@@ -143,11 +144,11 @@ def test_scan_returns_none_on_parse_failure(tmp_path: Path, caplog):
 @pytest.mark.parametrize(
     "error", [OSError(errno.ENOSPC, "No space left on device"), MemoryError()], ids=["enospc", "memory"]
 )
-def test_scan_propagates_resource_exhaustion(tmp_path: Path, caplog, parse_packets_raises, error):
+def test_scan_propagates_resource_exhaustion(tmp_path: Path, caplog, monkeypatch, error):
     """Running out of disk or memory reaches the caller as itself rather than as a file with no span."""
     from libera_utils.l1a import ground_ccsds as mod
 
-    parse_packets_raises(mod, error)
+    monkeypatch.setattr(mod, "parse_packets_to_dataset", mock.Mock(side_effect=error))
     f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 
@@ -157,11 +158,13 @@ def test_scan_propagates_resource_exhaustion(tmp_path: Path, caplog, parse_packe
     assert "Failed to parse packets" not in caplog.text
 
 
-def test_scan_returns_none_on_missing_file_error(tmp_path: Path, caplog, parse_packets_raises):
+def test_scan_returns_none_on_missing_file_error(tmp_path: Path, caplog, monkeypatch):
     """An OSError that is not resource exhaustion still yields no span, with the reason logged."""
     from libera_utils.l1a import ground_ccsds as mod
 
-    parse_packets_raises(mod, OSError(errno.ENOENT, "No such file or directory"))
+    monkeypatch.setattr(
+        mod, "parse_packets_to_dataset", mock.Mock(side_effect=OSError(errno.ENOENT, "No such file or directory"))
+    )
     f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 

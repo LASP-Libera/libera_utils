@@ -3,6 +3,7 @@
 import errno
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -254,11 +255,11 @@ def test_jpss_sc_pos_span_falls_back_to_the_surviving_group():
 @pytest.mark.parametrize(
     "error", [OSError(errno.ENOSPC, "No space left on device"), MemoryError()], ids=["enospc", "memory"]
 )
-def test_extract_data_time_range_propagates_resource_exhaustion(parse_packets_raises, error):
+def test_extract_data_time_range_propagates_resource_exhaustion(monkeypatch, error):
     """Running out of disk or memory reaches the caller as itself, not as an undetermined data time."""
     from libera_utils.l1a import data_time_extractors as mod
 
-    parse_packets_raises(mod, error)
+    monkeypatch.setattr(mod, "parse_packets_to_dataset", mock.Mock(side_effect=error))
 
     with pytest.raises(type(error)) as excinfo:
         mod.extract_data_time_range("dummy.pds", int(LiberaApid.icie_rad_sample))
@@ -268,11 +269,11 @@ def test_extract_data_time_range_propagates_resource_exhaustion(parse_packets_ra
 @pytest.mark.parametrize(
     "error", [OSError(errno.ENOENT, "No such file or directory"), ValueError("bad packet")], ids=["enoent", "value"]
 )
-def test_extract_data_time_range_wraps_other_parse_failures(parse_packets_raises, error):
+def test_extract_data_time_range_wraps_other_parse_failures(monkeypatch, error):
     """Any other parse failure is still an undetermined data time, chained to the original error."""
     from libera_utils.l1a import data_time_extractors as mod
 
-    parse_packets_raises(mod, error)
+    monkeypatch.setattr(mod, "parse_packets_to_dataset", mock.Mock(side_effect=error))
 
     with pytest.raises(DataTimeUndeterminedError, match="Failed to parse packets") as excinfo:
         mod.extract_data_time_range("dummy.pds", int(LiberaApid.icie_rad_sample))
