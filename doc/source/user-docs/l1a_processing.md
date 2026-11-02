@@ -196,6 +196,122 @@ sample-time ranges itself from the samples in the file. The span in File Metadat
 done that for it, and a file whose span covers a given instant does not guarantee both timeseries
 cover it.
 
+## Daily L1A assembly
+
+A daily L1A granule for one APID and one UTC day `D` is built in six steps:
+
+1. [Completeness check](#day-completeness-check): `evaluate_day_coverage` on the File Metadata
+   time spans of the APID's L0 files. An incomplete day is skipped unless forced.
+2. Parse: `parse_packets_to_l1a_dataset(files, apid)` on every L0 file that overlaps the day window.
+3. [Trim](#day-window-trim-and-data-time-check): `trim_l1a_to_day_window(ds, day=D)`.
+4. [Check](#day-window-trim-and-data-time-check): `check_data_times(day_ds)` logs any repeated or
+   backwards data time.
+5. [Measure](#measuring-a-granules-time-axis-coverage): `measure_time_axis_coverage` on each
+   data-time axis.
+6. Report: not yet implemented. What steps 1, 4 and 5 find about a granule goes only to the
+   log and the return values; LIBSDC-877 tracks writing a report file for each L1A granule.
+
+```python
+from libera_utils.l1a.day_coverage import evaluate_day_coverage, measure_time_axis_coverage
+from libera_utils.l1a.day_window import check_data_times, trim_l1a_to_day_window
+from libera_utils.l1a.l1a_packet_configs import get_packet_config
+from libera_utils.l1a.packet_slicing import data_time_axes
+from libera_utils.l1a.packets import parse_packets_to_l1a_dataset
+
+completeness = evaluate_day_coverage(spans, day=day, policy=get_packet_config(apid).day_coverage)
+if completeness.is_complete:
+    day_ds = trim_l1a_to_day_window(parse_packets_to_l1a_dataset(files, apid), day=day)
+    check_data_times(day_ds)
+    coverage = {axis: measure_time_axis_coverage(day_ds[axis].values, day=day) for axis in data_time_axes(day_ds)}
+```
+
+All datetimes in this API are timezone-aware UTC. The day window is `[D − B, D + 1 + B]`, where
+`B` is `DAY_BUFFER` (10 minutes); `day_bounds(day)` returns its ends and the day's.
+
+## Day completeness check
+
+`libera_utils.l1a.day_coverage.evaluate_day_coverage` scores L0 time spans against the buffered
+day window `[D − B, D + 1 + B]` with two checks:
+
+1. `covers_window`: the spans that touch the window start by its left edge and end by its right
+   edge.
+2. `window_frac_ok`: the spans cover at least `window_coverage_frac` of the window.
+
+`is_complete` is true when both pass. A gap counts the same against the fraction wherever it
+falls, in a buffer or in the day.
+
+Each APID's rule is the `day_coverage` block of its entry in
+[`l1a_processing_configs.yml`](#l1a-packet-processing-configurations), read as
+`get_packet_config(apid).day_coverage`. The block is required and has two keys, `mode` and
+`window_coverage_frac`.
+
+```yaml
+icie_nom_hk:
+  # ...
+  day_coverage:
+    mode: "fraction"
+    window_coverage_frac: 0.95
+```
+
+`mode` takes one of two values:
+
+- `fraction` applies both checks; `window_coverage_frac`, in (0, 1], is the threshold for check 2
+  and is required.
+- `presence` passes both checks when any span touches the day window
+  (`overlaps_day_window`), since an APID that only runs during an event rarely has data at both
+  midnights. A file whose start equals its end, such as a file holding one time, counts as
+  present. It takes no `window_coverage_frac`.
+
+The check also follows these rules:
+
+- Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) count as continuous, and a span within
+  the tolerance of a window edge reaches it, because a file's span runs from its first to its
+  last sample and so falls one sample period short of the time the file occupies. Spans further
+  apart than the tolerance count as a gap, so an APID whose cadence exceeds 1 s, such as WFOV,
+  loses a few seconds per file seam. Pass `seam_tolerance=timedelta(0)` to require exact
+  abutment.
+- The check counts time covered, not files.
+- An incomplete day is skipped without error. `libera-utils l1a-processing` (see
+  [Basic Usage](usage.md)) re-runs the check for a day, or assembles it anyway with `--force`.
+
+## Day-window trim and data-time check
+
+`libera_utils.l1a.day_window.trim_l1a_to_day_window(ds, day=)` keeps the packets in the closed
+day window through `packet_slicing.slice_l1a_dataset_to_time_window`:
+
+- It selects on the dataset's data-time axes (`packet_slicing.data_time_axes`): the union of
+  every sample axis (both `ADGPS` and `ADCFA` for `jpss_sc_pos`, `CAMERA_TIME` for WFOV), or the
+  packet time coordinate its APID's packet configuration names when it has no sample axis.
+- Whole packets survive, and every `*_packet_index` and `CAMERA_PACKET_INDEX` is renumbered
+  against the trimmed `PACKET` axis. `PACKET_IMAGE_ID` is renumbered against the trimmed
+  `CAMERA_TIME` axis.
+- A WFOV image in the window keeps all its packets, SOP through EOP. Packets in no image
+  (`PACKET_IMAGE_ID == -1`) have no data time and are dropped. A WFOV dataset with no
+  `PACKET_IMAGE_ID` raises `ValueError`.
+
+`check_data_times(day_ds)` then reads the same axes and logs a warning for each one that repeats
+a time, listing up to 10 repeated values, or steps backwards. It does not raise. Decode drops
+repeated times on every packet and sample axis and sorts them, so only WFOV `CAMERA_TIME` can
+trigger a warning: it follows packet order, not camera time, and keeps an image whose time repeats.
+
+## Measuring a granule's time-axis coverage
+
+The completeness check sees only each L0 file's first and last time, so it cannot see a gap inside a file.
+After decoding, `measure_time_axis_coverage(times, day=)` reports how much of the day and its
+buffers an axis's samples occupy:
+
+```python
+coverage = measure_time_axis_coverage(day_ds["RAD_SAMPLE_FPE_TIME"].values, day=day)
+coverage.day_frac, coverage.max_gap
+```
+
+Each sample occupies the spacing to the next one. A spacing more than `DEFAULT_GAP_FACTOR` (5)
+times the axis's median spacing, and more than 1 s, is a gap: the sample before it, like the
+last sample, occupies one median spacing. The result, a `TimeAxisCoverage`, holds `day_frac`,
+`left_frac`, `right_frac`, `median_cadence`, `max_gap` and `n_times`. `times` need not be sorted;
+an empty axis returns zeros and a single sample occupies no time. It returns the occupancy; it
+does not skip a day.
+
 ## L1A Packet Processing Configurations
 
 Per-APID processing configurations are defined in `l1a_processing_configs.yml` (path resolved from
@@ -224,6 +340,7 @@ The top-level object describing how to process one packet type.
 | `sample_groups`                | list[`SampleGroup`]      | Zero or more sample group configurations                                             |
 | `aggregation_groups`           | list[`AggregationGroup`] | Zero or more aggregation group configurations                                        |
 | `array_groups`                 | list[`ArrayGroup`]       | Zero or more array group configurations                                              |
+| `day_coverage`                 | `DayCoveragePolicy`      | Required. Completeness rule for assembling one day; see Day completeness check       |
 
 The computed property `packet_time_coordinate` returns `PACKET_{time_source}_TIME`
 (e.g. `PACKET_ICIE_TIME` for `packet_time_source: "ICIE"`). This is the non-dimension coordinate
@@ -240,6 +357,9 @@ icie_nom_hk:
     us_field: "ICIE__TM_US_NOM_HK"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "fraction"
+    window_coverage_frac: 0.95
 ```
 
 A JPSS packet using a different XTCE definition and time source:
@@ -253,6 +373,9 @@ jpss_sc_pos:
     us_field: "USEC"
   packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
   packet_time_source: "JPSS"
+  day_coverage:
+    mode: "fraction"
+    window_coverage_frac: 0.95
   sample_groups:
     - ... # see SampleGroup below
 ```
@@ -569,7 +692,10 @@ during normal operations, so each one is logged as a warning and dropped: the pa
 arriving mid-collection also abandons the image in progress. There is no dedicated file-level
 counter — use the warning in the logs and `PACKET_IMAGE_ID == -1` to investigate.
 
-File-level quality attributes:
+File-level quality attributes. They count the packets of every L0 file passed to
+`parse_packets_to_l1a_dataset`, including packets outside the day window, and
+`trim_l1a_to_day_window` keeps them unchanged, so a trimmed product's counts are not limited to
+the window `[D − B, D + 1 + B]`. LIBSDC-877 tracks re-evaluating them for the window.
 
 - `PacketCountNotUsedInImages` (integer ≥ 0): total packets swept up in a rejected/incomplete
   SOP→EOP attempt due to a genuine anomaly (dangling SOP aborted by a new SOP, offset gap, orphan
@@ -582,7 +708,7 @@ File-level quality attributes:
 - `HeaderParseErrorCount`: structurally complete images **discarded** because the 176-byte WFOV
   header could not be decoded (too few stitched bytes to contain a full header). Without a header
   there is no acquisition time, and an image with no time is unusable, so it gets no `CAMERA_TIME`
-  row at all rather than a `NaT` one. Its packets also count toward
+  row. Its packets also count toward
   `PacketCountNotUsedInImages` and keep `PACKET_IMAGE_ID == -1`
 - `FirstImageIncomplete` (0/1, semantically boolean — NetCDF attributes have no bool type): `1` if
   this window's first packet wasn't a qualifying `SOP` (i.e. the image it belongs to started
@@ -593,7 +719,7 @@ File-level quality attributes:
 
 Decoded metadata on the `CAMERA_TIME` dimension:
 
-- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_HEADER_PARSE_VALID`, `WFOV_COMPRESSED_IMAGE`,
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_COMPRESSED_IMAGE`,
   `WFOV_COMPRESSED_IMAGE_LENGTH`
 - FSW header fields: `WFOV_FSW_HEADER_*` (19 uppercase field names matching the libera_cam FSW header layout)
 - Image header fields: `WFOV_IMAGE_HEADER_*` (21 fields from the FPGA block's image header)

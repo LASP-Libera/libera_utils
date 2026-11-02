@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from libera_utils import cli, kernel_maker
-from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, l1a_join, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.scene_identification import scene_id_algorithm
 
@@ -405,12 +405,58 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
 
 
 @pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["l1a-processing", "2026-07-12", "--apid", "1057"],
+            argparse.Namespace(
+                func=l1a_join.l1a_processing_cli_handler,
+                applicable_date="2026-07-12",
+                apid=1057,
+                force=False,
+                ground_data=False,
+                reason=None,
+                profile=None,
+            ),
+        ),
+        (
+            [
+                "l1a-processing",
+                "2026-07-01",
+                "--apid=1035",
+                "--force",
+                "--ground-data",
+                "--reason=DITL2 backfill",
+                "--profile=test-profile",
+            ],
+            argparse.Namespace(
+                func=l1a_join.l1a_processing_cli_handler,
+                applicable_date="2026-07-01",
+                apid=1035,
+                force=True,
+                ground_data=True,
+                reason="DITL2 backfill",
+                profile="test-profile",
+            ),
+        ),
+    ],
+)
+def test_l1a_processing_parse_cli_args(cli_args, parsed):
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
     "cli_args",
     [
         ["s3-utils", "ls", "NOT-A-PRODUCT"],
         ["ecr-upload", "not-an-alg", "test-image"],
         ["step-function-trigger", "not-an-alg", "2030-01-01"],
         ["manual-processing", "2026-06-01", "--start-steps", "not-a-step"],
+        ["l1a-processing", "2026-07-12", "--apid", "4321"],
+        ["l1a-processing", "2026-07-12", "--apid", "1013"],
+        ["l1a-processing", "2026-07-12"],
+        ["l1a-processing", "--apid", "1057"],
+        ["l1a-processing", "2026-07-12", "2026-07-13", "--apid", "1057"],
     ],
 )
 def test_wrong_libera_ids(cli_args):

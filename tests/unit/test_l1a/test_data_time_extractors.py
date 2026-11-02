@@ -17,6 +17,7 @@ from libera_utils.l1a.data_time_extractors import (
     extract_data_time_range_from_dataset,
     is_data_time_indexed_apid,
 )
+from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.l1a.wfov_image_metadata import (
     WFOV_HEADER_SIZE,
     _extract_wfov_header_metadata_from_blob,
@@ -31,6 +32,17 @@ def test_data_time_indexed_apid_set():
     assert is_data_time_indexed_apid(LiberaApid.icie_rad_sample)
     assert not is_data_time_indexed_apid(LiberaApid.icie_nom_hk)
     assert LiberaApid.icie_cal_full in DATA_TIME_INDEXED_APIDS
+
+
+def test_data_time_indexed_apids_match_packet_configs():
+    with_sample_groups = set()
+    for apid in LiberaApid:
+        try:
+            if get_packet_config(apid).sample_groups:
+                with_sample_groups.add(apid)
+        except KeyError:
+            continue
+    assert DATA_TIME_INDEXED_APIDS == with_sample_groups | {LiberaApid.icie_wfov_sci}
 
 
 def test_jpss_sc_pos_is_data_time_indexed():

@@ -10,6 +10,8 @@ import xarray as xr
 from libera_utils.constants import LiberaApid
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import (
+    CoverageMode,
+    DayCoveragePolicy,
     PacketConfiguration,
     SampleGroup,
     SampleTimeSource,
@@ -35,6 +37,7 @@ def test_packet_configuration() -> PacketConfiguration:
     """
     return PacketConfiguration(
         packet_apid=LiberaApid.icie_nom_hk,
+        day_coverage=DayCoveragePolicy(mode=CoverageMode.PRESENCE),
         packet_time_fields=TimeFieldMapping(day_field="PACKET_DAY", ms_field="PACKET_MS"),
         sample_groups=[
             SampleGroup(

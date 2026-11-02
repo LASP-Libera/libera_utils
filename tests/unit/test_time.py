@@ -1,7 +1,7 @@
 """Tests for time module"""
 
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -146,3 +146,24 @@ def test_multipart_to_dt64(data, epoch, expected):
     data = pd.DataFrame(data, columns=["a", "b", "c"])
     result = time.multipart_to_dt64(data, "a", "b", "c", **({} if epoch is None else dict(epoch=epoch)))
     assert np.array_equal(result, pd.to_datetime(expected))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-07-12", date(2026, 7, 12)),
+        ("2026-07-12T23:30:00", date(2026, 7, 12)),
+        ("2026-07-12T20:00:00-05:00", date(2026, 7, 13)),
+        (datetime(2026, 7, 12, 4), date(2026, 7, 12)),
+        (datetime(2026, 7, 12, 4, tzinfo=UTC), date(2026, 7, 12)),
+        (datetime(2026, 7, 13, 1, tzinfo=timezone(timedelta(hours=5))), date(2026, 7, 12)),
+        (date(2026, 7, 12), date(2026, 7, 12)),
+    ],
+)
+def test_to_date(value, expected):
+    assert time.to_date(value) == expected
+
+
+def test_to_date_rejects_non_iso_string():
+    with pytest.raises(ValueError, match="Invalid isoformat"):
+        time.to_date("07/12/2026")
