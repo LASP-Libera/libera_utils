@@ -10,5 +10,5 @@ restrictions are defined in `.github/instructions/libera-utils.instructions.md`.
 applies that file automatically to all files in this repository.
 
 The team's review rules live once, in the ledger of the Libera standard,
-`LASP-Libera/libera_standards`, which `standards/profile.yaml` names; the libera-tools Claude Code
+`LASP-Libera/libera_standards`, which `standards/profile.yaml` names; the team's Claude Code
 plugin loads them into each session. They are not copied here.
