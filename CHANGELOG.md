@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-11-02
+
 ### Added
 
 - Add `libera_utils.l1a.day_window`. `day_bounds(day)` returns the day and its buffered window, `DAY_BUFFER` either side, as timezone-aware UTC datetimes. `trim_l1a_to_day_window(ds, day=)` keeps the packets in the closed window `[D − DAY_BUFFER, D + 1 + DAY_BUFFER]` (10 minutes) through `slice_l1a_dataset_to_time_window`, selecting on every sample group and keeping whole packets. `check_data_times(ds)` logs a warning for each data-time axis that repeats a time or steps backwards; it does not raise.
@@ -998,7 +1000,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...HEAD
+[5.21.0]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...5.21.0
 [5.20.0]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...5.20.0
 [5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
 [5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
