@@ -6,7 +6,7 @@ the event that asks the L1A Preprocessor to re-evaluate the completeness check f
 with ``force=True``, to assemble a day whose L0 files do not meet that policy, such as a partial
 campaign or a ground capture.
 
-It emits a single ``ManualL1APreprocessing`` event to the SDC central EventBridge bus (the
+It emits a single ``L1AProcessingRequest`` event to the SDC central EventBridge bus (the
 ``LiberaSDCEventBus``); the L1A Preprocessor consumes it and runs day assembly for the applicable
 date. The L0 files are assumed to already be ingested into the SDC (File Metadata rows exist)
 before the event is sent, exactly as for the automatic path.
@@ -30,10 +30,10 @@ from libera_utils.time import to_date
 
 logger = logging.getLogger(__name__)
 
-# These values are part of the ManualL1APreprocessing event contract and must match exactly what the L1A Preprocessor's
+# These values are part of the L1AProcessingRequest event contract and must match exactly what the L1A Preprocessor's
 # EventBridge rule expects. If they don't match, the event is not routed and nothing happens.
-MANUAL_L1A_EVENT_SOURCE = "manual-l1a-preprocessing"
-MANUAL_L1A_EVENT_DETAIL_TYPE = "ManualL1APreprocessingEventDetail"
+L1A_PROCESSING_REQUEST_EVENT_SOURCE = "l1a-processing-request"
+L1A_PROCESSING_REQUEST_EVENT_DETAIL_TYPE = "L1AProcessingRequestEventDetail"
 
 
 def request_l1a_processing(
@@ -95,15 +95,15 @@ def request_l1a_processing(
         "ground_data": ground_data,
         "reason": reason,
     }
-    logger.debug(f"ManualL1APreprocessing event detail: {detail}")
+    logger.debug(f"L1AProcessingRequest event detail: {detail}")
 
     event_bus_name = find_event_bus_in_account_by_partial_name(boto_session, SDC_EVENT_BUS_PARTIAL_NAME)
     events_client = boto_session.client("events")
     response = events_client.put_events(
         Entries=[
             {
-                "Source": MANUAL_L1A_EVENT_SOURCE,
-                "DetailType": MANUAL_L1A_EVENT_DETAIL_TYPE,
+                "Source": L1A_PROCESSING_REQUEST_EVENT_SOURCE,
+                "DetailType": L1A_PROCESSING_REQUEST_EVENT_DETAIL_TYPE,
                 "Detail": json.dumps(detail),
                 "EventBusName": event_bus_name,
             }
@@ -111,12 +111,12 @@ def request_l1a_processing(
     )
     if response.get("FailedEntryCount", 0) > 0:
         raise RuntimeError(
-            f"Failed to put ManualL1APreprocessing event to event bus {event_bus_name}. Response entries: "
+            f"Failed to put L1AProcessingRequest event to event bus {event_bus_name}. Response entries: "
             f"{response['Entries']}"
         )
 
     logger.info(
-        f"Put ManualL1APreprocessing event to event bus {event_bus_name} for APID {int(libera_apid)} "
+        f"Put L1AProcessingRequest event to event bus {event_bus_name} for APID {int(libera_apid)} "
         f"({libera_apid.name}), applicable date {normalized_date.isoformat()}, force={force}, "
         f"ground_data={ground_data}."
     )

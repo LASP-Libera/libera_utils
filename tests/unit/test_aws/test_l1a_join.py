@@ -17,8 +17,8 @@ def _detail_from_capture(captured: dict) -> tuple[dict, dict]:
     entries = captured["entries"]
     assert len(entries) == 1
     entry = entries[0]
-    assert entry["Source"] == "manual-l1a-preprocessing"
-    assert entry["DetailType"] == "ManualL1APreprocessingEventDetail"
+    assert entry["Source"] == "l1a-processing-request"
+    assert entry["DetailType"] == "L1AProcessingRequestEventDetail"
     return entry, json.loads(entry["Detail"])
 
 
@@ -103,7 +103,7 @@ class TestRequestL1AProcessing:
 
         session.client = failing_put_client
 
-        with pytest.raises(RuntimeError, match="Failed to put ManualL1APreprocessing event"):
+        with pytest.raises(RuntimeError, match="Failed to put L1AProcessingRequest event"):
             l1a_join.request_l1a_processing(1057, "2026-07-12", boto_session=session)
 
 

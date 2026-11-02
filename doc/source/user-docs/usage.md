@@ -260,7 +260,7 @@ options:
 
 ### Sub-Command `l1a-processing`
 
-Emits one `ManualL1APreprocessing` event to the SDC event bus. The L1A Preprocessor then runs day
+Emits one `L1AProcessingRequest` event to the SDC event bus. The L1A Preprocessor then runs day
 assembly for the given APID and applicable date. By default day assembly runs the completeness
 check, which retries a day without waiting for new L0; `--force` skips the check, for a day whose
 L0 will never be complete. The L0 files must already be ingested.

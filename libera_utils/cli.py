@@ -256,7 +256,7 @@ def parse_cli_args(cli_args: list):
     l1a_processing_parser = subparsers.add_parser(
         "l1a-processing",
         help="Request L1A 24-hour processing for an APID and an applicable date",
-        description="Request L1A day assembly by emitting a ManualL1APreprocessing event to the SDC event bus. By "
+        description="Request L1A day assembly by emitting an L1AProcessingRequest event to the SDC event bus. By "
         "default the L1A Preprocessor's completeness check is run. For days whose data is not and will never be "
         "complete pass --force to bypass the check instead. L0 files must already be ingested into the SDC.",
     )
