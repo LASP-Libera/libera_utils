@@ -1,8 +1,10 @@
 """Unit tests for demuxed ground-test CCSDS scanning."""
 
+import errno
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import xarray as xr
@@ -131,6 +133,38 @@ def test_scan_returns_none_when_apid_has_no_packet_config(tmp_path: Path, caplog
 
 def test_scan_returns_none_on_parse_failure(tmp_path: Path, caplog):
     """A file with nothing parseable for its APID yields no span, not an empty one."""
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f.write_bytes(b"")
+
+    with caplog.at_level(logging.WARNING):
+        assert scan_ground_ccsds_file(f) is None
+    assert "Failed to parse packets" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "error", [OSError(errno.ENOSPC, "No space left on device"), MemoryError()], ids=["enospc", "memory"]
+)
+def test_scan_propagates_resource_exhaustion(tmp_path: Path, caplog, monkeypatch, error):
+    """Running out of disk or memory reaches the caller as itself rather than as a file with no span."""
+    from libera_utils.l1a import ground_ccsds as mod
+
+    monkeypatch.setattr(mod, "parse_packets_to_dataset", mock.Mock(side_effect=error))
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f.write_bytes(b"")
+
+    with caplog.at_level(logging.WARNING), pytest.raises(type(error)) as excinfo:
+        scan_ground_ccsds_file(f)
+    assert excinfo.value is error
+    assert "Failed to parse packets" not in caplog.text
+
+
+def test_scan_returns_none_on_missing_file_error(tmp_path: Path, caplog, monkeypatch):
+    """An OSError that is not resource exhaustion still yields no span, with the reason logged."""
+    from libera_utils.l1a import ground_ccsds as mod
+
+    monkeypatch.setattr(
+        mod, "parse_packets_to_dataset", mock.Mock(side_effect=OSError(errno.ENOENT, "No such file or directory"))
+    )
     f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 
