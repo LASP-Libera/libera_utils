@@ -20,6 +20,7 @@ from cloudpathlib import AnyPath
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.io.filenaming import LiberaGroundCcsdsFilename
+from libera_utils.io.smart_open import is_resource_exhaustion
 from libera_utils.l1a.data_time_extractors import (
     DataTimeUndeterminedError,
     extract_data_time_range_from_dataset,
@@ -81,7 +82,8 @@ def _parse_ground_ccsds(
 ) -> xr.Dataset | None:
     """Parse a demuxed ground CCSDS file using the APID's configured XTCE definition.
 
-    Returns ``None``, having logged the reason, if no usable dataset can be produced.
+    Returns ``None``, having logged the reason, if no usable dataset can be produced. An error for
+    which ``is_resource_exhaustion`` is true propagates instead.
     """
     try:
         packet_config = get_packet_config(apid)
@@ -102,6 +104,8 @@ def _parse_ground_ccsds(
             skip_header_bytes=skip_header_bytes,
         )
     except Exception as exc:
+        if is_resource_exhaustion(exc):
+            raise
         _log_no_packet_span(apid, packet_file, f"Failed to parse packets: {exc}")
         return None
 
@@ -167,14 +171,20 @@ def scan_ground_ccsds_file(
     GroundCcsdsTimeSpan | None
         Time spans for File Metadata ingest, or ``None`` if no packet-time span can be produced
         at all: the APID is not a ``LiberaApid`` member, has no packet configuration, the file
-        does not parse, holds no packets for the APID, or every packet time is implausible. The
-        reason is logged. No searchable metadata is possible for such a file, so a caller should
-        surface the ``None`` as its own error.
+        does not parse for a reason other than resource exhaustion, holds no packets for the
+        APID, or every packet time is implausible. The reason is logged. No searchable metadata is
+        possible for such a file, so a caller should surface the ``None`` as its own error.
 
     Raises
     ------
     ValueError
         If ``apid`` is omitted and the basename is not a valid ground CCSDS filename.
+    MemoryError
+        If memory runs out while the file is read or parsed. It is not wrapped.
+    OSError
+        If reading the file, including downloading a cloud file to the local cache, fails with
+        ``ENOSPC``, ``EDQUOT``, ``EMFILE`` or ``ENFILE`` (see
+        ``libera_utils.io.smart_open.is_resource_exhaustion``). It is not wrapped.
     """
     resolved_apid = apid_from_ground_ccsds_filename(packet_file) if apid is None else apid
     try:
