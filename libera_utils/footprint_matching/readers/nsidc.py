@@ -212,6 +212,10 @@ class _HemisphereGrid:
     y_origin: float = _DEFAULT_Y_ORIGIN
 
 
+# The products that carry the NISE variables: every FMATCH product.
+_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+
+
 class NISEReader(StaticReader):
     """Read NISE surface-class coverage layers from an HDF-EOS4 file.
 
@@ -242,7 +246,7 @@ class NISEReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The one NISE HDF-EOS4 file (``*.HDFEOS``) for the processing day.
     """
 
@@ -262,35 +266,35 @@ class NISEReader(StaticReader):
             name="sea_ice_concentration",
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
             name="snow_free_land",
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
             name="permanent_ice",
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
             name="snow_on_land",
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
             name="open_ocean",
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         ),
     )

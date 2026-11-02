@@ -1,0 +1,55 @@
+# Camera-shaped product for the worker-compressed write path: float and integer variables, with and
+# without shuffle and _FillValue, on (1, 512, 512) chunks, plus a 1-D variable left to the raw path.
+attributes:
+  ProductID: CAM
+  algorithm_version: 0.0.1
+
+coordinates:
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Time of each camera image
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  float_fill:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+    attributes:
+      long_name: Float field with a fill value, not shuffled
+      _FillValue: -999
+    encoding:
+      chunksizes: [1, 512, 512]
+  float_fill_shuffled:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+    attributes:
+      long_name: Float field with a fill value, shuffled
+      _FillValue: -999
+    encoding:
+      chunksizes: [1, 512, 512]
+      shuffle: true
+  counts:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+    attributes:
+      long_name: Integer field without a fill value, shuffled
+    encoding:
+      chunksizes: [1, 512, 512]
+      shuffle: true
+  mask:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+    attributes:
+      long_name: Byte field without a fill value, not shuffled
+    encoding:
+      chunksizes: [1, 512, 512]
+  frame_flag:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Per-frame flag

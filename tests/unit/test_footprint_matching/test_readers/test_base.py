@@ -12,14 +12,17 @@ Tests confirm:
 import numpy as np
 import pytest
 
+import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
 from libera_utils.footprint_matching.readers.base import (
     AncillaryReader,
+    PassReader,
     StaticReader,
     SteppedGridReader,
     _PointIndex,
+    in_box,
     split_dateline,
 )
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS, ReaderRegistry
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     GridSamples,
@@ -29,9 +32,10 @@ from libera_utils.footprint_matching.types import (
     TimeMatch,
     VariableSpec,
 )
+from tests.plugins.footprint_matching_fixtures import UNREAD_GRANULE
 
 _T0 = np.datetime64("2026-01-01T12:00:00", "ns")
-_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM)
+_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM}))
 
 # ---------------------------------------------------------------------------
 # Minimal concrete readers used only in tests
@@ -64,7 +68,7 @@ class _HeldReader(StaticReader):
     VARIABLES = (_SPEC,)
 
     def __init__(self, native: object) -> None:
-        super().__init__("unused.bin")
+        super().__init__([UNREAD_GRANULE])
         self._held = native
 
     def _load_native(self):
@@ -83,11 +87,35 @@ class _HeldPassReader(StaticReader):
     VARIABLES = (_SPEC,)
 
     def __init__(self, native: object) -> None:
-        super().__init__("unused.bin")
+        super().__init__([UNREAD_GRANULE])
         self._held = native
 
     def _load_native(self):
         return self._held
+
+
+class _GranuleReader(PassReader):
+    """Hourly granules handed in as ``{path: (start, end, PointSamples)}``; counts loads."""
+
+    READER_KEY = "_base_test_granules"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    PASS_WINDOW = np.timedelta64(15, "m")
+    MAX_TIME_OFFSET = np.timedelta64(3, "h")
+    VARIABLES = (_SPEC,)
+
+    def __init__(self, granules: dict) -> None:
+        super().__init__(list(granules))
+        self._granules = granules
+        self.loads: list = []
+
+    def _granule_span(self, path):
+        start, end, _ = self._granules[path]
+        return start, end
+
+    def _load_granule(self, path):
+        self.loads.append(path)
+        return self._granules[path][2]
 
 
 class _StepReader(SteppedGridReader):
@@ -100,7 +128,7 @@ class _StepReader(SteppedGridReader):
     VARIABLES = (_SPEC,)
 
     def __init__(self, planes: int = 1, times: np.ndarray | None = None) -> None:
-        super().__init__("unused.nc")
+        super().__init__([UNREAD_GRANULE])
         self.loads: list[int] = []
         self._planes = planes
         self._times = _T0 + np.arange(4) * np.timedelta64(1, "h") if times is None else times
@@ -296,8 +324,24 @@ class TestSplitDateline:
         assert (east.lon_min, east.lon_max) == (-180.0, -179.0)
 
 
+class TestInBox:
+    def test_edges_are_inside(self):
+        """``in_box`` marks points inside a plain box, edges included, and points outside it as outside.
+
+        Every reader decides which samples a footprint receives with this mask; an exclusive edge would drop a
+        sample sitting exactly on the box boundary, and a loose one would leak samples from a neighbor.
+
+        Tests the four corners and the center of a 10..11 N, 20..21 E box (inside) and points just past each edge
+        (outside).
+        """
+        bbox = BoundingBox(10.0, 11.0, 20.0, 21.0)
+        lats = np.array([10.0, 10.0, 11.0, 11.0, 10.5, 9.99, 11.01, 10.5, 10.5])
+        lons = np.array([20.0, 21.0, 20.0, 21.0, 20.5, 20.5, 20.5, 19.99, 21.01])
+        assert in_box(lats, lons, bbox).tolist() == [True] * 5 + [False] * 4
+
+
 class TestGridQuery:
-    def test_slice_is_row_major_and_paired(self, tmp_path):
+    def test_slice_is_row_major_and_paired(self):
         """``StaticReader.samples_in`` on a grid serves the grid points inside the box, flattened row by row.
 
         Each served value must stay paired with its own latitude and longitude, or the weigher would weight
@@ -308,7 +352,7 @@ class TestGridQuery:
         them; the test asserts the four latitudes, longitudes and values in row-major order, the float32 dtype, no
         times, and the reader key as ``source``.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(BoundingBox(0.6, 1.4, 10.6, 11.4), _T0)
         assert isinstance(samples, SampleSet)
         assert samples.n_samples == 4
@@ -336,7 +380,7 @@ class TestGridQuery:
         assert samples.n_samples == 0
         assert samples.values.shape == (1, 0)
 
-    def test_grid_slice_includes_points_on_the_box_edges(self, tmp_path):
+    def test_grid_slice_includes_points_on_the_box_edges(self):
         """The grid slice behind ``samples_in`` keeps grid points lying exactly on the box's edges.
 
         Footprint boxes are built edge to edge, so a grid point on a shared edge must be served to both boxes; an
@@ -345,12 +389,12 @@ class TestGridQuery:
         Calls the unpadded slice directly (``samples_in`` would pad the edge points inside the box) with a box whose
         four corners are grid points, and asserts all four are returned.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         lats, lons, _, _ = reader._box_samples(reader._native, BoundingBox(0.5, 1.5, 10.5, 11.5))
         np.testing.assert_array_equal(lats, [0.5, 0.5, 1.5, 1.5])
         np.testing.assert_array_equal(lons, [10.5, 11.5, 10.5, 11.5])
 
-    def test_box_beyond_the_padding_is_empty(self, tmp_path):
+    def test_box_beyond_the_padding_is_empty(self):
         # A 1 km-cell reader pads by 0.0045 deg: a box 0.4 deg from every point serves nothing,
         # a box around a point serves it.
         """The query padding is only half a native cell, so points farther than that from the box are not served.
@@ -365,7 +409,7 @@ class TestGridQuery:
         assert reader.samples_in(BoundingBox(0.9, 1.1, 10.9, 11.1), _T0).n_samples == 0
         assert reader.samples_in(BoundingBox(0.4, 0.6, 10.4, 10.6), _T0).n_samples == 1
 
-    def test_dateline_box_serves_both_halves(self, tmp_path):
+    def test_dateline_box_serves_both_halves(self):
         """``samples_in`` serves grid points from both sides of the antimeridian for a box that wraps it.
 
         A footprint straddling the dateline covers ground on both ends of the [-180, 180] longitude axis, and
@@ -374,12 +418,12 @@ class TestGridQuery:
         A wrapping box from 179 to 181 degrees is queried on the 1 degree test grid; the served longitudes must
         be the two columns on each side of the line, including the half-cell padding.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 179.0, 181.0, wraps_dateline=True), _T0)
         # Both halves, each padded by half a cell (0.5 deg) outward.
         assert set(samples.lons.tolist()) == {178.5, 179.5, -179.5, -178.5}
 
-    def test_padding_across_the_antimeridian_wraps(self, tmp_path):
+    def test_padding_across_the_antimeridian_wraps(self):
         # A plain box ending at 180.0 pads to 180.5: the padded box wraps and the first
         # column east of the line is served too.
         """When padding pushes a plain box past 180 degrees, ``samples_in`` wraps it and serves columns east of it.
@@ -390,11 +434,11 @@ class TestGridQuery:
         A plain box from 179.2 to 180 degrees is queried on the 1 degree test grid; the served longitudes must
         be 179.5 and -179.5.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 179.2, 180.0), _T0)
         assert set(samples.lons.tolist()) == {179.5, -179.5}
 
-    def test_polar_box_spans_every_longitude(self, tmp_path):
+    def test_polar_box_spans_every_longitude(self):
         """``samples_in`` serves every longitude for a box flagged as enclosing a pole.
 
         A footprint that covers a pole surrounds it in longitude, so every grid column near the pole lies under
@@ -403,7 +447,7 @@ class TestGridQuery:
         A polar box from 89 to 90 degrees latitude is queried on the 1 degree test grid; the padding reaches the
         88.5 row, so two full rows of 360 points (720 samples) must be served.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(BoundingBox(89.0, 90.0, -180.0, 180.0, is_polar=True), _T0)
         # Two latitude rows (89.5 and, through the padding, 88.5) at every longitude.
         assert samples.n_samples == 720
@@ -425,7 +469,7 @@ class TestGridQuery:
             ),
         ],
     )
-    def test_near_pole_box_is_padded_in_longitude(self, tmp_path, bbox, expected_lats, expected_lons):
+    def test_near_pole_box_is_padded_in_longitude(self, bbox, expected_lats, expected_lons):
         """``samples_in`` pads a box near a pole in longitude, by half a cell measured at its poleward edge.
 
         A box flagged polar need not enclose the pole, and near a pole half a cell spans many degrees of longitude;
@@ -435,12 +479,12 @@ class TestGridQuery:
         columns 1.5 through 38.5 of the 86.5 row are served; a box at 89.6..89.9 N, whose pad exceeds 180 degrees,
         serves every column of the 89.5 row.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(bbox, _T0)
         assert set(samples.lats.tolist()) == expected_lats
         assert set(samples.lons.tolist()) == expected_lons
 
-    def test_daily_reader_ignores_time(self, tmp_path):
+    def test_daily_reader_ignores_time(self):
         """A ``DAILY`` reader serves the same samples for any footprint time, including NaT.
 
         A daily source has one value per location for the whole period, so the footprint time must neither
@@ -449,7 +493,7 @@ class TestGridQuery:
         The same box is queried at three times (noon, 20 hours later and NaT) and the served values must be
         identical.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         a = reader.samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
         b = reader.samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0 + np.timedelta64(20, "h"))
         np.testing.assert_array_equal(a.values, b.values)
@@ -557,6 +601,73 @@ class TestNearestPass:
         if n:
             assert set(samples.values[0].tolist()) == {value}
             assert samples.times is not None
+
+    @staticmethod
+    def _padding_and_box_passes(include_box_pass: bool) -> PointSamples:
+        # 44 km spacing pads the 10..11 N, 20..21 E box by ~0.2 deg. Two samples of a pass
+        # 5 min from the query sit only in that padding (11.1 N); three samples of a pass
+        # 60 min away sit inside the box itself.
+        lats = [11.1, 11.1] + ([10.5, 10.5, 10.5] if include_box_pass else [])
+        lons = [20.4, 20.6] + ([20.3, 20.5, 20.7] if include_box_pass else [])
+        values = [1.0, 1.0] + ([2.0, 2.0, 2.0] if include_box_pass else [])
+        times = [_T0 + np.timedelta64(5, "m")] * 2 + ([_T0 + np.timedelta64(60, "m")] * 3 if include_box_pass else [])
+        return PointSamples(
+            lats=np.array(lats),
+            lons=np.array(lons),
+            values=np.array([values], dtype=np.float32),
+            times=np.array(times, dtype="datetime64[ns]"),
+            spacing_km=44.0,
+        )
+
+    def test_pass_in_the_padding_only_does_not_win(self):
+        """A ``NEAREST_PASS`` reader picks its pass from samples in the footprint's box, not from the padding around it.
+
+        The padding exists so a sample whose cell overlaps the box is served, but its PSF weight is zero; choosing the
+        nearest pass from padding samples would serve a pass that contributes nothing and drop one that covers the
+        footprint completely.
+
+        Builds a 44 km-spaced reader with two samples 5 minutes from the query in the padding only (11.1 N) and three
+        samples 60 minutes away inside the 10..11 N box; asserts the three in-box samples are served and the two
+        padding samples are not.
+        """
+        reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=True))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == 3
+        assert set(samples.values[0].tolist()) == {2.0}
+
+    def test_padding_pass_is_served_when_none_is_inside_the_box(self):
+        """A ``NEAREST_PASS`` reader falls back to the padding samples when none lies in the footprint's own box.
+
+        A footprint smaller than one native cell can hold no sample center; choosing only from samples inside the box
+        would leave it with no match although a cell covers it.
+
+        Builds the same reader with only the two padding samples (11.1 N, outside the 10..11 N box) and asserts both
+        are served.
+        """
+        reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=False))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == 2
+
+    def test_footprint_between_two_passes_gets_the_nearer(self):
+        """A ``NEAREST_PASS`` reader serves only the nearer pass to a footprint midway between two passes.
+
+        The two passes' offsets from the footprint time differ by less than ``PASS_WINDOW``; a window measured on the
+        offsets would admit both and average two passes, about 100 min apart, into one footprint.
+
+        Builds three in-box samples 50 minutes before the query and three 52 minutes after it, at the same spot;
+        asserts only the three samples from 50 minutes before are served.
+        """
+        n = 3
+        times = np.concatenate([np.full(n, _T0 - np.timedelta64(50, "m")), np.full(n, _T0 + np.timedelta64(52, "m"))])
+        points = PointSamples(
+            lats=np.full(2 * n, 10.5),
+            lons=np.full(2 * n, 20.5),
+            values=np.concatenate([np.full(n, 1.0), np.full(n, 2.0)])[np.newaxis, :].astype(np.float32),
+            times=times.astype("datetime64[ns]"),
+        )
+        samples = _HeldPassReader(points).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == n
+        assert set(samples.values[0].tolist()) == {1.0}
 
     def test_nat_footprint_time_raises(self):
         """A reader that selects in time raises ``ValueError`` when the footprint time is NaT.
@@ -727,10 +838,10 @@ class TestRegistrationValidation:
 
         Instantiating each base directly must raise ``TypeError``.
         """
-        with pytest.raises(TypeError):
-            AncillaryReader("anything")  # type: ignore[abstract]
-        with pytest.raises(TypeError):
-            StaticReader("anything")  # type: ignore[abstract]
+        with pytest.raises(TypeError, match="abstract"):
+            AncillaryReader([UNREAD_GRANULE])  # type: ignore[abstract]
+        with pytest.raises(TypeError, match="abstract"):
+            StaticReader([UNREAD_GRANULE])  # type: ignore[abstract]
 
     @pytest.mark.parametrize(("base", "policy", "missing"), _ABSTRACT_CASES)
     def test_reader_missing_one_abstract_method_cannot_be_instantiated(self, base, policy, missing):
@@ -863,13 +974,13 @@ class TestProductVariableSpecs:
         in order, the mean variable, its companion, the mode variable, and the additional one.
         """
         categorical = VariableSpec(
-            name="c", dtype="int16", aggregation="weighted_mode", required_mode=OperationalMode.CAM, n_categories=4
+            name="c", dtype="int16", aggregation="weighted_mode", modes=frozenset({OperationalMode.CAM}), n_categories=4
         )
         ranked = VariableSpec(
             name="c_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=4,
         )
 
@@ -892,7 +1003,9 @@ class TestFilePaths:
         A reader built from one path exposes it in both properties; a reader built from two paths reports two
         ``file_paths`` and raises ``ValueError`` from ``single_file_path``.
         """
-        one = _GridReader(tmp_path / "a.nc")
+        (tmp_path / "a.nc").touch()
+        (tmp_path / "b.nc").touch()
+        one = _GridReader([tmp_path / "a.nc"])
         assert one.file_paths == (tmp_path / "a.nc",)
         assert one.single_file_path == tmp_path / "a.nc"
         two = _GridReader([tmp_path / "a.nc", tmp_path / "b.nc"])
@@ -911,9 +1024,137 @@ class TestFilePaths:
         with pytest.raises(ValueError, match="at least one"):
             _GridReader([])
 
+    def test_missing_paths_raise_file_not_found(self, tmp_path):
+        """Constructing a reader with staged paths that are not files raises ``FileNotFoundError`` naming each.
+
+        A granule missing from staging must stop the run where the paths are handed over, naming every missing file
+        so one fix stages them all, rather than at the first footprint that needs it.
+
+        One existing and two absent paths are passed; the message must name the reader class and both absent paths,
+        and not the existing one.
+        """
+        present = tmp_path / "present.nc"
+        present.touch()
+        absent = [tmp_path / "absent1.nc", tmp_path / "absent2.nc"]
+        with pytest.raises(FileNotFoundError) as excinfo:
+            _GridReader([present, *absent])
+        message = str(excinfo.value)
+        assert "_GridReader" in message
+        assert all(str(path) in message for path in absent)
+        assert str(present) not in message
+
+    def test_directory_is_not_a_granule(self, tmp_path):
+        """A staged path that is a directory raises ``FileNotFoundError``.
+
+        A granule is a file; a directory staged in its place would fail later inside the format library.
+
+        The test directory itself is passed as the one granule.
+        """
+        with pytest.raises(FileNotFoundError, match="not existing files"):
+            _GridReader([tmp_path])
+
+    @pytest.mark.parametrize("bare", [str(UNREAD_GRANULE), UNREAD_GRANULE], ids=["str", "Path"])
+    def test_bare_path_raises_type_error(self, bare):
+        """A single ``str`` or ``Path`` in place of a sequence raises ``TypeError`` saying to wrap it in a list.
+
+        A ``str`` is itself a sequence, so it would otherwise be read as one path per character.
+
+        Parametrized over a ``str`` and a ``Path`` naming an existing file.
+        """
+        with pytest.raises(TypeError, match="Wrap it in a list"):
+            _GridReader(bare)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("key", sorted(set().union(*FMATCH_MODE_READERS.values())))
+    def test_every_reader_rejects_a_missing_granule(self, key, tmp_path):
+        """Every production reader raises ``FileNotFoundError`` at construction for a granule that does not exist.
+
+        The check lives in ``AncillaryReader.__init__``; a reader whose own constructor skipped the base one would
+        defer the failure to its first query.
+
+        Parametrized over every reader that contributes to a product; each is built over one absent path.
+        """
+        reader_cls = ReaderRegistry.get(key)
+        with pytest.raises(FileNotFoundError, match=reader_cls.__name__):
+            reader_cls([tmp_path / "absent"])
+
+
+class TestPassReaderWindow:
+    """A pass reader holds only the granules within MAX_TIME_OFFSET of the footprint time."""
+
+    @staticmethod
+    def _granules(tmp_path):
+        granules = {}
+        for hour in range(6):
+            start = _T0 + np.timedelta64(hour, "h")
+            end = start + np.timedelta64(59, "m")
+            times = start + np.arange(4) * np.timedelta64(10, "m")
+            points = PointSamples(
+                lats=np.full(4, 10.5),
+                lons=np.full(4, 20.5),
+                values=np.full((1, 4), float(hour), dtype=np.float32),
+                times=times,
+            )
+            path = tmp_path / f"granule_{hour:02d}.nc"
+            path.touch()
+            granules[path] = (start, end, points)
+        return granules
+
+    def test_only_granules_in_the_window_are_loaded(self, tmp_path):
+        """``PassReader.samples_in`` loads only the granules within ``MAX_TIME_OFFSET`` of a footprint, each once.
+
+        A CLDPIX day is too large to hold at once, so a reader that loaded every staged granule would run out of memory,
+        and one that reloaded a granule per footprint would multiply the run time; one that kept stale granules would
+        grow without bound across a day.
+
+        Builds six hourly granules whose values are their hour index, queries at hour 0 + 5 min and asserts granules
+        0..3 are loaded and the nearest pass serves hour 0's values; then queries at hour 5 + 5 min and asserts 4 and 5
+        are loaded once each, 0 and 1 are released, 2 and 3 are not reloaded, and hour 5's values are served.
+        """
+        reader = _GranuleReader(self._granules(tmp_path))
+        box = BoundingBox(10.0, 11.0, 20.0, 21.0)
+        # Footprint at hour 0 + 5 min: granules 0..3 lie within +-3 h; 4 and 5 do not.
+        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "m"))
+        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(4)]
+        assert set(samples.values[0].tolist()) == {0.0}  # the nearest pass is hour 0's
+        # Moving to hour 5 loads 4 and 5, releases 0 and 1, and never reloads 2 and 3.
+        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "h") + np.timedelta64(5, "m"))
+        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(6)]
+        assert sorted(p.name for p in reader._loaded) == [f"granule_0{h}.nc" for h in range(2, 6)]
+        assert set(samples.values[0].tolist()) == {5.0}
+
+    def test_no_granule_in_window_gives_no_samples(self, tmp_path):
+        """``PassReader.samples_in`` serves nothing and loads nothing when no granule is within ``MAX_TIME_OFFSET``.
+
+        A footprint far from every staged granule has no coincident pass, so it must get no ancillary value rather than
+        one from a pass hours away, and the reader should not open granules it cannot use.
+
+        Queries the six hourly granules at hour 20, beyond the 3 h offset of the last one, and asserts zero samples are
+        served and no granule is loaded.
+        """
+        reader = _GranuleReader(self._granules(tmp_path))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 + np.timedelta64(20, "h"))
+        assert samples.n_samples == 0
+        assert reader.loads == []
+
+    def test_invalid_span_raises(self, tmp_path):
+        """``PassReader.samples_in`` raises ``ValueError`` when a granule reports an end time before its start.
+
+        A reversed span would make the window test silently skip or misplace that granule, so footprints near it would
+        lose their pass without any failure being reported.
+
+        Swaps the start and end of the first granule's span and asserts the first query raises ``ValueError`` matching
+        "invalid time span".
+        """
+        granules = self._granules(tmp_path)
+        path = next(iter(granules))
+        start, end, points = granules[path]
+        granules[path] = (end, start, points)
+        with pytest.raises(ValueError, match="invalid time span"):
+            _GranuleReader(granules).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+
 
 class TestResolutionOfServedSamples:
-    def test_declared_resolution_by_default(self, tmp_path):
+    def test_declared_resolution_by_default(self):
         """Served samples carry the reader's declared ``RESOLUTION_KM`` when the native data measures no spacing.
 
         The weigher sizes its coverage measure from the resolution each sample set reports, so it must be
@@ -921,7 +1162,7 @@ class TestResolutionOfServedSamples:
 
         A query on the 111 km test grid reports 111 km.
         """
-        reader = _GridReader(tmp_path / "unused.nc")
+        reader = _GridReader([UNREAD_GRANULE])
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
         assert samples.resolution_km == 111.0
 

@@ -48,7 +48,7 @@ class TestERA5PressureLevelReaderPlanes:
         the constant for its spec (so levels are selected by value, not by position), with source ``"era5_pressure"``
         and no timestamp source.
         """
-        reader = ERA5PressureLevelReader(make_era5_pressure_netcdf_fixture(tmp_path))
+        reader = ERA5PressureLevelReader([make_era5_pressure_netcdf_fixture(tmp_path)])
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
         assert data.shape == (_N_SPECS, 4, 4)
@@ -71,14 +71,14 @@ class TestERA5PressureLevelReaderErrors:
         A partial download must be fixed when it is acquired; substituting a neighboring level would publish values from
         the wrong altitude under that level's name.
 
-        Writes a file without the 975 and 1000 hPa levels and asserts a query raises ``ValueError`` naming the missing
-        configured levels.
+        Writes a file without the 975 and 1000 hPa levels and asserts a query raises ``ValueError`` reporting missing
+        configured pressure levels.
         """
         # Write a file that omits some configured levels: asserts the reader refuses it by raising
         # ValueError("missing configured pressure") rather than substituting neighboring levels.
         partial_levels = tuple(_ERA5_PRESSURE_LEVELS[:-2])  # drop 975 and 1000 hPa
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, levels=partial_levels)
-        reader = ERA5PressureLevelReader(fixture_path)
+        reader = ERA5PressureLevelReader([fixture_path])
         with pytest.raises(ValueError, match="missing configured pressure"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -88,7 +88,7 @@ class TestERA5PressureLevelReaderErrors:
         A download configured without a field would otherwise leave its planes unfilled, and the product would carry
         values that were never read.
 
-        Drops ``o3`` from a valid synthetic file and asserts a query raises ``KeyError`` naming the missing variable.
+        Drops ``o3`` from a valid synthetic file and asserts a query raises ``KeyError`` saying a variable is missing.
         """
         # Strip one required variable from an otherwise-valid fixture file.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
@@ -97,7 +97,7 @@ class TestERA5PressureLevelReaderErrors:
         stripped_path = tmp_path / "era5_pressure_missing_o3.nc"
         stripped.to_netcdf(stripped_path)
 
-        reader = ERA5PressureLevelReader(stripped_path)
+        reader = ERA5PressureLevelReader([stripped_path])
         with pytest.raises(KeyError, match="missing variable"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -114,7 +114,7 @@ class TestERA5PressureLevelReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5PressureLevelReader(fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc")
+        return ERA5PressureLevelReader([fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc"])
 
     def test_every_level_of_the_window_is_served(self, reader):
         """``ERA5PressureLevelReader._load_step`` serves every configured level of a real 37-level download.

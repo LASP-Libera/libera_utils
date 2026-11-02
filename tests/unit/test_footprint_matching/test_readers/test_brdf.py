@@ -55,7 +55,7 @@ def _fixture(tmp_path, **kwargs):
 
 
 def _make_reader(tmp_path, **kwargs) -> VIIRSBRDFReader:
-    return VIIRSBRDFReader(_fixture(tmp_path, **kwargs))
+    return VIIRSBRDFReader([_fixture(tmp_path, **kwargs)])
 
 
 def _full_bbox() -> BoundingBox:
@@ -121,7 +121,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         path = make_viirs_brdf_hdf5_fixture(
             tmp_path, n_lat=400, n_lon=800, lat_min=0.0, lat_max=20.0, lon_min=10.0, lon_max=50.0
         )
-        reader = VIIRSBRDFReader(path)
+        reader = VIIRSBRDFReader([path])
         tracemalloc.start()
         try:
             native = reader._native
@@ -166,7 +166,7 @@ class TestVIIRSBRDFCellCenters:
         with h5py.File(path, "r") as f:
             assert f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lat"][0] == 90.0
             assert f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lon"][0] == -180.0
-        native = VIIRSBRDFReader(path)._native
+        native = VIIRSBRDFReader([path])._native
         assert native.lat_axis[0] == pytest.approx(-89.5)
         assert native.lat_axis[-1] == pytest.approx(89.5)
         assert native.lon_axis[0] == pytest.approx(-179.5)
@@ -215,7 +215,7 @@ class TestVIIRSBRDFFieldAttributes:
         path = _fixture(tmp_path)
         with h5py.File(path, "r+") as f:
             f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/BRDF_Albedo_Parameter1_shortwave"].attrs["add_offset"] = [0.5]
-        data = VIIRSBRDFReader(path)._native.data
+        data = VIIRSBRDFReader([path])._native.data
         assert np.allclose(data[0][np.isfinite(data[0])], 0.7)
         assert np.allclose(data[1][np.isfinite(data[1])], 0.2)
 
@@ -232,7 +232,7 @@ class TestVIIRSBRDFFieldAttributes:
         with h5py.File(path, "r+") as f:
             f[f"{_FIELDS}/BRDF_Albedo_Parameter1_shortwave"].attrs["_FillValue"] = np.array([_PARAM_FILL], np.int16)
             f[f"{_FIELDS}/BRDF_Albedo_Parameter2_shortwave"].attrs["scale_factor"] = [0.01]
-        data = VIIRSBRDFReader(path)._native.data
+        data = VIIRSBRDFReader([path])._native.data
         assert np.isnan(data[0]).all()
         assert np.allclose(data[1][np.isfinite(data[1])], 2.0)
         assert np.allclose(data[2][np.isfinite(data[2])], 0.2)
@@ -299,7 +299,7 @@ class TestVIIRSBRDFGridMetadata:
             lat = f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lat"]
             lat[1] = lat[1] + 0.01
         with pytest.raises(ValueError, match="lat axis is not uniformly spaced"):
-            _ = VIIRSBRDFReader(path)._native
+            _ = VIIRSBRDFReader([path])._native
 
     def test_axis_length_not_matching_the_grid_raises(self, tmp_path):
         """Loading raises ``ValueError`` when an axis length differs from the grid's ``XDim`` or ``YDim``.
@@ -316,7 +316,7 @@ class TestVIIRSBRDFGridMetadata:
             del f["HDFEOS INFORMATION/StructMetadata.0"]
             f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.bytes_(meta))
         with pytest.raises(ValueError, match="XDim=9"):
-            _ = VIIRSBRDFReader(path)._native
+            _ = VIIRSBRDFReader([path])._native
 
     def test_non_string_struct_metadata_raises(self, tmp_path):
         """Loading raises ``ValueError`` when ``StructMetadata.0`` is not a fixed-length string.
@@ -332,25 +332,11 @@ class TestVIIRSBRDFGridMetadata:
             del f["HDFEOS INFORMATION/StructMetadata.0"]
             f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.arange(3))
         with pytest.raises(ValueError, match="not the fixed-length string"):
-            _ = VIIRSBRDFReader(path)._native
+            _ = VIIRSBRDFReader([path])._native
 
 
 class TestVIIRSBRDFFileErrors:
-    """h5py's own errors reach the caller.
-
-    A missing file raises ``FileNotFoundError`` (an ``OSError``) and a missing object raises ``KeyError``.
-    """
-
-    def test_missing_file_raises_file_not_found_error(self, tmp_path):
-        """Loading a path that does not exist raises ``FileNotFoundError``.
-
-        A granule missing from staging must stop the run with an error that says the file is absent rather than produce
-        an empty BRDF product.
-
-        Builds a reader on a path under ``tmp_path`` that was never written and asserts the load raises.
-        """
-        with pytest.raises(FileNotFoundError):
-            _ = VIIRSBRDFReader(tmp_path / "absent.h5")._native
+    """h5py's own errors reach the caller: a missing object raises ``KeyError``."""
 
     @pytest.mark.parametrize(
         "missing",
@@ -374,7 +360,7 @@ class TestVIIRSBRDFFileErrors:
         with h5py.File(path, "r+") as f:
             del f[missing]
         with pytest.raises(KeyError):
-            _ = VIIRSBRDFReader(path)._native
+            _ = VIIRSBRDFReader([path])._native
 
 
 class TestVIIRSBRDFReaderRealSubset:
@@ -388,7 +374,7 @@ class TestVIIRSBRDFReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return VIIRSBRDFReader(fmatch_real_data_path / "VJ143C1.A2026153.002.2026161161054_subset.h5")
+        return VIIRSBRDFReader([fmatch_real_data_path / "VJ143C1.A2026153.002.2026161161054_subset.h5"])
 
     def test_axes_are_the_window_cell_centers(self, reader):
         """A real VJ143C1 cut loads as a 40 x 40 grid of nine variables with the window's cell centers as axes.

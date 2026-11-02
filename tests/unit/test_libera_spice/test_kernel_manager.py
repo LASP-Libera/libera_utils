@@ -183,6 +183,36 @@ class TestKernelManagerStateTransitions:
 # ============================================================================
 
 
+class TestPopulateCache:
+    """populate_cache fills the caches and leaves the SPICE kernel pool empty."""
+
+    def test_loads_then_unloads_and_deletes_the_build_directory(self, tmp_path):
+        """The kernels are loaded, then unloaded, then the temporary build directory is deleted."""
+        km = KernelManager(temp_dir_base=tmp_path)
+        calls = MagicMock()
+        with (
+            patch.object(km, "load_static_kernels", calls.load_static),
+            patch.object(km, "load_naif_kernels", calls.load_naif),
+            patch.object(km, "unload_all", calls.unload),
+            patch.object(km, "_delete_temporary_static_kernels", calls.delete),
+        ):
+            km.populate_cache()
+        assert [c[0] for c in calls.mock_calls] == ["load_static", "load_naif", "unload", "delete"]
+
+    def test_failed_load_raises_after_cleaning_up(self, tmp_path):
+        """A failure loading kernels propagates, and the pool and build directory are still cleaned up."""
+        km = KernelManager(temp_dir_base=tmp_path)
+        with (
+            patch.object(km, "load_static_kernels", side_effect=RuntimeError("Static kernel creation failed")),
+            patch.object(km, "unload_all") as unload,
+            patch.object(km, "_delete_temporary_static_kernels") as delete,
+        ):
+            with pytest.raises(RuntimeError, match="Static kernel creation failed"):
+                km.populate_cache()
+        unload.assert_called_once_with()
+        delete.assert_called_once_with()
+
+
 class TestContextManagerProtocol:
     """Test context manager behavior."""
 

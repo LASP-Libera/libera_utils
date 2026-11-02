@@ -1,24 +1,35 @@
 """Unit tests for netcdf.py module"""
 
 import logging
+import tempfile
 from datetime import UTC, datetime
-from hashlib import md5
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
 
+import dask
+import dask.array as da
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 import yaml
-from cloudpathlib import AnyPath, S3Client, S3Path
-from cloudpathlib.enums import FileCacheMode
+from cloudpathlib import AnyPath, S3Path
+from distributed import Client
 
 from libera_utils.io import netcdf, product_definition
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import calculate_checksum
-from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
+from libera_utils.io.netcdf import (
+    NetcdfEngine,
+    _load_netcdf_into_memory,
+    _write_worker_compressed,
+    apply_fill_and_valid_range,
+    field_fill_value,
+    field_valid_range,
+    fill_in_dtype,
+    write_libera_data_product,
+)
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 from tests.marks import strict_warnings
@@ -868,40 +879,472 @@ class TestNetcdfEngineConfig:
         for target in seen:
             assert isinstance(target, str | Path), f"{engine} was handed {type(target).__name__}"
 
-    def test_reading_back_an_s3_product_does_not_download_it(
-        self, test_product_definition, test_data_dict, create_mock_bucket
+    def test_s3_product_is_uploaded_and_leaves_no_local_copy(
+        self, test_product_definition, test_data_dict, create_mock_bucket, tmp_path, monkeypatch
     ):
-        """The written product stays in the cache, as it did through CloudPath.open
+        """The product is written to a temporary file, uploaded, and the temporary file removed"""
+        local_tmp = tmp_path / "tmp"
+        local_tmp.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(local_tmp))
+        output_path = S3Path(f"s3://{create_mock_bucket().name}/test-prefix")
 
-        The manifest checksums each output file right after it is written. If the cache were
-        empty, that read would download the whole product from S3 again.
-        """
-        client = S3Client(file_cache_mode=FileCacheMode.tmp_dir)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
-
-        with patch.object(client, "_download_file", side_effect=AssertionError("product was downloaded")):
-            checksum = calculate_checksum(result.path)
-
-        assert checksum == md5(result.path._local.read_bytes(), usedforsecurity=False).hexdigest()
-
-    def test_close_file_cache_mode_removes_the_cache_file_after_upload(
-        self, test_product_definition, test_data_dict, create_mock_bucket
-    ):
-        """Under close_file the cache file is removed once uploaded, as CloudPath.open does on close"""
-        client = S3Client(file_cache_mode=FileCacheMode.close_file)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
+        result = write_libera_data_product(test_product_definition, test_data_dict, output_path, "radiometer_time")
 
         assert result.path.exists()
-        assert not result.path._local.exists()
+        assert list(local_tmp.iterdir()) == []
+
+
+def test_load_netcdf_into_memory_reads_the_file_and_closes_it(tmp_path):
+    """The Dataset is fully loaded, so it reads back unchanged after the file is closed and removed"""
+    expected = xr.Dataset({"values": (("t",), np.arange(5.0))}, coords={"t": np.arange(5)})
+    path = tmp_path / "small.nc"
+    expected.to_netcdf(path, engine="h5netcdf")
+    loaded = _load_netcdf_into_memory(path)
+    path.unlink()
+    xr.testing.assert_identical(loaded, expected)
+
+
+def test_load_netcdf_into_memory_unreadable_file_raises(tmp_path):
+    """A file that is not NetCDF raises ValueError naming the file"""
+    not_netcdf = tmp_path / "not_netcdf.nc"
+    not_netcdf.write_text("not a NetCDF file")
+    with pytest.raises(ValueError, match="Failed to open or read NetCDF file"):
+        _load_netcdf_into_memory(not_netcdf)
+
+
+@pytest.fixture
+def distributed_client():
+    """An in-process dask.distributed Client, closed after the test so later tests find none"""
+    with Client(processes=False, n_workers=2, threads_per_worker=1, dashboard_address=None) as client:
+        yield client
+
+
+def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **float_encoding) -> xr.Dataset:
+    """A 6-frame 64x64 Dataset whose float32 `floats` and uint16 `ints` share one task per 2-frame block
+
+    Each run of that task appends a line to `counter`.
+    """
+
+    def produce(frame_start):
+        with counter.open("a") as log:
+            log.write("call\n")
+        values = np.random.default_rng(frame_start).normal(size=(2, 64, 64)).astype(np.float32)
+        values[:, :16] = -999
+        return values, (np.abs(values) % 100).astype(np.uint16)
+
+    task = dask.delayed(produce, nout=2, pure=False)
+    float_blocks, int_blocks = [], []
+    for start in range(0, 6, 2):
+        values, counts = task(start)
+        float_blocks.append(da.from_delayed(values, (2, 64, 64), np.float32))
+        int_blocks.append(da.from_delayed(counts, (2, 64, 64), np.uint16))
+    floats = da.concatenate(float_blocks)
+    dataset = xr.Dataset(
+        {
+            "floats": (("t", "y", "x"), floats, {"_FillValue": np.float32(-999)}),
+            "ints": (("t", "y", "x"), da.concatenate(int_blocks)),
+            "frame_flag": (("t",), (floats.max(axis=(1, 2)) > 0).astype(np.uint32)),
+        },
+        coords={"t": np.arange(6)},
+    )
+    dataset["floats"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks, "shuffle": True, **float_encoding}
+    dataset["ints"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks}
+    return dataset
+
+
+def _calls(counter: Path) -> int:
+    """Number of times the shared block task has run, from the lines in `counter`; 0 before the first run"""
+    return len(counter.read_text().split()) if counter.exists() else 0
+
+
+def _stored_bits(dset: h5py.Dataset) -> np.ndarray:
+    """Values read through HDF5's filters, without CF decoding, as unsigned integers of the same width"""
+    values = dset[()]
+    return values.view(f"u{values.dtype.itemsize}")
+
+
+class TestWorkerCompression:
+    """`worker_compressed_variables` stores worker-compressed chunks that read back as a to_netcdf write does"""
+
+    @staticmethod
+    def _camera_dataset() -> xr.Dataset:
+        n_frames, size = 2, 2048
+        rng = np.random.default_rng(0)
+        values = rng.normal(size=(n_frames, size, size)).astype(np.float32)
+        values[0, :512, :512] = -999
+        counts = (np.abs(values) * 100).astype(np.uint16)
+        counts[1, 512:1024, 512:1024] = 0
+        times = pd.date_range("2026-07-12", periods=n_frames, freq="10s").to_numpy("datetime64[ns]")
+        dims = ("CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y")
+        # Built (time, y, x) and transposed, so every block reaches the workers non-contiguous.
+        shuffled = da.from_array(np.ascontiguousarray(values.transpose(0, 2, 1)), chunks=(1, 2048, 2048))
+        return xr.Dataset(
+            {
+                "float_fill": (dims, da.from_array(values, chunks=(1, 1024, 2048))),
+                "float_fill_shuffled": (dims, shuffled.transpose(0, 2, 1)),
+                "counts": (dims, da.from_array(counts, chunks=(2, 512, 1024))),
+                "mask": (dims, da.from_array((counts % 2).astype(np.uint8), chunks=(1, 2048, 2048))),
+                "frame_flag": (("CAMERA_TIME",), da.from_array(np.array([1, 2], dtype=np.uint32), chunks=1)),
+            },
+            coords={"CAMERA_TIME": times},
+            attrs={"ProductID": "CAM", "algorithm_version": "0.0.1"},
+        )
+
+    @pytest.mark.parametrize("to_s3", [False, True], ids=["local", "s3"])
+    def test_reads_back_identical_to_a_to_netcdf_write(
+        self, to_s3, distributed_client, test_worker_compression_product_definition, tmp_path, create_mock_bucket
+    ):
+        """Every variable's stored values, chunks, settings and metadata match a to_netcdf write"""
+        names = ("float_fill", "float_fill_shuffled", "counts", "mask")
+        (tmp_path / "reference").mkdir()
+        (tmp_path / "direct").mkdir()
+        reference = write_libera_data_product(
+            test_worker_compression_product_definition, self._camera_dataset(), tmp_path / "reference", "CAMERA_TIME"
+        )
+        if to_s3:
+            bucket = create_mock_bucket()
+            written = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                S3Path(f"s3://{bucket.name}/prefix"),
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            )
+            direct_path = tmp_path / written.path.name
+            bucket.download_file(f"prefix/{written.path.name}", str(direct_path))
+        else:
+            direct_path = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path / "direct",
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            ).path
+
+        with h5py.File(reference.path) as expected, h5py.File(direct_path) as actual:
+            for name in (*names, "frame_flag", "CAMERA_TIME"):
+                for setting in ("dtype", "chunks", "compression", "compression_opts", "shuffle", "fillvalue"):
+                    assert getattr(actual[name], setting) == getattr(expected[name], setting), (name, setting)
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+            # The all-fill and all-zero chunks in _camera_dataset are stored, as to_netcdf stores them.
+            for name in names:
+                assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks(), name
+        with xr.open_dataset(reference.path) as expected, xr.open_dataset(direct_path) as actual:
+            # Each write stamps its own creation time.
+            del actual.attrs[DATE_CREATED_ATTRIBUTE], expected.attrs[DATE_CREATED_ATTRIBUTE]
+            assert actual.identical(expected)
+
+    def test_a_task_shared_by_variables_runs_once_per_block(self, tmp_path, distributed_client):
+        """One compute holds every variable's blocks, so a task feeding two variables runs once per block"""
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        counter.unlink()
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats", "ints"))
+        assert _calls(counter) == 3
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "ints", "frame_flag", "t"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
+    def test_identically_built_variables_are_each_written(self, tmp_path, distributed_client):
+        """Variables whose blocks share a task key each get the result, as a to_netcdf write does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        for name in ("zeros_a", "zeros_b"):
+            dataset[name] = (("t",), da.zeros(6, chunks=2, dtype=np.uint8) + 1)
+        assert dataset["zeros_a"].data.name == dataset["zeros_b"].data.name
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "zeros_a", "zeros_b"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
+    def test_unlimited_dims_named_by_a_string_are_unlimited(self, tmp_path, distributed_client):
+        """A string ``unlimited_dims`` encoding marks that one dimension unlimited, as to_netcdf does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        dataset.encoding["unlimited_dims"] = "t"
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "out.nc") as written:
+            assert written["floats"].maxshape == (None, 64, 64)
+            assert written["ints"].maxshape == (None, 64, 64)
+
+    def test_configured_engine_other_than_h5netcdf_raises(
+        self, monkeypatch, test_worker_compression_product_definition, tmp_path
+    ):
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+        with pytest.raises(ValueError, match="requires the h5netcdf engine"):
+            write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path,
+                "CAMERA_TIME",
+                worker_compressed_variables=("counts",),
+            )
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.parametrize(
+        ("names", "match"),
+        [
+            (("floats", "missing"), "not Dask-backed data variables"),
+            (("t",), "not Dask-backed data variables"),
+            (("floats", "floats"), "repeats a name"),
+            (("numpy_values",), "not Dask-backed data variables"),
+        ],
+        ids=["unknown", "coordinate", "repeated", "numpy-backed"],
+    )
+    def test_names_that_are_not_distinct_dask_data_variables_raise(self, names, match, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["numpy_values"] = (("t",), np.arange(6))
+        with pytest.raises(ValueError, match=match):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", names)
+        assert _calls(counter) == 0
+
+    def test_variable_not_chunked_on_disk_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["floats"].encoding = {}
+        with pytest.raises(ValueError, match="is not chunked on disk"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_named_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        # xarray stores the byte strings as a (t, string2) character array, hence two chunk lengths.
+        dataset["labels"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (3, 2)}
+        with pytest.raises(ValueError, match="compress only integer and floating-point data"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("labels",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_no_distributed_client_raises(self, tmp_path):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="requires an active dask.distributed Client"):
+            _write_worker_compressed(_small_dataset(counter), tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_filter_the_workers_do_not_apply_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="the workers apply only deflate"):
+            _write_worker_compressed(_small_dataset(counter, fletcher32=True), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_dask_chunks_not_a_multiple_of_the_disk_chunks_raise(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="each must be a whole multiple"):
+            _write_worker_compressed(_small_dataset(counter, chunks=(1, 24, 64)), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+    def test_block_that_differs_from_its_declared_dtype_raises(self, tmp_path, distributed_client):
+        """Dask does not check a computed block against from_delayed's declaration, so the worker does"""
+        mislabeled = da.from_delayed(dask.delayed(np.zeros)((2, 32, 32), np.float64), (2, 32, 32), np.float32)
+        dataset = xr.Dataset({"values": (("t", "y", "x"), mislabeled)})
+        dataset["values"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (1, 16, 16)}
+        with pytest.raises(ValueError, match="A computed block of values has dtype float64"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("values",))
+        assert not (tmp_path / "out.nc").exists()
+
+    def test_other_dask_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        with pytest.raises(ValueError, match="not numeric or boolean"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
+        assert _calls(counter) == 0
+
+
+_NAN = np.nan
+_INT32_MAX = np.iinfo(np.int32).max
+
+
+class TestApplyFillAndValidRange:
+    @pytest.mark.parametrize(
+        ("raw", "fill_value", "valid_range", "expected"),
+        [
+            pytest.param(np.array([1.0, 2.0, -999.0, 3.0]), -999.0, None, [1.0, 2.0, _NAN, 3.0], id="fill"),
+            # The range is inclusive: a value on a bound is valid.
+            pytest.param(np.array([-1.0, 0.0, 5.0, 6.0]), None, (0.0, 5.0), [_NAN, 0.0, 5.0, _NAN], id="range"),
+            # CLDPIX Eff_Cld_Pressure declares [1100, 10]; taken literally no value would satisfy both bounds.
+            pytest.param(
+                np.array([800.0, 50.0, 5.0, 2000.0]), None, (1100.0, 10.0), [800.0, 50.0, _NAN, _NAN], id="descending"
+            ),
+            pytest.param(np.array([1, 2, 127, 3], dtype=np.int8), 127, None, [1.0, 2.0, _NAN, 3.0], id="int8-fill"),
+            # The mask flags missing elements with no sentinel.
+            pytest.param(
+                np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False]), None, None, [1.0, _NAN, 3.0], id="masked"
+            ),
+            # The CERES float fill is the float32 maximum, whose float64 widening differs from the decimal literal.
+            pytest.param(
+                np.array([1.0, 3.4028235e38, 2.0], dtype=np.float32),
+                3.4028235e38,
+                None,
+                [1.0, _NAN, 2.0],
+                id="float32-max",
+            ),
+            # int32 max and max - 1 round to the same float32, so only a raw-dtype comparison keeps max - 1.
+            pytest.param(
+                np.array([1, _INT32_MAX, 2, _INT32_MAX - 1], dtype=np.int32),
+                _INT32_MAX,
+                None,
+                [1.0, _NAN, 2.0, float(_INT32_MAX - 1)],
+                id="int32-max",
+            ),
+            # A fill the dtype cannot hold would wrap or truncate onto a valid value if cast: -999 to 25 in uint8,
+            # 1.5 to 1 in int16, 300 to 44 in int8.
+            pytest.param(np.array([25, 7], dtype=np.uint8), -999, None, [25.0, 7.0], id="uint8-unholdable"),
+            pytest.param(np.array([1, 7], dtype=np.int16), 1.5, None, [1.0, 7.0], id="int16-unholdable"),
+            pytest.param(np.array([44, 7], dtype=np.int8), 300, None, [44.0, 7.0], id="int8-unholdable"),
+        ],
+    )
+    def test_invalid_entries_become_nan(self, raw, fill_value, valid_range, expected):
+        """``apply_fill_and_valid_range`` sets fill, masked and out-of-range entries to NaN and keeps every other value.
+
+        A sentinel or out-of-range value left as a number would be averaged into a footprint as if it were data, and a
+        valid value masked by a careless comparison would be lost. The fill is compared in the raw dtype, so a sentinel
+        float32 cannot represent exactly still matches, and a fill the dtype cannot hold matches nothing.
+
+        Parametrized over a float fill, an inclusive range, a descending range, an integer fill, a masked array, the
+        float32-maximum fill, the int32-maximum fill beside its float32 twin, and three fills their dtype cannot hold;
+        asserts the float64 output equals the expected values, NaN for NaN.
+        """
+        out = apply_fill_and_valid_range(raw, fill_value=fill_value, valid_range=valid_range)
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array(expected, dtype=np.float64))
+
+
+class TestFieldFillValue:
+    @staticmethod
+    def _variable(tmp_path, dtype, fill_value):
+        import netCDF4
+
+        ds = netCDF4.Dataset(str(tmp_path / "f.nc"), "w")
+        ds.createDimension("n", 2)
+        return ds, ds.createVariable("field", dtype, ("n",), fill_value=fill_value)
+
+    @pytest.mark.parametrize(
+        ("dtype", "fill", "expected"),
+        [(np.float32, np.float32(3.4028235e38), float(np.float32(3.4028235e38))), (np.int8, 127, 127)],
+    )
+    def test_returns_the_attribute(self, tmp_path, dtype, fill, expected):
+        """``field_fill_value`` returns a field's declared ``_FillValue`` as a Python scalar.
+
+        The readers mask each field with the sentinel the file declares; a wrong or reshaped value would leave every
+        fill cell in the field to be served as data.
+
+        Parametrized over a float32 field filled with the float32 maximum and an int8 field filled with 127; builds
+        each in a scratch netCDF file and asserts the returned value equals the stored fill.
+        """
+        ds, var = self._variable(tmp_path, dtype, fill)
+        try:
+            assert field_fill_value(var, source="test") == expected
+        finally:
+            ds.close()
+
+    def test_field_without_fill_value_raises(self, tmp_path):
+        """``field_fill_value`` raises ``ValueError`` naming the field when it has no ``_FillValue`` attribute.
+
+        Guessing a sentinel for a field that declares none could mask valid values or let real fill cells through as
+        data, so the reader stops instead.
+
+        Builds a float32 field created with ``fill_value=False`` and asserts a ``ValueError`` whose message names the
+        field and the missing ``_FillValue``.
+        """
+        ds, var = self._variable(tmp_path, np.float32, False)
+        try:
+            with pytest.raises(ValueError, match="field has no _FillValue attribute"):
+                field_fill_value(var, source="test")
+        finally:
+            ds.close()
+
+
+class TestFieldValidRange:
+    @staticmethod
+    def _variable(tmp_path, valid_range):
+        import netCDF4
+
+        ds = netCDF4.Dataset(str(tmp_path / "r.nc"), "w")
+        ds.createDimension("n", 2)
+        var = ds.createVariable("field", np.float32, ("n",))
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range, dtype=np.float32)
+        return ds, var
+
+    def test_returns_the_attribute_in_file_order(self, tmp_path):
+        """``field_valid_range`` returns a field's declared ``valid_range`` as floats, in the file's order.
+
+        The readers range-check each field with the bounds the file declares; a reordered or rounded pair would drop
+        valid values or pass invalid ones, and the CLDPIX pressure range is stored descending.
+
+        Builds a field declaring the descending [1100, 10] and asserts ``(1100.0, 10.0)``.
+        """
+        ds, var = self._variable(tmp_path, (1100.0, 10.0))
+        try:
+            assert field_valid_range(var, source="test") == (1100.0, 10.0)
+        finally:
+            ds.close()
+
+    @pytest.mark.parametrize(
+        ("valid_range", "match"),
+        [(None, "field has no valid_range attribute"), ((0.0, 1.0, 2.0), r"not a \(low, high\) pair")],
+    )
+    def test_missing_or_malformed_range_raises(self, tmp_path, valid_range, match):
+        """``field_valid_range`` raises ``ValueError`` naming the field when its ``valid_range`` is absent or not a pair.
+
+        A guessed range could silently drop valid values or keep invalid ones, so the reader stops instead.
+
+        Parametrized over a field with no ``valid_range`` and one declaring three values; asserts a ``ValueError``
+        naming the field.
+        """
+        ds, var = self._variable(tmp_path, valid_range)
+        try:
+            with pytest.raises(ValueError, match=match):
+                field_valid_range(var, source="test")
+        finally:
+            ds.close()
+
+
+class TestFillInDtype:
+    @pytest.mark.parametrize(
+        ("fill_value", "dtype", "expected"),
+        [
+            pytest.param(127, np.int8, np.int8(127), id="int8-in-range"),
+            pytest.param(3.4028235e38, np.float32, np.float32(3.4028235e38), id="float32-max"),
+        ],
+    )
+    def test_returns_the_fill_in_the_dtype(self, fill_value, dtype, expected):
+        """``fill_in_dtype`` returns the fill cast to the requested dtype when that dtype can hold it.
+
+        A caller compares the stored values with this result in their own dtype; a fill in another dtype or with
+        another bit pattern would leave fill cells unmasked.
+
+        Parametrized over an int8 fill of 127 and the CERES float32-maximum fill; asserts the result's dtype is the
+        requested one and its value equals the stored sentinel.
+        """
+        out = fill_in_dtype(fill_value, np.dtype(dtype))
+        assert out is not None
+        assert out.dtype == np.dtype(dtype)
+        assert out == expected
+
+    @pytest.mark.parametrize(
+        ("fill_value", "dtype"),
+        [
+            pytest.param(-999, np.uint8, id="out-of-range"),
+            pytest.param(1.5, np.int16, id="not-whole"),
+            pytest.param(np.nan, np.int32, id="not-finite"),
+        ],
+    )
+    def test_integer_dtype_that_cannot_hold_the_fill_returns_none(self, fill_value, dtype):
+        """``fill_in_dtype`` returns ``None`` when an integer dtype cannot represent the fill.
+
+        Casting such a fill would wrap or truncate it onto a valid value (-999 to 25 in uint8, 1.5 to 1 in int16), so
+        valid data would be masked as fill.
+
+        Parametrized over a negative fill on uint8, a fractional fill on int16 and a NaN fill on int32; asserts
+        ``None``.
+        """
+        assert fill_in_dtype(fill_value, np.dtype(dtype)) is None

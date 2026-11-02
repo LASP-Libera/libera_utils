@@ -60,7 +60,7 @@ class TestSceneIdCamRunnerEndToEnd:
         assert len(output_manifest.files) == 1
 
         # Step 5: the registered product exists, has a valid SCENE-ID-CAM Libera filename, and reopens.
-        product_path = pathlib.Path(output_manifest.files[0].filename)
+        product_path = pathlib.Path(output_manifest.files[0])
         assert product_path.exists()
         product_filename = LiberaDataProductFilename.from_file_path(product_path)
         assert product_filename.data_product_id is DataProductIdentifier.aux_scene_id_cam

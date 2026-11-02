@@ -47,7 +47,7 @@ def _make_reader(tmp_path, **kwargs) -> VIIRSAODReader:
         lon_max=_LON_MAX,
         **kwargs,
     )
-    return VIIRSAODReader(fixture_path)
+    return VIIRSAODReader([fixture_path])
 
 
 def _full_bbox() -> BoundingBox:
@@ -190,7 +190,7 @@ class TestVIIRSAODReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return VIIRSAODReader(fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc")
+        return VIIRSAODReader([fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc"])
 
     def test_axes_are_the_global_one_degree_cell_centers(self, reader):
         """On a real granule, ``VIIRSAODReader`` loads the global 180 x 360 grid of 1 degree cell centers.

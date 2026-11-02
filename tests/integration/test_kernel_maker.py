@@ -1,5 +1,6 @@
 """Tests for kernel_maker CLI module"""
 
+import sys
 from datetime import datetime
 from unittest import mock
 
@@ -12,6 +13,8 @@ from libera_utils.io.manifest import Manifest
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration
+
+requires_linux = pytest.mark.skipif(sys.platform != "linux", reason="create_kernels_from_manifest requires Linux")
 
 
 @mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))
@@ -251,6 +254,7 @@ def test_make_el_ck_aws(
     ).exists()
 
 
+@requires_linux
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
@@ -277,6 +281,7 @@ def test_make_jpss_kernels_from_manifest(
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
+@requires_linux
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
@@ -304,6 +309,35 @@ def test_make_azel_kernels_from_manifest(
         output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250809T171756_20250809T171904_R20250225T154513000000.bc"
     ).exists()
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
+
+
+@requires_linux
+@pytest.mark.parametrize("test_type", ["Local"], indirect=True)
+@mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_make_azel_kernels_from_manifest_one_kernel_fails(
+    mocked_get_current_version_str,
+    setup_azel_kernel_maker_environment_with_manifest,
+    generic_kernel_dir,
+    curryer_lsk,
+    monkeypatch,
+    tmp_path,
+):
+    """A kernel that fails in its process does not stop the other kernel; the run then raises without a manifest."""
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
+    monkeypatch.setenv("LIBERA_KERNEL_EL_CK_CONFIG", str(tmp_path / "missing.ck.json"))
+
+    filenaming.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+
+    input_manifest_path, output_path = setup_azel_kernel_maker_environment_with_manifest
+
+    with pytest.raises(ValueError, match=r"Kernel processing steps failed.*ELSCAN-CK"):
+        kernel_maker.create_kernels_from_manifest(input_manifest_path, ["AZROT-CK", "ELSCAN-CK"], output_path)
+
+    assert (
+        output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250809T171756_20250809T171904_R20250225T154513000000.bc"
+    ).exists()
+    assert len(sorted(output_path.glob("*"))) == 1  # The AZROT kernel, and no manifest.
 
 
 @mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))

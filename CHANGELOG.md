@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-10-30
+
+### Added
+
+- `libera_utils.footprint_matching.weighting`: `RadialWeigher` and `AngularPSFWeigher` weight each native sample where it lies, and each `WeightField` carries the footprint's `coverage`: the share of the PSF's energy inside the native cell of at least one finite sample (each sample covers the square of half-width `RESOLUTION_KM / sqrt(2)`, foreshortened along-scan by `cos(VZA)` in the angular frame, measured on a reference grid in the weigher's own frame), so a swath gap or a source beyond its time window reads as missing coverage. `AngularPSFWeigher` raises `ValueError` when `cone_angle_rate` is missing or not finite, or the viewing zenith is not finite.
+- `libera_utils.footprint_matching.aggregation.aggregate_sample_variables`, one scalar per product variable from a footprint's weighted samples, raising `ValueError` for a product variable it cannot map to a read variable or whose aggregation is not a registered strategy, and for values or weights that do not match the reader's variables and samples. `check_coverage(coverage)` applies the CERES 75 % / 95 % rule to `WeightField.coverage`.
+- The `weighted_positive_std` aggregation: the `_standard_deviation` companion of a `weighted_log_mean` variable is the spread of the same positive samples the geometric mean averages.
+- Optical depths are aggregated as CERES does: imager-pixel cloud optical depth (CLDPIX `cloud_optical_depth`) with the PSF-weighted log mean (CERES SSF-85), and every aerosol optical depth (VIIRS Deep Blue `aod_550`, SSF `aerosol_optical_depth`, `match_aot` and the imager land and ocean AODs) and every optical depth its source has already averaged (SSF `cloud_optical_depth_lower`/`_upper`, VIIRS L3 `cloud_optical_thickness`) with the PSF-weighted arithmetic mean (CERES SSF-137).
+- `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
+- `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
+
+### Changed
+
+- `notebooks/04_sources_query.ipynb` also demonstrates coverage.
+
+## [5.19.0] - 2026-10-30
+
+### Added
+
+- `libera_utils.footprint_matching.sources.build_sources`, which instantiates the readers an `OperationalMode`'s product uses over their staged granules and returns them keyed by reader registry key. It raises `KeyError` when the staged mapping is missing a source the mode uses or names one it does not, `TypeError` when an entry is a single path rather than a list, `ValueError` when an entry holds no granule, and `FileNotFoundError` when a staged granule is not an existing file; construction opens no granule, so an unreadable one raises from the first `samples_in` that loads it. Each reader holds its source once (a static reader its whole indexed body of data, a stepped reader the one hourly step nearest the current footprint, a pass reader the granules in its time window).
+- `notebooks/04_sources_query.ipynb`, a demonstration of the box query and time matching.
+
+## [5.18.0] - 2026-10-29
+
+### Added
+
+- The swath readers CERES FLASHFlux (`flashflux`, `FLASHFluxReader`, reading the RBSP FLASHFlux product in the CERES SSF file layout for FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, with its extended cloud/aerosol/albedo fields carried by FMATCH-IMAGER alone) and CERES CLDPIX, and the VIIRS daily L3 cloud-property reader `viirs_cldprop_d3` (`VIIRSCldpropD3Reader`, `CLDPROP_D3_VIIRS_NOAA20`, `DAILY`), completing the nine-reader registry. Every FLASHFlux and CLDPIX field, geolocation and observation time included, is read with its own `_FillValue` and `valid_range`, and every VIIRS cloud-property field with its own `_FillValue`; a field without one raises `ValueError`. CLDPIX cloud phase and mask codes that the file's `flag_meanings` label `bad_data` are dropped before the mode, and a categorical field without `flag_values`/`flag_meanings` raises `ValueError`. A FLASHFlux granule missing a group or variable the reader reads, or whose variable has other dimensions than the reader expects, raises `ValueError` naming it and the file's `product_version`, as does a CLDPIX granule missing a variable the reader reads. A time variable without a `units` attribute raises `ValueError`. The FLASHFlux scene and ADM type codes are int16. The FLASHFlux and CLDPIX readers are `PassReader`s (`TIME_MATCH = NEAREST_PASS`): they convert CLDPIX colatitude to latitude and normalize 0..360 longitudes to -180..180, raising `ValueError` when a CLDPIX `Latitude` declares a `valid_range` other than [0, 180] or a FLASHFlux footprint latitude is not in `degrees_north`, read each footprint's (`Time_and_Position/time`) or pixel's (`Observation_Time`, fractional hours each dated to the day nearest `time_coverage_start`) observation time, serve every footprint or pixel as its own time-stamped sample from the pass nearest the footprint time, the samples within `PASS_WINDOW` of the observation time of the sample nearest the footprint time, so a footprint midway between two passes gets only the nearer (none beyond `MAX_TIME_OFFSET`), choosing that sample from those inside the footprint's own box and from the padding only when none falls inside, hold only the hourly granules within that offset of the current footprint, and measure the granule's own sample spacing (`PointSamples.spacing_km`, the larger of the along-scan and along-track spacings) for the coverage measure in place of the nominal `RESOLUTION_KM`. `PassReader` joins `StaticReader` and `SteppedGridReader` as a reader base, and `ReaderRegistry.get_readers_for_mode` returns the readers that contribute to an `OperationalMode`'s product (`FMATCH_MODE_READERS`, derived from the built-in readers' `VariableSpec.modes`).
+- `notebooks/03_readers_swath.ipynb`, a demonstration of the swath readers.
+- Fill and valid-range helpers in `libera_utils.io.netcdf`, used by the CERES FLASHFlux, CLDPIX and VIIRS cloud-property readers: `fill_in_dtype` returns a `_FillValue` in a given dtype, or `None` when no value of that dtype can equal it; `field_fill_value` and `field_valid_range` return a netCDF4 variable's own `_FillValue` and `valid_range`, raising `ValueError` when it has none; `apply_fill_and_valid_range` returns a raw, optionally masked array as float64 with masked entries, fill values (compared in the raw dtype) and values outside an inclusive `valid_range` (either order) set to NaN.
+
+### Changed
+
+- **BREAKING:** An `AncillaryReader` is constructed from a sequence of staged granule paths: a bare `str` or `Path` raises `TypeError`, an empty sequence `ValueError`, and a path that is not an existing file `FileNotFoundError` naming the reader and every such path. A single path was previously accepted, and a missing file failed only when it was read.
+- **BREAKING:** `VariableSpec` takes a required `modes`, a `frozenset[OperationalMode]` naming every product that carries the variable, in place of `required_mode`. An empty `modes` raises `ValueError`, and one that is not a frozenset of `OperationalMode` members raises `TypeError`. A standard-deviation companion from `with_standard_deviation_companions` carries its parent's `modes`.
+
+### Removed
+
+- **BREAKING:** `OperationalMode.rank`, `VariableSpec.required_mode`, `VariableSpec.only_modes` and `spec_active_in_mode`. A variable belongs to a product exactly when `mode in spec.modes`.
+
+## [5.17.0] - 2026-10-29
+
+### Added
+
+- `write_libera_data_product` takes `worker_compressed_variables`, a tuple of Dask-backed data variables whose chunks are shuffled and deflated on the `dask.distributed` workers instead of one at a time under the HDF5 write lock. The writing process stores the compressed chunks with h5py `write_direct_chunk`, and the file reads back identical to a normal write. It requires the `h5netcdf` engine and an active `distributed.Client`, and each named variable's Dask chunks must be whole multiples of its on-disk chunk shape, its filters deflate with or without shuffle, and its dtype integer or floating point; otherwise `ValueError` before any data is computed. A write that fails after creating the file deletes it. The default, an empty tuple, writes with `to_netcdf` as before.
+- `KernelManager.populate_cache()` fills the on-disk NAIF and static kernel caches and leaves the SPICE kernel pool empty, for a process to call before starting workers that each load their own kernels.
+- `dask[distributed]` is a declared dependency; worker-compressed writes import it and `h5py`.
+
+### Changed
+
+- `kernel_maker.create_kernels_from_manifest` reads the input L1A product once and creates each requested SPICE kernel at the same time, each in its own forked process, so the Az/El and JPSS kernel steps take about as long as their slowest kernel rather than the sum. It requires Linux and raises `ValueError` on any other platform before reading the L1A. Kernel filenames and the output manifest are unchanged. The `ValueError` raised after every kernel was attempted when any kernel fails now also gives each failed kernel's reason: its process's traceback, or its exit code when the process sent nothing; a kernel process killed by the operating system counts as that kernel failing. A kernel process flushes CloudWatch log handlers before it exits. Peak memory is about the sum of the concurrent kernels' (an estimated 18 GB for a full-day Az/El run, from about 9 GB measured per kernel). A kernel identifier repeated in `kernel_product_ids` raises `ValueError`.
+- **BREAKING:** `kernel_maker.create_kernels_from_manifest` raises a shared-setup failure before any kernel is attempted, with its own exception type, instead of the aggregated `ValueError` listing every kernel as failed: an unreadable L1A file raises `ValueError`, a kernel work directory path too long for curryer raises `RuntimeError` (set `LIBERA_TEMP_DIR` to a shorter base path), and a failure populating the kernel cache raises `RuntimeError`, `FileNotFoundError` or a `requests.RequestException`.
+- `write_libera_data_product` writes an S3 product to a temporary local file, uploads it and removes the file, instead of keeping it in the cloudpathlib cache for a read that the manifest checksum needed. A full-day product no longer stays on local disk after upload, and the write no longer reads cloudpathlib's private cache path or sends a request to sync the cache file's modification time.
+
+## [5.16.0] - 2026-10-29
+
+### Changed
+
+- **BREAKING:** Manifest files no longer record checksums, input or output. `Manifest.files` is a list of absolute path strings, written as `"files": ["s3://...", ...]`. A manifest in the previous `{"filename": ..., "checksum": ...}` record format raises `ValidationError` when read. A reader on libera_utils 5.15.0 or earlier treats each listed path as a file to checksum, so it downloads every listed file; move readers and writers of a manifest to this version together.
+- `Manifest.add_files()` checks that each file exists and is a file, raising `IsADirectoryError` for a local directory, an S3 bucket root or an S3 prefix, but no longer reads it, so an S3 file is not downloaded and a file larger than local disk can be listed.
+- **BREAKING:** The `Manifest` constructor no longer checks that a listed path exists; only `add_files()` does.
+- **BREAKING:** A path listed twice in a manifest is an error, where it was skipped with a warning: `Manifest.add_files()` raises `ValueError` for a path already listed or given twice, adding nothing, and the constructor and `Manifest.from_file()` raise `ValidationError`.
+- `create_kernels_from_manifest` no longer validates input checksums.
+
+### Removed
+
+- **BREAKING:** `ManifestFileRecord`, `Manifest.validate_checksums()`, `Manifest.check_file_structure()` and `libera_utils.io.manifest.calculate_checksum`.
+
+### Fixed
+
+- A file whose content matched another listed file's was dropped, with a warning, by `Manifest.add_files()`, the constructor and `Manifest.from_file()`. Every file is now listed under its own name.
+
 ## [5.15.0] - 2026-10-28
 
 ### Added
@@ -896,7 +967,12 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...HEAD
+[5.20.0]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...5.20.0
+[5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
+[5.18.0]: https://github.com/LASP-Libera/libera_utils/compare/5.17.0...5.18.0
+[5.17.0]: https://github.com/LASP-Libera/libera_utils/compare/5.16.0...5.17.0
+[5.16.0]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...5.16.0
 [5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
 [5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0
 [5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0

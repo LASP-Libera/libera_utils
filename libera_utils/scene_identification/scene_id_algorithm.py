@@ -270,8 +270,7 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     """
     input_label = input_product_id.value if input_product_id is not None else "CERES SSF (placeholder)"
     input_file_paths: list[str] = []
-    for file_record in input_manifest.files:
-        filename = file_record.filename
+    for filename in input_manifest.files:
         try:
             libera_filename = LiberaDataProductFilename.from_file_path(filename)
         except Exception:

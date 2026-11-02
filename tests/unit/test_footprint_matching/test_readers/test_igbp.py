@@ -324,7 +324,7 @@ class TestIGBPCodes:
         rows = np.array([0, 17, 18, 5, 255, 1], dtype=np.uint8)
         codes = np.repeat(rows, _N // rows.size)[:, np.newaxis].repeat(_N, axis=1)
         path, _ = _tile(tmp_path, 18, 4, codes=codes)
-        samples = IGBPReader(path).samples_in(BoundingBox(40.0, 50.0, 0.0, 14.0), _T)
+        samples = IGBPReader([path]).samples_in(BoundingBox(40.0, 50.0, 0.0, 14.0), _T)
         finite = samples.values[np.isfinite(samples.values)]
         assert set(np.unique(finite).tolist()) == {1.0, 5.0, 17.0}
         assert np.isnan(samples.values).any()
@@ -391,8 +391,7 @@ class TestIGBPTileHolder:
         All tiles are held in one ``(n_tiles, n_rows, n_cols)`` array, which cannot take tiles of mixed size, and
         mixed sizes mean the tiles are not from one MCD12Q1 product.
 
-        Stages one full-size and one half-size tile and asserts loading raises an error naming the shape
-        mismatch.
+        Stages a 60 x 60 tile and a 30 x 30 tile and asserts loading raises an error naming the shape mismatch.
         """
         first, _ = _tile(tmp_path, 17, 4)
         second, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N // 2, _N // 2), dtype=np.uint8))
@@ -409,7 +408,7 @@ class TestIGBPTileHolder:
         """
         path, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N, _N), dtype=np.int16))
         with pytest.raises(ValueError, match="LC_Type1 is int16"):
-            _ = IGBPReader(path)._native
+            _ = IGBPReader([path])._native
 
 
 class TestIGBPReaderRealSubset:
@@ -422,7 +421,7 @@ class TestIGBPReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return IGBPReader(fmatch_real_data_path / "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf")
+        return IGBPReader([fmatch_real_data_path / "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf"])
 
     def test_window_codes_are_the_granules(self, reader):
         """``IGBPReader`` holds the real MCD12Q1 subset's ``LC_Type1`` codes exactly as stored.

@@ -34,6 +34,18 @@ VIIRS BRDF VJ143C1 (HDF5/HDF-EOS5):
 VIIRS Deep Blue aerosol — AOD + type (AERDB_D3_VIIRS_NOAA20, NetCDF4, root-level):
     NASA Deep Blue: https://deepblue.gsfc.nasa.gov/
     Example filename: AERDB_D3_VIIRS_NOAA20.A2026001.002.2026005001030.nc
+
+VIIRS Cloud CLDPROP_D3 (NetCDF4 with groups):
+    NCEI CDR: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/
+    Example filename: CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc
+
+CERES FLASHFlux (NetCDF4, per-footprint swath, in the CERES SSF file layout):
+    NASA CERES: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-flashflux
+    Example layout source: CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc
+
+CERES CLDPIX (NetCDF4, imager-pixel swath):
+    NASA CERES: https://ceres.larc.nasa.gov/data/
+    Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
 
 from pathlib import Path
@@ -64,6 +76,13 @@ _ERA5_SURFACE_ATTRS: dict[str, dict[str, str]] = {
     "fal": {"units": "(0 - 1)", "long_name": "Forecast albedo"},
 }
 
+
+UNREAD_GRANULE: Path = Path(__file__)
+"""An existing file to construct a reader whose test never opens its granule.
+
+A reader rejects a staged path that is not an existing file at construction; this is
+not a granule of any source, so a test that reads it fails.
+"""
 
 ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 """The single hourly step the default ERA5 fixtures carry; query them at this time."""
@@ -690,5 +709,576 @@ def make_aod_noaa20_fixture(
             if 0 <= aerosol_type_value < n_types:
                 hist[aerosol_type_value, :, :] = 10
             hist_var[:] = hist
+
+    return out_path
+
+
+def make_viirs_cldprop_d3_fixture(
+    tmp_path: Path,
+    n_lat: int = 4,
+    n_lon: int = 8,
+    lat_min: float = 0.5,
+    lat_max: float = 3.5,
+    lon_min: float = 10.5,
+    lon_max: float = 17.5,
+    cf_fill: float = 0.6,
+    cot_fill: float = 4.0,
+    ctp_fill: float = 700.0,
+    mean_fill_value: float | None = -9999.0,
+) -> Path:
+    """Write a synthetic CLDPROP_D3 VIIRS cloud properties NetCDF4 file.
+
+    Replicates the group structure of the real CLDPROP_D3 product:
+    - Root-level ``latitude`` (n_lat,) and ``longitude`` (n_lon,) coordinate arrays
+    - Three groups with a ``Mean`` variable each: ``Cloud_Fraction``,
+      ``Cloud_Optical_Thickness_Combined``, ``Cloud_Top_Pressure``
+    - **Variable dimension order is (longitude, latitude)** — transposed from
+      the conventional (lat, lon) order — to match the real product format and
+      exercise the transpose logic in ``VIIRSCldpropD3Reader``.
+    - Each ``Mean`` declares ``_FillValue = -9999.0``, as the distributed files do; the
+      constant data values contain no fill.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    n_lat, n_lon : int
+        Grid dimensions. Default 4 × 8.
+    lat_min, lat_max : float
+        Latitude range for coordinate array (ascending). Default 0.5 → 3.5°.
+    lon_min, lon_max : float
+        Longitude range for coordinate array. Default 10.5 → 17.5°.
+    cf_fill : float
+        Constant fill value for cloud fraction. Default 0.6.
+    cot_fill : float
+        Constant fill value for cloud optical thickness. Default 4.0.
+    ctp_fill : float
+        Constant fill value for cloud top pressure. Default 700.0 hPa.
+    mean_fill_value : float or None
+        ``_FillValue`` declared on each ``Mean``. ``None`` writes none, to test a file
+        without one.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    out_path = tmp_path / "cldprop_d3_fixture.nc"
+    lats = np.linspace(lat_min, lat_max, n_lat)  # ascending
+    lons = np.linspace(lon_min, lon_max, n_lon)
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        # Root-level dimensions and coordinate variables.
+        ds.createDimension("latitude", n_lat)
+        ds.createDimension("longitude", n_lon)
+
+        lat_var = ds.createVariable("latitude", "f4", ("latitude",))
+        lat_var[:] = lats.astype(np.float32)
+        lat_var.units = "degrees_north"
+
+        lon_var = ds.createVariable("longitude", "f4", ("longitude",))
+        lon_var[:] = lons.astype(np.float32)
+        lon_var.units = "degrees_east"
+
+        # Data variables in groups with (longitude, latitude) dimension order.
+        group_specs = [
+            ("Cloud_Fraction", cf_fill),
+            ("Cloud_Optical_Thickness_Combined", cot_fill),
+            ("Cloud_Top_Pressure", ctp_fill),
+        ]
+        for grp_name, fill in group_specs:
+            grp = ds.createGroup(grp_name)
+            if mean_fill_value is None:
+                mean_var = grp.createVariable("Mean", "f4", ("longitude", "latitude"), fill_value=False)
+            else:
+                mean_var = grp.createVariable("Mean", "f4", ("longitude", "latitude"), fill_value=mean_fill_value)
+            # Fill with the constant value; shape is (n_lon, n_lat) in file.
+            mean_var[:] = np.full((n_lon, n_lat), fill, dtype=np.float32)
+
+    return out_path
+
+
+SWATH_FIXTURE_TIME = np.datetime64("2026-01-01T12:00:00", "ns")
+"""The observation time the default FLASHFlux and CLDPIX fixtures carry; query them at this time."""
+_SWATH_TIME_UNITS = "seconds since 2026-01-01 00:00:00"
+
+
+def _seconds_since_fixture_epoch(times: np.ndarray) -> np.ndarray:
+    """Encode ``datetime64`` times in the CF units the swath fixtures write."""
+    epoch = np.datetime64("2026-01-01T00:00:00", "ns")
+    return ((np.asarray(times).astype("datetime64[ns]") - epoch) / np.timedelta64(1, "s")).astype(np.float64)
+
+
+def make_flashflux_fixture(
+    tmp_path: Path,
+    lats: np.ndarray | None = None,
+    lons_0360: np.ndarray | None = None,
+    times: np.ndarray | None = None,
+    aerosol_optical_depth: np.ndarray | None = None,
+    clear_coverage: np.ndarray | None = None,
+    cloud_optical_depth_lower: np.ndarray | None = None,
+    cloud_water_particle_radius_lower: np.ndarray | None = None,
+    cloud_ice_particle_radius_lower: np.ndarray | None = None,
+    cloud_classification: np.ndarray | None = None,
+    shortwave_adm_type: np.ndarray | None = None,
+    longwave_adm_type: np.ndarray | None = None,
+    latitude_units: str | None = "degrees_north",
+    longitude_valid_range: tuple[float, float] = (0.0, 360.0),
+    omit_fill_value: tuple[str, ...] = (),
+    omit_valid_range: tuple[str, ...] = (),
+    omit_variables: tuple[tuple[str, str], ...] = (),
+    layer_dim_name: str = "LowerUpper",
+) -> Path:
+    """Write a synthetic CERES FLASHFlux (footprint/swath) NetCDF4 file.
+
+    Replicates the grouped, per-footprint structure of the real FLASHFlux product (the CERES SSF file layout):
+    - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
+      ``AeroTypePct`` (7) secondary axis the reader flattens, with
+      ``product_version = "alpha4"``
+    - ``Time_and_Position/instrument_fov_latitude`` and ``..._longitude``
+      (**longitude stored in the 0..360 convention**, matching the real file), and
+      ``Time_and_Position/time``, the per-footprint observation time encoded with
+      CF units (``seconds since 2026-01-01``), and ``sample_number``, the position of
+      each footprint within its scan
+    - One variable per supported reader field across the corresponding groups,
+      with float fill ``3.4028235e38`` and int16 fill ``32767``. This includes the
+      FMATCH-IMAGER-only extended fields: the layered cloud fields (both layers,
+      upper offset from lower), ``Assimilated_Aerosol_Properties`` (``match_aot``,
+      ``aerosol_type_percentage``), the land/ocean 0.55 µm imager AODs,
+      ``Auxillary_Properties/surface_albedo`` (1-D, 0..1), and
+      ``Observed_TOA_Fluxes/toa_incoming_solar_radiation`` (1-D, W/m²).
+
+    All arrays default to a small deterministic set of footprints clustered near
+    lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
+    tests can verify longitude normalization and the box query. Pass explicit
+    arrays to override any field.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    lats : np.ndarray, optional
+        Per-footprint latitudes (−90..90).
+    lons_0360 : np.ndarray, optional
+        Per-footprint longitudes in the **0..360** convention.
+    times : np.ndarray, optional
+        Per-footprint observation times (``datetime64``). Default: every footprint at
+        :data:`SWATH_FIXTURE_TIME`.
+    aerosol_optical_depth, clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
+        Per-footprint continuous values. ``cloud_optical_depth_lower`` fills the
+        lower (index 0) layer of the 2-D ``cloud_optical_depth_mean`` variable.
+    cloud_water_particle_radius_lower : np.ndarray, optional
+        Per-footprint water cloud particle effective radius (μm) for the lower
+        layer (index 0) of ``cloud_water_particle_radius_37um_mean``.
+    cloud_ice_particle_radius_lower : np.ndarray, optional
+        Per-footprint ice cloud particle effective radius (μm) for the lower
+        layer (index 0) of ``cloud_ice_particle_radius_37um_mean``.
+    cloud_classification, shortwave_adm_type, longwave_adm_type : np.ndarray, optional
+        Per-footprint int16 categorical/encoded codes.
+    latitude_units : str or None, optional
+        ``units`` written on ``instrument_fov_latitude``; ``None`` writes none.
+        Default ``"degrees_north"``, as the real product declares.
+    longitude_valid_range : tuple of (float, float), optional
+        ``valid_range`` written on ``instrument_fov_longitude``. Default ``(0, 360)``,
+        as the real product declares.
+    omit_fill_value : tuple of str, optional
+        Names of 1-D variables written without a ``_FillValue`` attribute.
+    omit_valid_range : tuple of str, optional
+        Names of variables written without a ``valid_range`` attribute.
+    omit_variables : tuple of (str, str), optional
+        ``(group, variable)`` pairs left out of the file. A group whose every
+        variable is left out is not written.
+    layer_dim_name : str, optional
+        Name of the layered fields' second dimension. Default ``"LowerUpper"``, as
+        the alpha4 product names it.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    fill_f = np.float32(3.4028235e38)
+    fill_i = np.int16(32767)
+
+    # Default footprint set: five in the test cluster (lat 10–11, lon −10) plus
+    # one far-away footprint that must be excluded by any local bbox.
+    if lats is None:
+        lats = np.array([10.2, 10.4, 10.6, 10.8, 11.0, -50.0], dtype=np.float32)
+    if lons_0360 is None:
+        # −10° in the 0..360 convention is 350°; last point is far away (100°).
+        lons_0360 = np.array([350.0, 350.0, 350.0, 350.0, 350.0, 100.0], dtype=np.float32)
+    n = lats.size
+    if times is None:
+        times = np.full(n, SWATH_FIXTURE_TIME, dtype="datetime64[ns]")
+
+    if aerosol_optical_depth is None:
+        aerosol_optical_depth = np.array([0.10, 0.20, 0.30, 0.40, 0.50, 0.60], dtype=np.float32)[:n]
+    if clear_coverage is None:
+        clear_coverage = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np.float32)[:n]
+    if cloud_optical_depth_lower is None:
+        cloud_optical_depth_lower = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0], dtype=np.float32)[:n]
+    # Water and ice particle radii use distinct deterministic values so each
+    # variable can be asserted independently in tests.
+    if cloud_water_particle_radius_lower is None:
+        cloud_water_particle_radius_lower = np.array([5.0, 6.0, 7.0, 8.0, 9.0, 10.0], dtype=np.float32)[:n]
+    if cloud_ice_particle_radius_lower is None:
+        cloud_ice_particle_radius_lower = np.array([20.0, 25.0, 30.0, 35.0, 40.0, 45.0], dtype=np.float32)[:n]
+    if cloud_classification is None:
+        # Four of one code, one of another → modal code is 1001.
+        cloud_classification = np.array([1001, 1001, 1001, 1001, 1191, 2000], dtype=np.int16)[:n]
+    if shortwave_adm_type is None:
+        shortwave_adm_type = np.array([50, 50, 50, fill_i, fill_i, 60], dtype=np.int16)[:n]
+    if longwave_adm_type is None:
+        longwave_adm_type = np.array([50, 50, 50, 50, 50, 60], dtype=np.int16)[:n]
+
+    out_path = tmp_path / "flashflux_fixture.nc"
+
+    def _create(grp, name, dtype, dims, fill):
+        """Create ``grp/name``, making the group on first use; ``None`` when the caller omits it."""
+        if (grp, name) in omit_variables:
+            return None
+        group = ds.groups[grp] if grp in ds.groups else ds.createGroup(grp)
+        return group.createVariable(name, dtype, dims, fill_value=fill)
+
+    def _set_valid_range(var, valid_range, dtype):
+        if valid_range is not None and var.name not in omit_valid_range:
+            var.valid_range = np.array(valid_range, dtype=dtype)
+
+    def _add(grp, name, data, fill, valid_range=None):
+        fill = False if name in omit_fill_value else fill
+        var = _create(grp, name, data.dtype, ("Footprints",), fill)
+        if var is None:
+            return None
+        var[:] = data
+        _set_valid_range(var, valid_range, data.dtype)
+        return var
+
+    def _add_lower_upper(grp, name, lower_values, fill, valid_range=None, upper_values=None):
+        """Write a 2-D (Footprints, LowerUpper) variable with per-layer values.
+
+        Index 0 is the lower cloud layer (selected by ``_CLOUD_LAYER_LOWER_INDEX``),
+        index 1 the upper layer (``_CLOUD_LAYER_UPPER_INDEX``). ``upper_values``
+        defaults to fill, so callers that only care about the lower layer are
+        unaffected; the extended cloud fields pass distinct upper values so tests
+        can tell the two layers apart.
+        """
+        var = _create(grp, name, "f4", ("Footprints", layer_dim_name), fill)
+        if var is None:
+            return
+        data = np.full((n, 2), fill, dtype=np.float32)
+        data[:, 0] = lower_values.astype(np.float32)
+        if upper_values is not None:
+            data[:, 1] = upper_values.astype(np.float32)
+        var[:] = data
+        _set_valid_range(var, valid_range, np.float32)
+
+    def _add_2d(grp, name, values_2d, dim_name, fill, valid_range=None):
+        """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct)."""
+        var = _create(grp, name, "f4", ("Footprints", dim_name), fill)
+        if var is None:
+            return
+        var[:] = values_2d.astype(np.float32)
+        _set_valid_range(var, valid_range, np.float32)
+
+    # Deterministic per-footprint ramp used to fill the extended cloud/aerosol/albedo
+    # source fields with distinct, assertable values (upper layer offset from lower).
+    ramp = np.arange(n, dtype=np.float32)
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        ds.createDimension("Footprints", n)
+        ds.createDimension(layer_dim_name, 2)
+        ds.product_version = "alpha4"
+        # Secondary axis flattened by the reader into _typeN 1-D variables.
+        ds.createDimension("AeroTypePct", 7)
+
+        tp = "Time_and_Position"
+        lat_var = _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        if latitude_units is not None and lat_var is not None:
+            lat_var.units = latitude_units
+        _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, longitude_valid_range)
+        # The float64-maximum fill the real product declares; the valid range, in seconds since the
+        # fixture epoch, spans about 1972..2098.
+        time_fill = False if "time" in omit_fill_value else np.finfo(np.float64).max
+        time_var = _create(tp, "time", np.float64, ("Footprints",), time_fill)
+        if time_var is not None:
+            time_var[:] = _seconds_since_fixture_epoch(times)
+            time_var.units = _SWATH_TIME_UNITS
+            _set_valid_range(time_var, (-1.7e9, 2.3e9), np.float64)
+        # One scan: footprints numbered 1..n along it, as the real product numbers them.
+        _add(tp, "sample_number", (np.arange(n) % 660 + 1).astype(np.int16), fill_i, (1, 660))
+        times_ns = np.asarray(times).astype("datetime64[ns]")
+        ds.time_coverage_start = np.datetime_as_string(times_ns.min(), unit="us") + "Z"
+        ds.time_coverage_end = np.datetime_as_string(times_ns.max(), unit="us") + "Z"
+
+        aux = "Auxillary_Properties"
+        _add(aux, "aerosol_optical_depth", aerosol_optical_depth.astype(np.float32), fill_f, (0.0, 8.0))
+
+        clr = "Clear_Footprint_Area"
+        _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
+
+        cif = "Cloudy_Imager_Footprint_Layer"
+        # The three fields whose lower layer feeds the base reader specs. Upper-layer
+        # values (offset from lower) feed the FMATCH-IMAGER-only *_upper specs.
+        _add_lower_upper(
+            cif,
+            "cloud_optical_depth_mean",
+            cloud_optical_depth_lower,
+            fill_f,
+            (0.0, 512.0),
+            upper_values=cloud_optical_depth_lower + 1.0,
+        )
+        # Phase-separated effective particle radii. FLASHFlux does not provide a single
+        # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
+        _add_lower_upper(
+            cif,
+            "cloud_water_particle_radius_37um_mean",
+            cloud_water_particle_radius_lower,
+            fill_f,
+            (0.0, 40.0),
+            upper_values=cloud_water_particle_radius_lower + 1.0,
+        )
+        _add_lower_upper(
+            cif,
+            "cloud_ice_particle_radius_37um_mean",
+            cloud_ice_particle_radius_lower,
+            fill_f,
+            (0.0, 300.0),
+            upper_values=cloud_ice_particle_radius_lower + 2.0,
+        )
+        # Five genuinely-new layered fields carried by FMATCH-IMAGER (both layers).
+        _add_lower_upper(
+            cif, "layers_coverages", 10.0 + ramp * 5.0, fill_f, (0.0, 100.0), upper_values=15.0 + ramp * 5.0
+        )
+        _add_lower_upper(
+            cif, "cloud_coverage_multilayer", 5.0 + ramp * 3.0, fill_f, (0.0, 100.0), upper_values=8.0 + ramp * 3.0
+        )
+        _add_lower_upper(
+            cif, "cloud_top_pressure_mean", 300.0 + ramp * 10.0, fill_f, (0.0, 1100.0), upper_values=250.0 + ramp * 10.0
+        )
+        _add_lower_upper(
+            cif,
+            "cloud_base_pressure_mean",
+            800.0 + ramp * 10.0,
+            fill_f,
+            (0.0, 1100.0),
+            upper_values=700.0 + ramp * 10.0,
+        )
+        _add_lower_upper(
+            cif, "cloud_particle_phase_37um_mean", 1.0 + ramp * 0.05, fill_f, (1.0, 2.0), upper_values=1.5 + ramp * 0.05
+        )
+
+        scn = "Scene_Type"
+        _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
+        _add(scn, "shortwave_adm_type", shortwave_adm_type.astype(np.int16), fill_i, (0, 5000))
+        _add(scn, "longwave_adm_type", longwave_adm_type.astype(np.int16), fill_i, (0, 5000))
+
+        # FMATCH-IMAGER-only aerosol fields.
+        aap = "Assimilated_Aerosol_Properties"
+        _add(aap, "match_aot", (0.15 + ramp * 0.1).astype(np.float32), fill_f, (0.0, 8.0))
+        # (Footprints, AeroTypePct=7): type t gets (t+1)*5 + footprint index.
+        aerosol_pct = (np.arange(1, 8, dtype=np.float32)[None, :] * 5.0) + ramp[:, None]
+        _add_2d(aap, "aerosol_type_percentage", aerosol_pct, "AeroTypePct", fill_f, (0.0, 100.0))
+
+        ila = "Imager_Land_Aerosols"
+        _add(
+            ila,
+            "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
+            (0.2 + ramp * 0.1).astype(np.float32),
+            fill_f,
+            (0.0, 5.0),
+        )
+
+        ioa = "Imager_Ocean_Aerosols"
+        _add(
+            ioa,
+            "imager_deep_blue_ocean_055um_aerosol_optical_depth",
+            (0.25 + ramp * 0.1).astype(np.float32),
+            fill_f,
+            (0.0, 5.0),
+        )
+
+        # FMATCH-IMAGER-only surface albedo: a single 1-D (Footprints,) broadband value
+        # (0..1 fraction) in Auxillary_Properties, matching CER_SSF's surface_albedo.
+        _add(aux, "surface_albedo", (0.1 + ramp * 0.05).astype(np.float32), fill_f, (0.0, 1.0))
+
+        # FMATCH-IMAGER-only TOA incoming solar radiation: 1-D (Footprints,), W/m^2.
+        otf = "Observed_TOA_Fluxes"
+        _add(otf, "toa_incoming_solar_radiation", (1360.0 + ramp).astype(np.float32), fill_f, (0.0, 1400.0))
+
+    return out_path
+
+
+def make_cldpix_fixture(
+    tmp_path: Path,
+    lats: np.ndarray | None = None,
+    lons_0360: np.ndarray | None = None,
+    times: np.ndarray | None = None,
+    filename: str = "cer_cldpix_fixture.nc",
+    latitude_valid_range: tuple[float, float] | None = (0.0, 180.0),
+    longitude_valid_range: tuple[float, float] = (0.0, 360.0),
+    omit_fill_value: tuple[str, ...] = (),
+    omit_valid_range: tuple[str, ...] = (),
+    omit_flags: tuple[str, ...] = (),
+    time_dims: tuple[str, ...] = ("Scanlines", "Pixels"),
+    time_coverage_start: np.datetime64 | None = None,
+) -> Path:
+    """Write a synthetic CERES CLDPIX (imager-pixel swath) NetCDF4 file.
+
+    Replicates the flat, 2-D ``(Scanlines, Pixels)`` structure of the real
+    CLDPIX product:
+    - 2-D ``Latitude`` / ``Longitude`` arrays, written in the real product's
+      geolocation conventions: ``Latitude`` holds **colatitude** (0° = North
+      Pole → 180° = South Pole, ``valid_range`` ``[0, 180]``) and ``Longitude``
+      is in the **0..360 convention**. The ``lats`` argument below is given as
+      an ordinary −90..90 latitude and converted on write, so tests can express
+      their expectations in normal latitudes.
+    - ``Observation_Time``, per pixel, in fractional UTC hours of each time's own
+      day (every pixel of a scanline shares its time), dated by the
+      ``time_coverage_start`` global attribute as the real product is
+    - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
+      categorical variables (fill ``127``), each with the real file's
+      ``valid_range``; the categorical ones also carry its ``flag_values`` and
+      ``flag_meanings``
+    - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
+      ([1100, 10]) exactly as the real file does, so tests can verify the reader
+      disables netCDF4 auto-masking (which would otherwise mask every value).
+
+    Surface-type variables (``IGBP_Ecosystem``, ``Snow_Map_Value``,
+    ``Ice_Map_Value``) are present in real CLDPIX files but are NOT written
+    here — the reader does not extract them (see ``cldpix.py`` module docstring).
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    lats, lons_0360 : np.ndarray, optional
+        2-D ``(Scanlines, Pixels)`` geolocation arrays. ``lats`` is given as a
+        true −90..90 latitude (converted to colatitude on write); ``lons_0360``
+        is in the 0..360 convention. Defaults place all pixels near lat ≈ 40°,
+        lon ≈ −15° (written as colatitude 50° and longitude 345° in the file).
+    times : np.ndarray, optional
+        One observation time per scanline (``datetime64``). Default: every scanline
+        at :data:`SWATH_FIXTURE_TIME`.
+    filename : str, optional
+        Name of the file written under ``tmp_path``.
+    latitude_valid_range : tuple of (float, float) or None, optional
+        ``valid_range`` written on ``Latitude``; ``None`` writes none. Default
+        ``(0, 180)``, the colatitude range the real product declares.
+    longitude_valid_range : tuple of (float, float), optional
+        ``valid_range`` written on ``Longitude``. Default ``(0, 360)``, as the real
+        product declares.
+    omit_fill_value : tuple of str, optional
+        Names of variables written without a ``_FillValue`` attribute.
+    omit_valid_range : tuple of str, optional
+        Names of variables written without a ``valid_range`` attribute.
+    omit_flags : tuple of str, optional
+        Names of categorical variables written without ``flag_values`` /
+        ``flag_meanings`` attributes.
+    time_dims : tuple of str, optional
+        Dimensions of ``Observation_Time``. Default ``("Scanlines", "Pixels")``, one
+        time per pixel as the real product writes it; ``("Scanlines",)`` writes one
+        per scanline, and ``("Pixels",)`` writes a vector matching neither layout
+        the reader accepts.
+    time_coverage_start : np.datetime64, optional
+        The ``time_coverage_start`` global attribute. Default: the earliest of
+        ``times``.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    fill_f = np.float32(3.4028235e38)
+    fill_i8 = np.int8(127)
+
+    n_scan, n_pix = 3, 4
+    if lats is None:
+        lats = np.full((n_scan, n_pix), 40.0, dtype=np.float32)
+        # Spread pixels slightly so they fall in a couple of 0.05° cells.
+        lats += np.linspace(0.0, 0.10, n_scan * n_pix).reshape(n_scan, n_pix).astype(np.float32)
+    if lons_0360 is None:
+        # −15° in the 0..360 convention is 345°.
+        lons_0360 = np.full((n_scan, n_pix), 345.0, dtype=np.float32)
+    shape = lats.shape
+    if times is None:
+        times = np.full(shape[0], SWATH_FIXTURE_TIME, dtype="datetime64[ns]")
+
+    out_path = tmp_path / filename
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        ds.createDimension("Scanlines", shape[0])
+        ds.createDimension("Pixels", shape[1])
+        dims = ("Scanlines", "Pixels")
+        # Real CLDPIX: per-pixel fractional UTC hours of the day, dated by the global
+        # time_coverage_start attribute. Each time is written as hours of its own day,
+        # so a granule spanning midnight stores ~23.99 h and ~0.01 h as the real one does.
+        times = np.asarray(times).astype("datetime64[ns]")
+        hours = ((times - times.astype("datetime64[D]")) / np.timedelta64(1, "h")).astype(np.float32)
+        time_fill = False if "Observation_Time" in omit_fill_value else fill_f
+        time_var = ds.createVariable("Observation_Time", np.float32, time_dims, fill_value=time_fill)
+        if time_dims == ("Scanlines", "Pixels"):
+            time_var[:] = np.repeat(hours[:, None], shape[1], axis=1)
+        elif time_dims == ("Scanlines",):
+            time_var[:] = hours
+        else:
+            time_var[:] = np.full(shape[1], hours[0], dtype=np.float32)
+        time_var.units = "hours"
+        if "Observation_Time" not in omit_valid_range:
+            time_var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
+        start = times.min() if time_coverage_start is None else np.datetime64(time_coverage_start, "ns")
+        ds.time_coverage_start = np.datetime_as_string(start, unit="us") + "Z"
+        ds.time_coverage_end = np.datetime_as_string(times.max(), unit="us") + "Z"
+
+        def _add(name, data, fill, valid_range=None, flags=None):
+            fill = False if name in omit_fill_value else fill
+            var = ds.createVariable(name, data.dtype, dims, fill_value=fill)
+            var[:] = data
+            if valid_range is not None and name not in omit_valid_range:
+                var.valid_range = np.array(valid_range, dtype=data.dtype)
+            if flags is not None and name not in omit_flags:
+                var.flag_values = np.arange(valid_range[0], valid_range[0] + len(flags), dtype=data.dtype)
+                var.flag_meanings = " ".join(flags)
+
+        # Real CLDPIX files store colatitude under the name "Latitude", with a
+        # [0, 180] valid_range. Convert the caller's true latitudes so the
+        # fixture exercises the reader's colatitude → latitude conversion.
+        colatitudes = 90.0 - lats.astype(np.float32)
+        _add("Latitude", colatitudes.astype(np.float32), fill_f, latitude_valid_range)
+        _add("Longitude", lons_0360.astype(np.float32), fill_f, longitude_valid_range)
+
+        # Continuous cloud properties (constant values for easy assertions).
+        _add("Eff_Cld_Optical_Depth", np.full(shape, 4.0, np.float32), fill_f, (0.25, 150.0))
+        _add("Cld_Water_Path", np.full(shape, 100.0, np.float32), fill_f, (0.0, 10000.0))
+        _add("Eff_Cld_Temp", np.full(shape, 270.0, np.float32), fill_f, (190.0, 350.0))
+        _add("Eff_Cld_Height", np.full(shape, 5.0, np.float32), fill_f, (0.0, 18.0))
+        # Reversed valid_range exactly like the real file.
+        _add("Eff_Cld_Pressure", np.full(shape, 800.0, np.float32), fill_f, (1100.0, 10.0))
+        # One Top_Cld_Height pixel is set to the float32 fill sentinel (see
+        # test_top_cloud_height_fill_is_dropped).
+        top_height = np.full(shape, 6.0, np.float32)
+        top_height.flat[0] = fill_f
+        _add("Top_Cld_Height", top_height, fill_f, (0.0, 18.0))
+        # Effective cloud particle radius (μm) — blended water+ice value from
+        # the CERES retrieval algorithm. Constant 10.0 μm for easy assertions.
+        _add("Cld_Radius", np.full(shape, 10.0, np.float32), fill_f, (2.0, 78.0))
+
+        # Categorical (int8) fields, with the real file's flag_meanings; one pixel set
+        # to the 127 fill sentinel.
+        phase = np.full(shape, 1, dtype=np.int8)
+        phase.flat[-1] = fill_i8
+        _add(
+            "Cloud_Particle_Phase",
+            phase,
+            fill_i8,
+            (1, 5),
+            ("water_cloud", "ice_cloud", "no_cloud_retrieval", "clear", "bad_data"),
+        )
+        _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3), ("clear", "cloud", "TBD", "Bad_data"))
 
     return out_path

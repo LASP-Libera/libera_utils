@@ -86,6 +86,8 @@ _K3_FREQ: float = 5.83072
 #
 # TODO[LIBSDC-601]: 1.0 deg is a PLACEHOLDER: the IK notes the ground-measured
 # radiometer FOV is still pending. Update the IK and this constant together.
+#: Libera radiometer field-of-view half-angle in degrees, the angular radius from the
+#: boresight to the cone edge as the instrument kernel defines it.
 LIBERA_FOV_HALFANGLE_DEG: float = 1.0
 
 
