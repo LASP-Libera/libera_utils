@@ -9,9 +9,10 @@ import numpy as np
 import pytest
 import xarray as xr
 from cfchecker import cfchecks
-from cloudpathlib import AnyPath
+from cloudpathlib import AnyPath, S3Client
 from space_packet_parser import load_xtce
 from space_packet_parser.xarr import create_dataset
+from space_packet_parser.xtce.definitions import XtcePacketDefinition
 from space_packet_parser.xtce.validation import validate_xtce
 
 from libera_utils.config import config
@@ -558,12 +559,13 @@ def test_jpss_sc_pos_data_time_range_spans_both_sample_groups(pds_fixture, reque
         assert last >= dt64_to_utc_datetime(group_last)
 
 
-def _scripted_worker(connection, packet_file, packet_definition_path, apid, generator_kwargs):
+def _scripted_worker(connection, packet_file, packet_definition, apid, generator_kwargs):
     """Stand-in for ``packets._parse_file_in_subprocess`` whose result is chosen by file name.
 
     ``slow`` never reports, ``dead`` exits without reporting, ``bad`` fails, ``other`` parses to a
     different variable set, and anything else parses to two packets.
     """
+    packet_file = str(packet_file)
     if packet_file == "slow.bin":
         time.sleep(60)
     elif packet_file == "bad.bin":
@@ -573,6 +575,9 @@ def _scripted_worker(connection, packet_file, packet_definition_path, apid, gene
     elif packet_file != "dead.bin":
         connection.send((None, xr.Dataset({"DATA_FIELD": (("PACKET",), np.zeros(2))})))
     connection.close()
+
+
+_LOADED_DEFINITION = mock.MagicMock(spec=XtcePacketDefinition)
 
 
 class TestWorkerProcesses:
@@ -596,15 +601,49 @@ class TestWorkerProcesses:
             mock.patch.object(packets, "_parse_file_in_subprocess", _scripted_worker),
             pytest.raises(error, match=match),
         ):
-            packets.parse_packets_to_dataset(files, "fake.xml", 1040, max_workers=max_workers)
+            packets.parse_packets_to_dataset(files, _LOADED_DEFINITION, 1040, max_workers=max_workers)
         assert mp.active_children() == []
 
     def test_worker_error_carries_the_worker_traceback(self):
         # Workers fork, so the patch reaches the real worker entry point and its except block.
         with (
-            mock.patch.object(packets, "load_xtce", side_effect=ValueError("bad definition")),
-            pytest.raises(ValueError, match="bad definition") as excinfo,
+            mock.patch.object(packets, "_parse_one_file", side_effect=ValueError("bad file")),
+            pytest.raises(ValueError, match="bad file") as excinfo,
         ):
-            packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=2)
+            packets.parse_packets_to_dataset(["a.bin", "b.bin"], _LOADED_DEFINITION, 1040, max_workers=2)
         assert any("_parse_file_in_subprocess" in note for note in getattr(excinfo.value, "__notes__", []))
+        assert mp.active_children() == []
+
+    def test_workers_start_with_fork(self):
+        with (
+            mock.patch.object(packets, "_parse_file_in_subprocess", _scripted_worker),
+            mock.patch.object(packets.mp, "get_context", wraps=mp.get_context) as get_context,
+        ):
+            packets.parse_packets_to_dataset(["a.bin", "b.bin"], _LOADED_DEFINITION, 1040, max_workers=2)
+        get_context.assert_called_once_with("fork")
+
+    @pytest.mark.parametrize("uri_strings", [False, True], ids=["s3-path-with-client", "uri-string-default-client"])
+    def test_worker_reads_s3_with_the_path_client_on_new_connections(self, monkeypatch, uri_strings):
+        client = S3Client(endpoint_url="http://example.invalid:9000", no_sign_request=True)
+        parent_boto_client = client.client
+        uris = ["s3://bucket/a.bin", "s3://bucket/b.bin"]
+        if uri_strings:
+            monkeypatch.setattr(S3Client, "_default_client", client)
+            files = uris
+        else:
+            files = [client.CloudPath(uri) for uri in uris]
+
+        def report_client(path, packet_definition, apid, generator_kwargs):
+            boto_client = path.client.client
+            return xr.Dataset(
+                attrs={"endpoint": boto_client.meta.endpoint_url, "inherited": boto_client is parent_boto_client}
+            )
+
+        with mock.patch.object(packets, "_parse_one_file", report_client):
+            results = [
+                file_ds.attrs
+                for _, file_ds in packets._iter_parsed_files_concurrently(files, _LOADED_DEFINITION, 1040, 2, {})
+            ]
+        assert results == [{"endpoint": "http://example.invalid:9000", "inherited": False}] * 2
+        assert client.client is parent_boto_client
         assert mp.active_children() == []

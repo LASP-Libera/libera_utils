@@ -600,9 +600,9 @@ is copied onto a preallocated packet axis and released before the next one is pa
 would instead peak at about 2.9× its output, because it allocates the result while every input is
 still referenced. The packet axis keeps the order of the files given.
 
-- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`.
-  `parse_packets_to_l1a_dataset` passes the path: an in-process parse loads the XTCE once per
-  call, and with `max_workers` above 1 each worker loads it from the path.
+- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`. A path is loaded
+  once per call, and workers share the loaded definition. `parse_packets_to_l1a_dataset` passes
+  the path its APID's packet configuration names.
 - A file with no packets of the APID is skipped with a warning. `ValueError` is raised when no
   file has any, or when files parse to different sets of variables (concatenating them would
   fill the gaps with NaN).
@@ -612,7 +612,8 @@ still referenced. The packet axis keeps the order of the files given.
 `max_workers` (on both `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, default 1)
 parses files concurrently in worker processes, `max_workers` at a time. Parsing is single-threaded
 Python, so this is the only way to use more than one vCPU. Results are appended in the order given,
-so the packet axis is the same as for an in-process parse.
+so the packet axis is the same as for an in-process parse. A single file is always parsed in
+process. `max_workers` is removed once L1A runs one APID-day per task (`TODO[LIBSDC-910]`).
 
 - Peak memory is the accumulated axis plus one in-flight parse per worker, about 800 MiB for a
   two-hour NOM-HK file. Memory, not core count, limits a useful worker count.
@@ -621,10 +622,9 @@ so the packet axis is the same as for an in-process parse.
   not available on Windows, where `max_workers > 1` with more than one file raises `ValueError`. On macOS it is available but not the default, and some system frameworks are not
   fork-safe. A caller that already runs threads risks a worker inheriting a held lock; Python 3.12+
   warns with `DeprecationWarning`.
-- Workers load the XTCE from its path, so that they do not depend on the start method (a loaded
-  `XtcePacketDefinition` is not picklable, which `spawn` and `forkserver` would require). `parse_packets_to_dataset` raises `ValueError` for
-  `max_workers > 1` with a loaded definition and more than one file.
-  A single file is always parsed in process.
+- `fork` hands each worker its file path and the loaded definition without pickling them. A
+  worker reads an S3 path with the client the path carries, or with the default S3 client for a
+  URI string, over connections it opens itself rather than the parent's pooled ones.
 - An exception in a worker is re-raised in the caller, with the worker's traceback attached as a
   note. A worker that exits without reporting raises `RuntimeError` with its exit code; `-9` means
   the container ran out of memory.

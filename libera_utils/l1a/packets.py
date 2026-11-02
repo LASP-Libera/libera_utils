@@ -6,12 +6,13 @@ import traceback
 import warnings
 from collections.abc import Iterator
 from contextlib import closing
+from multiprocessing.connection import Connection
 from os import PathLike
 from typing import cast
 
 import numpy as np
 import xarray as xr
-from cloudpathlib import AnyPath
+from cloudpathlib import AnyPath, S3Path
 from space_packet_parser import load_xtce
 from space_packet_parser.xarr import create_dataset
 from space_packet_parser.xtce.definitions import XtcePacketDefinition
@@ -41,6 +42,7 @@ SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variab
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
+# TODO[LIBSDC-910]: remove the worker processes once L1A runs one APID-day per task.
 # Pinned rather than taken from the platform, whose default is spawn on macOS and changed from fork to
 # forkserver on Linux in Python 3.14. fork needs no ``if __name__ == "__main__":`` guard in the caller.
 _WORKER_START_METHOD = "fork"
@@ -141,6 +143,8 @@ class _PacketAxisAccumulator:
     def _reallocate(self, capacity: int, dtypes: dict[str, np.dtype]) -> None:
         # One variable at a time: the transient is a single column, not a second full copy.
         for name, buffer in self._buffers.items():
+            if len(buffer) == capacity and buffer.dtype == dtypes[name]:
+                continue
             grown = np.empty((capacity, *buffer.shape[1:]), dtype=dtypes[name])
             grown[: self._n] = buffer[: self._n]
             self._buffers[name] = grown
@@ -176,13 +180,11 @@ class _PacketAxisAccumulator:
         self._n += n
 
     def to_dataset(self) -> xr.Dataset:
-        """Build the concatenated Dataset.
+        """Build the concatenated Dataset from views onto the appended packets of each buffer.
 
-        Trims the buffers to the appended packets, one variable at a time, and returns arrays that
-        are views onto them.
+        Rows past the appended packets come from ``np.empty`` and are never written, so they cost
+        address space rather than resident memory; trimming them would copy every column.
         """
-        if self._n < self.capacity:
-            self._reallocate(self._n, {name: buffer.dtype for name, buffer in self._buffers.items()})
         return xr.Dataset({name: (self._dims[name], buffer[: self._n]) for name, buffer in self._buffers.items()})
 
 
@@ -219,24 +221,33 @@ def _parse_one_file(
     return file_ds
 
 
+# TODO[LIBSDC-910]: remove the worker processes once L1A runs one APID-day per task.
 def _parse_file_in_subprocess(
-    connection,
-    packet_file: str,
-    packet_definition_path: str,
+    connection: Connection,
+    packet_file: filenaming.PathType,
+    packet_definition: XtcePacketDefinition,
     apid: int,
     generator_kwargs: dict,
 ) -> None:
     """Worker entry point: parse one file and send the Dataset, or the exception, to the parent.
 
-    Takes the XTCE path rather than a loaded definition so that the entry point does not depend on
-    the start method: ``XtcePacketDefinition`` is not picklable, which ``spawn`` and ``forkserver``
-    would require. Loading it here costs ~0.2 s against a parse of tens of seconds.
+    Depends on the ``fork`` start method, which hands ``packet_file`` and ``packet_definition`` to
+    the worker without pickling them: ``XtcePacketDefinition`` is not picklable, and a pickled
+    ``CloudPath`` drops its client. An ``S3Path`` is read with the client it carries, over
+    connections this worker opens: the inherited boto3 client, with any idle connections the parent
+    pooled, is replaced in this process's copy of the ``S3Client`` by one built from the same
+    session, endpoint and botocore config, which ``S3Client`` keeps in the private ``_endpoint_url``
+    and ``_boto3_config``.
 
     Pickling drops an exception's traceback, so the worker's traceback is attached as a note.
     """
     try:
-        definition = load_xtce(packet_definition_path)
-        connection.send((None, _parse_one_file(packet_file, definition, apid, generator_kwargs)))
+        if isinstance(packet_file, S3Path):
+            client = packet_file.client
+            options = {"endpoint_url": client._endpoint_url, "config": client._boto3_config}
+            client.client = client.sess.client("s3", **options)
+            client.s3 = client.sess.resource("s3", **options)
+        connection.send((None, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs)))
     except Exception as exc:  # noqa: BLE001 - re-raised in the parent with this traceback as a note
         exc.add_note(traceback.format_exc())
         connection.send((exc, None))
@@ -244,14 +255,10 @@ def _parse_file_in_subprocess(
         connection.close()
 
 
-def _worker_context() -> mp.context.BaseContext:
-    """Return the multiprocessing context workers start from, using ``_WORKER_START_METHOD``."""
-    return mp.get_context(_WORKER_START_METHOD)
-
-
+# TODO[LIBSDC-910]: remove the worker processes once L1A runs one APID-day per task.
 def _iter_parsed_files_concurrently(
     packet_files: list[PathLike | str],
-    packet_definition_path: str,
+    packet_definition: XtcePacketDefinition,
     apid: int,
     max_workers: int,
     generator_kwargs: dict,
@@ -268,19 +275,25 @@ def _iter_parsed_files_concurrently(
     the accumulated axis plus ``max_workers`` in-flight parses, which is what bounds a useful worker
     count rather than the available cores.
 
+    A worker reads an S3 path with the client the path carries, or with the default S3 client for
+    a URI string, over its own connections.
+
     Closing the generator terminates and joins any worker still running in the current batch.
     """
-    context = _worker_context()
+    context = mp.get_context(_WORKER_START_METHOD)
     for start in range(0, len(packet_files), max_workers):
         workers = []
         # Closing the generator early, on a worker error or a consumer error, must not leave the
         # rest of the batch running or holding pipe handles.
         try:
             for packet_file in packet_files[start : start + max_workers]:
+                # Resolved here so that a URI string binds the parent's default client, and its cache
+                # directory, rather than a worker creating its own that the worker's exit never removes.
+                path = AnyPath(packet_file)
                 receive, send = context.Pipe(duplex=False)
                 process = context.Process(
                     target=_parse_file_in_subprocess,
-                    args=(send, str(packet_file), packet_definition_path, apid, generator_kwargs),
+                    args=(send, path, packet_definition, apid, generator_kwargs),
                 )
                 process.start()
                 send.close()  # the parent must drop its copy or the pipe never reports EOF
@@ -301,6 +314,8 @@ def _iter_parsed_files_concurrently(
                 if error is not None:
                     raise error
                 yield packet_file, file_ds
+                # Release this file before the next is received or forked, so the consumer's del frees it.
+                del file_ds
         finally:
             for _, process, receive in workers:
                 receive.close()
@@ -338,10 +353,7 @@ def parse_packets_to_dataset(
     packet_files : list[PathLike | str]
         List of filepaths to packet files.
     packet_definition : str | PathLike | space_packet_parser.xtce.definitions.XtcePacketDefinition
-        Path to the XTCE packet definition file, or an already loaded definition. Pass a loaded
-        definition to avoid re-parsing the XTCE once per file. ``max_workers`` above 1 with more
-        than one file requires a path, which each worker loads, so that workers do not depend on
-        the start method.
+        Path to the XTCE packet definition file, or an already loaded definition.
     apid : int
         Application Process Identifier to filter for.
     max_workers : int, optional
@@ -352,7 +364,8 @@ def parse_packets_to_dataset(
         count. Must be at least 1. Workers start with ``fork``, which Windows does not provide, so
         the caller needs no ``if __name__ == "__main__":`` guard; a caller that already runs
         threads risks a worker inheriting a held lock (Python 3.12+ warns with
-        ``DeprecationWarning``).
+        ``DeprecationWarning``). A worker reads an S3 path with the client the path carries, or with
+        the default S3 client for a URI string, over its own connections.
     **generator_kwargs
         Additional keyword arguments passed to the packet generator.
 
@@ -367,8 +380,8 @@ def parse_packets_to_dataset(
     ValueError
         If no file holds any packet of ``apid``, if a file yields an APID other than ``apid``,
         if the files do not all carry the same set of variables, if ``max_workers`` is below 1,
-        or if ``max_workers`` above 1 with more than one file is combined with an already-loaded
-        packet definition or with a platform that has no ``fork`` start method.
+        or if ``max_workers`` above 1 with more than one file is combined with a platform that has
+        no ``fork`` start method.
     RuntimeError
         If a worker process exits without reporting a result, such as when it is killed for
         running out of memory.
@@ -381,23 +394,20 @@ def parse_packets_to_dataset(
     n_workers = max(1, min(max_workers, len(packet_files)))
     logger.info("Parsing packets (APID %d) from %d file(s) with %d worker(s)", apid, len(packet_files), n_workers)
 
+    if n_workers > 1 and _WORKER_START_METHOD not in mp.get_all_start_methods():
+        raise ValueError(
+            f"max_workers above 1 needs the {_WORKER_START_METHOD!r} start method, which this platform "
+            f"does not provide; pass max_workers=1."
+        )
+    if not isinstance(packet_definition, XtcePacketDefinition):
+        packet_definition = load_xtce(packet_definition)
+
+    # TODO[LIBSDC-910]: remove the worker processes once L1A runs one APID-day per task.
     if n_workers > 1:
-        if _WORKER_START_METHOD not in mp.get_all_start_methods():
-            raise ValueError(
-                f"max_workers above 1 needs the {_WORKER_START_METHOD!r} start method, which this platform "
-                f"does not provide; pass max_workers=1."
-            )
-        if isinstance(packet_definition, XtcePacketDefinition):
-            raise ValueError(
-                "max_workers above 1 requires the XTCE path rather than a loaded definition, so that workers "
-                "do not depend on the start method; pass the path to the XTCE file."
-            )
         parsed_files = _iter_parsed_files_concurrently(
-            packet_files, str(packet_definition), apid, n_workers, generator_kwargs
+            packet_files, packet_definition, apid, n_workers, generator_kwargs
         )
     else:
-        if not isinstance(packet_definition, XtcePacketDefinition):
-            packet_definition = load_xtce(packet_definition)
         parsed_files = (
             (packet_file, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs))
             for packet_file in packet_files

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from cloudpathlib import S3Client
 from space_packet_parser.xtce.definitions import XtcePacketDefinition
 
 from libera_utils.constants import LiberaApid
@@ -1220,22 +1221,17 @@ class TestPacketAxisAccumulator:
         assert list(labels) == ["MOP", "SOP", "SINGLE"]
 
     def test_widening_that_fits_keeps_the_capacity(self):
-        # Widening a column that still fits reallocates at the same capacity rather than doubling it
-        # while files are still being added.
+        # Widening a column that still fits reallocates that column at the same capacity rather than
+        # doubling it while files are still being added, and leaves an unchanged column, such as the
+        # WFOV image payload, uncopied.
         narrow = self._dataset(["MOP", "SOP"], [1, 2])
         accumulator = libera_packets._PacketAxisAccumulator(narrow, apid=1040, capacity=4)
         accumulator.append("f", narrow)
+        number, label = accumulator._buffers["NUMBER"], accumulator._buffers["LABEL"]
         accumulator.append("g", self._dataset(["SINGLE"], [3]))
         assert accumulator.capacity == 4
-
-    def test_to_dataset_releases_unused_capacity(self):
-        parts = [self._dataset(["MOP", "SOP"], [1, 2]), self._dataset(["EOP"], [3])]
-        accumulator = libera_packets._PacketAxisAccumulator(parts[0], apid=1040, capacity=8)
-        for part in parts:
-            accumulator.append("f", part)
-        result = accumulator.to_dataset()
-        assert accumulator.capacity == 3
-        xr.testing.assert_identical(result, xr.concat(parts, dim="PACKET", data_vars="all", coords="minimal"))
+        assert accumulator._buffers["NUMBER"] is number
+        assert accumulator._buffers["LABEL"] is not label
 
     def test_rejects_a_file_with_a_different_variable_set(self):
         first = self._dataset(["MOP"], [1])
@@ -1248,19 +1244,6 @@ class TestPacketAxisAccumulator:
 class TestParallelParsing:
     """Worker-process parsing, which must agree with in-process parsing and surface failures."""
 
-    def test_rejects_a_loaded_definition(self):
-        # Workers take the XTCE path so they do not depend on the start method.
-        with pytest.raises(ValueError, match="requires the XTCE path"):
-            libera_packets.parse_packets_to_dataset(
-                ["a.bin", "b.bin"],
-                mock.MagicMock(spec=XtcePacketDefinition),
-                1040,
-                max_workers=2,
-            )
-
-    def test_workers_start_with_fork(self):
-        assert libera_packets._worker_context().get_start_method() == "fork"
-
     def test_rejects_workers_where_fork_is_unavailable(self):
         with (
             mock.patch.object(libera_packets.mp, "get_all_start_methods", return_value=["spawn"]),
@@ -1269,13 +1252,35 @@ class TestParallelParsing:
             libera_packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=2)
 
     def test_single_file_never_starts_a_worker(self):
-        # n_workers clamps to the file count, so a one-file parse stays in process and keeps
-        # accepting a loaded definition.
+        # n_workers clamps to the file count, so a one-file parse stays in process.
         with mock.patch.object(libera_packets, "_parse_one_file", return_value=_packet_dataset(1040, 0)) as parse_one:
             libera_packets.parse_packets_to_dataset(
                 ["only.bin"], mock.MagicMock(spec=XtcePacketDefinition), 1040, max_workers=4
             )
         assert parse_one.call_count == 1
+
+    def test_worker_reads_an_s3_path_with_its_configuration_on_new_connections(self):
+        # Called in process, so the reconnect is measured by coverage, which does not follow forked workers.
+        client = S3Client(endpoint_url="http://example.invalid:9000", addressing_style="path", no_sign_request=True)
+        boto_client, resource = client.client, client.s3
+        connection = mock.MagicMock()
+        parsed = _packet_dataset(1040, 0)
+        with mock.patch.object(libera_packets, "_parse_one_file", return_value=parsed) as parse_one:
+            libera_packets._parse_file_in_subprocess(
+                connection, client.CloudPath("s3://bucket/a.bin"), mock.MagicMock(spec=XtcePacketDefinition), 1040, {}
+            )
+        connection.send.assert_called_once_with((None, parsed))
+        assert parse_one.call_args.args[0].client is client
+        assert client.client is not boto_client
+        assert client.s3 is not resource
+        assert client.client._endpoint.http_session is not boto_client._endpoint.http_session
+        for new, old in (
+            (client.client.meta, boto_client.meta),
+            (client.s3.meta.client.meta, resource.meta.client.meta),
+        ):
+            assert new.endpoint_url == old.endpoint_url == "http://example.invalid:9000"
+            assert new.config.s3 == old.config.s3 == {"addressing_style": "path"}
+            assert new.config.signature_version == old.config.signature_version
 
     def test_rejects_max_workers_below_one(self):
         with pytest.raises(ValueError, match="max_workers must be at least 1"):
