@@ -15,11 +15,11 @@ CHANGELOG.md. Two checks:
 
 A release is cut by pushing a tag, and the package published carries pyproject.toml's version.
 A heading that disagrees mislabels the release notes, and a version below the newest tag
-predates a published release (rule R-012, with its reasoning in libera_llm_tooling at
+predates a published release (rule R-012, with its reasoning in LASP-Libera/libera_standards at
 standards/archive/libera_utils/R-012.md).
 
-Not checked: whether a change is minor or patch. That is the author's call, under R-012 in the
-instruction file.
+Not checked: whether a change is minor or patch. That is the author's call, under R-012 in
+LASP-Libera/libera_standards' review rules.
 
 Prints one ok or MISMATCH line per check, naming both values, and exits 1 on any MISMATCH.
 Exits 2 with one CANNOT RUN line saying why when the check cannot run: pyproject.toml is

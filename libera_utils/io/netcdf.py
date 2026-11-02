@@ -233,7 +233,7 @@ def _write_dataset(
 
     A cloud destination is written to a file in a temporary directory, uploaded, and the local
     file removed, so a product as large as local disk allows leaves no copy behind once uploaded.
-    The upload replaces any existing object at the key (`libera_utils/D-005`);
+    The upload replaces any existing object at the key (decision D-018 in LASP-Libera/libera_standards);
     `force_overwrite_to_cloud=True` is needed because the default compares the local clock
     against S3's and could refuse the replacement.
 
