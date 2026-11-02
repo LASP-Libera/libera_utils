@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.22.0] - 2026-11-02
+
 ### Added
 
 - Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which emits a `UserWarning` where packet time steps backward along the `PACKET` axis, with the count, the largest step and the first one's counters and times. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
@@ -1020,7 +1022,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...HEAD
+[5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0
 [5.21.0]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...5.21.0
 [5.20.0]: https://github.com/LASP-Libera/libera_utils/compare/5.19.0...5.20.0
 [5.19.0]: https://github.com/LASP-Libera/libera_utils/compare/5.18.0...5.19.0
