@@ -319,7 +319,8 @@ minutes for files to appear in their archive bucket.
 Each event describes at most `MAX_FILES_PER_INGEST_EVENT` (5) files, so that one Data Ingester invocation can archive
 them within its 10 minute limit. The exception is a construction record (`file_number` 0) and the PDS files that share
 its SCID, first APID, created time and numeric ID, which share one event whatever their count: the ingester archives a
-CR ahead of the PDS files that read it only within a single event.
+CR ahead of the PDS files that read it only within a single event. PDS files whose construction record is not in the
+batch are split at the same limit.
 
 Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
 

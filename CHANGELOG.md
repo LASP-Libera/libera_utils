@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping a construction record and the PDS files that share its SCID, first APID, created time and numeric ID in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
+- `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping a construction record and the PDS files that share its SCID, first APID, created time and numeric ID in one event; PDS files without their construction record are split at the same limit. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
 - **BREAKING:** `extract_data_time_range` and `scan_ground_ccsds_file` let an error for which `is_resource_exhaustion` is true, such as a full local disk while an S3 file downloads to the cache, propagate unchanged instead of raising `DataTimeUndeterminedError` or returning `None`.
 
 ## [5.20.0] - 2026-10-30

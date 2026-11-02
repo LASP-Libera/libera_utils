@@ -204,6 +204,27 @@ class TestManualIngestPut:
         # The CR/PDS events hold only L0 files, so the non-L0 product went out separately.
         assert len(chunks) == len(groups) + 1
 
+    def test_pds_files_without_their_cr_are_split_at_the_limit(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """PDS files sharing a key but not its construction record have no ordering dependency, so they take the
+        ordinary limit."""
+        limit = s3_utilities.MAX_FILES_PER_INGEST_EVENT
+        names = [f"P1590011SOMESCIENCEAAA990302314590{number:02d}.PDS" for number in range(1, 2 * limit + 2)]
+        paths = []
+        for name in names:
+            file_path = tmp_path / name
+            file_path.write_bytes(b"x")
+            paths.append(file_path)
+
+        session, captured = make_event_capturing_session()
+        s3_utilities.manual_ingest_data_products(paths, boto_session=session)
+
+        chunks = [json.loads(entry["Detail"])["files"] for entry in captured["entries"]]
+        assert len(chunks) == 3
+        assert all(len(chunk) <= limit for chunk in chunks)
+        assert sorted(file["name"] for chunk in chunks for file in chunk) == sorted(names)
+
     def test_invalid_filename_in_batch_raises_before_staging(
         self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
     ):

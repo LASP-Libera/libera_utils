@@ -50,6 +50,7 @@ VERIFY_POLL_INTERVAL_SECONDS = 10.0
 # record's files serially inside one 10 minute Lambda invocation, at a measured 38-47 s per ground CCSDS
 # capture, so a full day of two-hour captures in one event exceeds the timeout. Five leaves better than
 # half the budget as headroom for larger files.
+# TODO[LIBSDC-911]: remove once the Data Ingester fans L0 ingest out to one dataset per invocation.
 MAX_FILES_PER_INGEST_EVENT = 5
 
 ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
@@ -182,6 +183,7 @@ def manual_ingest_data_products(
     return libera_filenames
 
 
+# TODO[LIBSDC-911]: remove once the Data Ingester fans L0 ingest out to one dataset per invocation.
 def _chunk_files_for_ingest_events(
     files: list[dict],
     libera_filenames: list[ManualIngestFilename],
@@ -191,7 +193,8 @@ def _chunk_files_for_ingest_events(
     Chunks hold at most ``MAX_FILES_PER_INGEST_EVENT`` entries, except that a construction record
     (``file_number`` 0) and the PDS files that share its SCID, first APID, created time and numeric ID
     are kept in one chunk, CR first, regardless of count: the ingester archives a CR ahead of the PDS
-    files that read it only within a single event.
+    files that read it only within a single event. PDS files whose construction record is not among
+    ``files`` are split at ``MAX_FILES_PER_INGEST_EVENT`` like any other files.
 
     Parameters
     ----------
@@ -216,11 +219,16 @@ def _chunk_files_for_ingest_events(
         else:
             other_files.append(f)
 
-    chunks = [
-        other_files[i : i + MAX_FILES_PER_INGEST_EVENT] for i in range(0, len(other_files), MAX_FILES_PER_INGEST_EVENT)
-    ]
+    def split_at_limit(entries: list[dict]) -> list[list[dict]]:
+        return [entries[i : i + MAX_FILES_PER_INGEST_EVENT] for i in range(0, len(entries), MAX_FILES_PER_INGEST_EVENT)]
+
+    chunks = split_at_limit(other_files)
     for group in l0_groups.values():
-        chunks.append([f for _, f in sorted(group, key=itemgetter(0))])
+        ordered = [f for _, f in sorted(group, key=itemgetter(0))]
+        if any(file_number == 0 for file_number, _ in group):
+            chunks.append(ordered)
+        else:
+            chunks.extend(split_at_limit(ordered))
     return chunks
 
 
