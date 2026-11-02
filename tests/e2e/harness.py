@@ -30,7 +30,7 @@ from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.io.smart_open import is_s3, smart_copy_file
 from libera_utils.l1a.day_coverage import TimeAxisCoverage
-from libera_utils.l1a.day_window import day_bounds
+from libera_utils.l1a.day_window import DAY_BUFFER, day_bounds
 from libera_utils.l1a.ground_ccsds import apid_from_ground_ccsds_filename
 from libera_utils.l1a.l1a_packet_configs import CoverageMode, DayCoveragePolicy
 from libera_utils.l1a.packet_slicing import PACKET_DIM, data_time_axes, find_sample_dims, sample_to_packet_index
@@ -464,8 +464,8 @@ def in_window_data_times(dataset: xr.Dataset, day: date) -> dict[str, np.ndarray
 def assert_coverage_meets_policy(coverage: TimeAxisCoverage, policy: DayCoveragePolicy) -> None:
     """Assert that a daily product's measured time-axis coverage meets its APID's day-coverage policy.
 
-    Under ``FRACTION`` the day core must reach ``day_coverage_frac`` and each midnight buffer
-    ``buffer_coverage_frac``, the thresholds the L1A combine gate applies to L0 spans. Under
+    Under ``FRACTION`` the occupied fraction of the buffered day window ``[D - B, D + 1 + B]`` must
+    reach ``window_coverage_frac``, the threshold the L1A combine gate applies to L0 spans. Under
     ``PRESENCE`` the axis must hold at least one time.
 
     Parameters
@@ -484,19 +484,16 @@ def assert_coverage_meets_policy(coverage: TimeAxisCoverage, policy: DayCoverage
         if coverage.n_times == 0:
             raise AssertionError("The product holds no data time, but its day_coverage policy requires presence.")
         return
-    short = [
-        f"{region} {value:.4f} < {minimum}"
-        for region, value, minimum in (
-            ("day core", coverage.day_frac, policy.day_coverage_frac),
-            ("left buffer", coverage.left_frac, policy.buffer_coverage_frac),
-            ("right buffer", coverage.right_frac, policy.buffer_coverage_frac),
-        )
-        if value < minimum
-    ]
-    if short:
+    day = timedelta(days=1)
+    window_frac = (coverage.day_frac * day + (coverage.left_frac + coverage.right_frac) * DAY_BUFFER) / (
+        day + 2 * DAY_BUFFER
+    )
+    if window_frac < policy.window_coverage_frac:
         raise AssertionError(
-            f"Coverage falls short of the APID's day_coverage policy: {'; '.join(short)}. Check that the golden "
-            f"input holds every file whose data times reach the day window."
+            f"Coverage falls short of the APID's day_coverage policy: day window {window_frac:.4f} < "
+            f"{policy.window_coverage_frac} (day core {coverage.day_frac:.4f}, left buffer {coverage.left_frac:.4f}, "
+            f"right buffer {coverage.right_frac:.4f}). Check that the golden input holds every file whose data times "
+            f"reach the day window."
         )
 
 

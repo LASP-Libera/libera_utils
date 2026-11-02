@@ -14,7 +14,7 @@ from libera_utils.l1a.day_coverage import measure_time_axis_coverage
 from libera_utils.l1a.day_window import check_data_times, trim_l1a_to_day_window
 from libera_utils.l1a.ground_ccsds import GROUND_CCSDS_SKIP_HEADER_BYTES
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
-from libera_utils.l1a.packet_slicing import PACKET_DIM, data_time_axes, packet_time_coordinate
+from libera_utils.l1a.packet_slicing import PACKET_DIM, data_time_axes
 from libera_utils.l1a.packets import parse_packets_to_l1a_dataset
 from tests.e2e.harness import (
     GOLDEN_DAY,
@@ -67,7 +67,7 @@ def test_l1a_golden_day(apid: LiberaApid, golden_inputs, e2e_output_dir, e2e_tas
             axes = data_time_axes(day)
             assert len(axes) == 1, f"Expected one data-time axis to name the product by, found {axes}"
             time_variable = axes[0]
-            packet_time = packet_time_coordinate(day)
+            packet_time = get_packet_config(apid).packet_time_coordinate
             entry["data_time_axis"] = time_variable
             entry["data_time_coverage"] = measure_time_axis_coverage(day[time_variable].values, day=GOLDEN_DAY)
             if packet_time != time_variable:

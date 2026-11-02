@@ -358,7 +358,7 @@ def test_run_report_step_summary_lists_log_findings(tmp_path):
     assert "- INFO `libera_utils.l1a.packet_ordering`: Packet order" in text
 
 
-FRACTION_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=0.6)
+FRACTION_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, window_coverage_frac=0.9)
 PRESENCE_POLICY = DayCoveragePolicy(mode=CoverageMode.PRESENCE)
 
 
@@ -369,7 +369,7 @@ def _coverage(day_frac=1.0, left_frac=1.0, right_frac=1.0, n_times=100):
 @pytest.mark.parametrize(
     ("coverage", "policy"),
     [
-        (_coverage(day_frac=0.9, left_frac=0.6, right_frac=0.6), FRACTION_POLICY),
+        (_coverage(day_frac=0.9, left_frac=0.9, right_frac=0.9), FRACTION_POLICY),
         (_coverage(day_frac=0.0, left_frac=0.0, right_frac=0.0, n_times=1), PRESENCE_POLICY),
     ],
     ids=["fraction_at_thresholds", "presence"],
@@ -381,12 +381,11 @@ def test_coverage_meets_policy(coverage, policy):
 @pytest.mark.parametrize(
     ("coverage", "policy", "match"),
     [
-        (_coverage(day_frac=0.72), FRACTION_POLICY, r"day core 0\.7200 < 0\.9"),
-        (_coverage(right_frac=0.0), FRACTION_POLICY, r"right buffer 0\.0000 < 0\.6"),
-        (_coverage(left_frac=0.5, right_frac=0.5), FRACTION_POLICY, "left buffer .*; right buffer"),
+        (_coverage(day_frac=0.72), FRACTION_POLICY, r"day window 0\.7238 < 0\.9 \(day core 0\.7200"),
+        (_coverage(day_frac=0.9, left_frac=0.0, right_frac=0.0), FRACTION_POLICY, r"day window 0\.8877 < 0\.9"),
         (_coverage(n_times=0), PRESENCE_POLICY, "requires presence"),
     ],
-    ids=["short_day", "short_right_buffer", "both_buffers_named", "presence_empty"],
+    ids=["short_day", "empty_buffers", "presence_empty"],
 )
 def test_coverage_short_of_policy(coverage, policy, match):
     with pytest.raises(AssertionError, match=match):
