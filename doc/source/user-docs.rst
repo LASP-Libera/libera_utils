@@ -19,4 +19,5 @@ all of it.
     user-docs/logging
     user-docs/spice_kernels
     user-docs/l1a_processing
+    user-docs/packet_ordering
     user-docs/obsid_registry
