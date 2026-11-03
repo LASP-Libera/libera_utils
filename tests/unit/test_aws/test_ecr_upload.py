@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock
 
+import boto3
 import docker
 import pytest
 from moto import mock_aws
@@ -14,6 +15,7 @@ from moto import mock_aws
 import libera_utils.aws.ecr_upload as ecr_upload
 from libera_utils.aws.ecr_upload import (
     DockerConfigManager,
+    ImageTagAlreadyExistsError,
     _get_fresh_ecr_auth,
     _process_push_logs,
     _push_single_tag,
@@ -22,6 +24,15 @@ from libera_utils.aws.ecr_upload import (
     push_image_to_ecr,
 )
 from libera_utils.constants import ProcessingStepIdentifier
+
+# Both wordings of Amazon ECR's refusal of a tag that already exists in an immutable repository.
+ECR_TAG_EXISTS_ERRORS = [
+    "tag invalid: The image tag '1.2.3' already exists in the 'l1b-rad-docker-repo' repository and cannot be "
+    "overwritten because the repository is immutable.",
+    "tag invalid: The image tag '1.2.3' already exists in the 'l1b-rad-docker-repo' repository and cannot be "
+    "overwritten because the tag is immutable.",
+]
+ECR_REPOSITORY = "123456789012.dkr.ecr.us-west-2.amazonaws.com/l1b-rad-docker-repo"
 
 
 def test_docker_config_manager():
@@ -318,6 +329,45 @@ def test_ecr_upload_cli_handler(
     )
 
 
+@mock_aws
+@mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
+@mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
+@mock.patch("docker.from_env")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_existing_version_tag(
+    mock_resolve_session, mock_docker_from_env, mock_get_auth, mock_put_event
+):
+    """Pushing a version tag ECR already holds fails naming the repository and tag, and registers nothing."""
+    mock_resolve_session.return_value = boto3.Session(region_name="us-west-2")
+    mock_get_auth.return_value = {"username": "AWS", "password": "test-password"}
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.get.return_value = MagicMock()
+    mock_docker_client.api.push.return_value = [{"errorDetail": {"message": ECR_TAG_EXISTS_ERRORS[1]}}]
+    mock_docker_from_env.return_value = mock_docker_client
+
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name="test-image:1.2.3",
+        image_tag=None,
+        ecr_tags=["latest", "1.2.3"],
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    with pytest.raises(ImageTagAlreadyExistsError, match="Tag '1.2.3' is already in use in ECR repository") as excinfo:
+        ecr_upload.ecr_upload_cli_handler(args)
+
+    assert ECR_REPOSITORY in str(excinfo.value)
+    # Only the refused version tag was attempted: "latest" was not moved and nothing was retried.
+    mock_docker_client.api.push.assert_called_once()
+    assert mock_docker_client.api.push.call_args.args[0] == f"{ECR_REPOSITORY}:1.2.3"
+    mock_put_event.assert_not_called()
+
+
 @mock.patch("libera_utils.aws.ecr_upload.logger")
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
 @mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
@@ -510,6 +560,26 @@ class TestPushSingleTag:
         assert mock_docker_client.api.push.call_count == 2
         assert mock_get_auth.call_count == 2  # Fresh auth for each attempt
 
+    @mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
+    def test_push_single_tag_does_not_retry_existing_tag(self, mock_get_auth):
+        """ECR's refusal of an existing immutable tag is raised on the first attempt, not retried."""
+        mock_get_auth.return_value = {"username": "AWS", "password": "test-password"}
+
+        mock_docker_client = MagicMock()
+        mock_docker_client.api.push.return_value = [{"error": ECR_TAG_EXISTS_ERRORS[0]}]
+
+        with pytest.raises(ImageTagAlreadyExistsError):
+            _push_single_tag(
+                docker_client=mock_docker_client,
+                local_image=MagicMock(),
+                full_ecr_tag=f"{ECR_REPOSITORY}:1.2.3",
+                region_name="us-west-2",
+                max_retries=2,
+            )
+
+        assert mock_docker_client.api.push.call_count == 1
+        assert mock_get_auth.call_count == 1
+
 
 class TestProcessPushLogs:
     """Test the _process_push_logs stream processor."""
@@ -557,15 +627,41 @@ class TestProcessPushLogs:
     def test_raises_on_error_detail_field(self):
         """An ``errorDetail`` field (without a top-level ``error``) also raises ValueError."""
         push_logs = [{"errorDetail": {"message": "denied: not authorized"}}]
-        with pytest.raises(ValueError, match="denied: not authorized"):
+        with pytest.raises(ValueError, match="denied: not authorized") as excinfo:
             _process_push_logs(iter(push_logs), "repo:latest")
+        assert not isinstance(excinfo.value, ImageTagAlreadyExistsError)
+
+    @pytest.mark.parametrize("ecr_error", ECR_TAG_EXISTS_ERRORS)
+    @pytest.mark.parametrize(
+        "make_event",
+        [lambda message: {"error": message}, lambda message: {"errorDetail": {"message": message}}],
+        ids=["error", "errorDetail"],
+    )
+    def test_raises_tag_already_exists(self, ecr_error, make_event):
+        """ECR's refusal of an existing immutable tag raises ImageTagAlreadyExistsError naming repository and tag."""
+        push_logs = [{"status": "Layer already exists", "progressDetail": {}, "id": "layer1"}, make_event(ecr_error)]
+
+        with pytest.raises(ImageTagAlreadyExistsError) as excinfo:
+            _process_push_logs(iter(push_logs), f"{ECR_REPOSITORY}:1.2.3")
+
+        message = str(excinfo.value)
+        assert f"Tag '1.2.3' is already in use in ECR repository '{ECR_REPOSITORY}'" in message
+        assert ecr_error in message
 
 
-@pytest.mark.parametrize("ecr_tags", [None, ["latest"], ["latest", "v1.0"]])
+@pytest.mark.parametrize(
+    ("ecr_tags", "expected_tags"),
+    [
+        (None, ["latest"]),
+        (["latest"], ["latest"]),
+        (["latest", "v1.0"], ["v1.0", "latest"]),
+        (["v1.1", "latest", "v1.0"], ["v1.1", "v1.0", "latest"]),
+    ],
+)
 @mock_aws
 @mock.patch("docker.from_env")
 @mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
-def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags):
+def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags, expected_tags):
     """Test the push_image_to_ecr function."""
     # Mock Docker client and image
     mock_docker_client = MagicMock()
@@ -588,19 +684,33 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags)
     mock_docker_from_env.assert_called_once()
     mock_docker_client.images.get.assert_called_once_with("test-image:latest")
 
-    # Verify push calls
-    expected_calls = 1 if ecr_tags is None else len(ecr_tags)
-    assert mock_push_single_tag.call_count == expected_calls
+    # Version tags are pushed in the order given, then "latest"
+    pushed_tags = [call.kwargs["full_ecr_tag"].rpartition(":")[2] for call in mock_push_single_tag.call_args_list]
+    assert pushed_tags == expected_tags
 
-    # Verify the tags being pushed
-    if ecr_tags is None:
-        expected_tags = ["latest"]
-    else:
-        expected_tags = ecr_tags
 
-    for i, expected_tag in enumerate(expected_tags):
-        call_args = mock_push_single_tag.call_args_list[i]
-        assert call_args[1]["full_ecr_tag"].endswith(f":{expected_tag}")
+@mock_aws
+@mock.patch("docker.from_env")
+@mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
+def test_push_image_to_ecr_refused_version_leaves_latest(mock_push_single_tag, mock_docker_from_env):
+    """A refused version tag stops the push before "latest" moves to the new image."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.get.return_value = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_push_single_tag.side_effect = ImageTagAlreadyExistsError("refused")
+
+    with pytest.raises(ImageTagAlreadyExistsError):
+        push_image_to_ecr(
+            "test-image",
+            "1.2.3",
+            ProcessingStepIdentifier.l1b_rad,
+            ecr_image_tags=["latest", "1.2.3"],
+            region_name="us-west-2",
+        )
+
+    mock_push_single_tag.assert_called_once()
+    assert mock_push_single_tag.call_args.kwargs["full_ecr_tag"].endswith(":1.2.3")
 
 
 @mock_aws

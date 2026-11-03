@@ -20,6 +20,10 @@ from libera_utils.logutil import configure_task_logging
 logger = logging.getLogger(__name__)
 
 
+class ImageTagAlreadyExistsError(ValueError):
+    """ECR refused a push because the tag already names an image in an immutable repository."""
+
+
 class DockerConfigManager:
     """Context manager object, suitable for use with docker-py DockerClient.login
 
@@ -58,6 +62,14 @@ class DockerConfigManager:
 _LAYER_PUSHED_STATUS = "Pushed"
 _LAYER_EXISTS_STATUS = "Layer already exists"
 
+# The one ECR tag that algorithm repositories leave mutable. It is a moving pointer, never a registered version.
+_LATEST_TAG = "latest"
+
+# Text shared by both wordings of Amazon ECR's TAG_INVALID registry error for a tag that already exists in an
+# immutable repository: "... cannot be overwritten because the repository is immutable." and, since 2025,
+# "... cannot be overwritten because the tag is immutable."
+_TAG_ALREADY_EXISTS_MARKER = "cannot be overwritten"
+
 
 def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
     """Consume a decoded Docker push stream, log a concise summary, and return the pushed image digest.
@@ -81,8 +93,10 @@ def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
 
     Raises
     ------
+    ImageTagAlreadyExistsError
+        If ECR refuses the push because the tag already exists in an immutable repository.
     ValueError
-        If the stream reports one or more errors (via the ``error`` or ``errorDetail`` fields).
+        If the stream reports any other error (via the ``error`` or ``errorDetail`` fields).
     """
     pushed_layers = 0
     existing_layers = 0
@@ -120,6 +134,15 @@ def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
             # Stream-level status lines without a progressDetail (e.g. the terminal "<tag>: digest: ...").
             logger.debug(f"Push status for {full_ecr_tag}: {status}")
 
+    for error_message in error_messages:
+        if _TAG_ALREADY_EXISTS_MARKER in error_message:
+            repository, _, tag = full_ecr_tag.rpartition(":")
+            raise ImageTagAlreadyExistsError(
+                f"Tag {tag!r} is already in use in ECR repository {repository!r}. Version tags other than "
+                f"{_LATEST_TAG!r} are immutable: an existing version tag can be pushed again only after the image it "
+                f"tags is deleted from the repository by hand. Push under a new version tag instead. "
+                f"ECR reported: {error_message}"
+            )
     if error_messages:
         raise ValueError(f"Push errors: {error_messages}")
 
@@ -162,6 +185,15 @@ def _push_single_tag(
     -------
     str or None
         The image digest (``sha256:...``) reported for the pushed image, or None if not available.
+
+    Raises
+    ------
+    ImageTagAlreadyExistsError
+        If ECR refuses the tag because it already exists in an immutable repository. This is not retried.
+    ValueError
+        If the push stream reports any other error on the last attempt.
+    docker.errors.APIError
+        If the Docker API fails on the last attempt.
     """
     for attempt in range(max_retries + 1):
         try:
@@ -180,6 +212,9 @@ def _push_single_tag(
             # Success - return the digest reported by the stream
             return _process_push_logs(push_logs, full_ecr_tag)
 
+        except ImageTagAlreadyExistsError:
+            # ECR refuses the same tag every time, so a retry would only re-upload the layers.
+            raise
         except (docker_errors.APIError, ValueError) as e:
             if attempt < max_retries:
                 logger.warning(f"Push attempt {attempt + 1} failed, retrying: {e}")
@@ -365,6 +400,14 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     Returns
     -------
     None
+
+    Raises
+    ------
+    ImageTagAlreadyExistsError
+        If ECR refuses a tag because it already exists in an immutable repository. No version is registered.
+    ValueError
+        If the local image reference is malformed, the role cannot be assumed, the local image is not found, or the
+        push fails for any other reason.
     """
     now = datetime.now(UTC)
     # The Docker push stream is very chatty; default the console to INFO and let -v opt into DEBUG detail.
@@ -416,7 +459,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
 
     # Uploading an image is always paired with registering its version(s): an unregistered image cannot be run by
     # version. "latest" is a moving pointer, not a concrete algorithm version, so it is never registered.
-    versions_to_register = [tag for tag in pushed_digests if tag != "latest"]
+    versions_to_register = [tag for tag in pushed_digests if tag != _LATEST_TAG]
     if not versions_to_register:
         logger.warning(
             "No concrete (non-'latest') ECR tag was pushed, so there is no algorithm version to register. "
@@ -469,20 +512,23 @@ def push_image_to_ecr(
         L0 processing step IDs are not supported as they have no associated ECR.
     ecr_image_tags : list[str] | None, optional
         Tags to apply to the pushed image in ECR (e.g., ["1.3.4", "latest"]).
-        If None (the default), defaults to ["latest"].
+        If None (the default), defaults to ["latest"]. Tags other than "latest" are pushed first, in the order given,
+        so a refused version tag leaves "latest" where it was.
     region_name : str, optional
         AWS region containing the target ECR registry. If None (the default), the region is taken from the
         session's AWS configuration (profile / AWS_REGION), so it is not hard-coded.
     ignore_docker_config : bool, optional
         If True, creates a temporary Docker config to prevent using stored credentials. Defaults to False.
     max_retries : int, optional
-        Maximum number of retry attempts for failed push operations. Defaults to 3.
+        Maximum number of retry attempts for failed push operations. Defaults to 1.
     boto_session : boto3.Session, optional
         Boto3 session used for ECR operations (already role-assumed if needed). If None, a default session is created
         (so callers that don't need role assumption, e.g. libera_cdk integration tests, can omit it).
 
     Raises
     ------
+    ImageTagAlreadyExistsError
+        If ECR refuses a tag because it already exists in an immutable repository. Tags not yet pushed are skipped.
     ValueError
         If processing_step_id cannot be mapped to an ECR repository name,
         or if push operations encounter errors after all retries
@@ -501,7 +547,10 @@ def push_image_to_ecr(
     image_name, image_tag = _split_local_image_reference(image_name, image_tag)
 
     if not ecr_image_tags:
-        ecr_image_tags = ["latest"]
+        ecr_image_tags = [_LATEST_TAG]
+    # Push version tags before "latest": ECR refuses a version tag that already exists, and "latest" must not move
+    # to an image whose version was refused.
+    ecr_image_tags = sorted(ecr_image_tags, key=lambda tag: tag == _LATEST_TAG)
 
     if isinstance(processing_step_id, str):
         processing_step_id = ProcessingStepIdentifier(processing_step_id)
