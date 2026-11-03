@@ -501,7 +501,8 @@ def parse_packets_to_l1a_dataset(
     ------
     ValueError
         If the decoded packets have no ``SRC_SEQ_CTR``; if packets adjacent in an input file with
-        consecutive ``SRC_SEQ_CTR`` would be placed a counter wrap apart; if ``ground_data`` is False and
+        consecutive ``SRC_SEQ_CTR`` would be placed a counter wrap apart, other than around a single packet
+        whose packet time is wrong, which is dropped with a ``UserWarning``; if ``ground_data`` is False and
         packets with the same ``SRC_SEQ_CTR`` differ; as ``_drop_duplicates`` raises for samples; or as
         ``parse_packets_to_dataset`` raises, including for ``max_workers`` below 1 or a platform without
         ``fork``.

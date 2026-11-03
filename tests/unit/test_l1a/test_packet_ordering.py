@@ -74,14 +74,13 @@ class TestOutOfOrderPositions:
     def test_backward_or_repeated_counter_within_the_gap_is_out_of_order(self, counters):
         assert out_of_order_positions(_packets(counters), "PACKET_ICIE_TIME").tolist() == [1]
 
-    def test_backward_counter_with_packet_time_back_within_the_gap_is_out_of_order(self):
-        ds = _packets([10, 11, 5, 6], offsets_s=[100, 101, 60, 61])
+    def test_backward_counter_with_packet_time_back_within_the_window_is_out_of_order(self):
+        ds = _packets([10, 11, 5, 6], offsets_s=[100, 101, 95, 96])
         assert out_of_order_positions(ds, "PACKET_ICIE_TIME").tolist() == [1]
 
-    def test_backward_counter_after_two_lost_once_a_minute_packets_is_out_of_order(self):
-        # A once-a-minute APID that loses two packets leaves 180 s between survivors, inside SEGMENT_GAP.
-        ds = _packets([10, 11, 5, 6], offsets_s=[0, 60, 240, 300])
-        assert out_of_order_positions(ds, "PACKET_ICIE_TIME").tolist() == [1]
+    def test_counter_restart_minutes_later_is_not_out_of_order(self):
+        ds = _packets([5000, 5001, 0, 1], offsets_s=[0, 60, 180, 240])
+        assert out_of_order_positions(ds, "PACKET_ICIE_TIME").tolist() == []
 
     @pytest.mark.parametrize("offsets_s", [[0, 1, 212, 213], [300, 301, 0, 1]], ids=["gap-forward", "gap-backward"])
     def test_counter_restart_across_a_gap_is_not_out_of_order(self, offsets_s):
@@ -111,6 +110,15 @@ class TestUnwrapSequenceCounter:
             pytest.param([10, 8010], [0, 59], [10, 8010], id="forward-step-inside-the-segment-gap"),
             pytest.param([12, 13, 10, 11], [120, 121, 0, 1], [10, 11, 12, 13], id="segments-placed-by-time"),
             pytest.param([0, 1, 5000, 5001], [300, 301, 0, 1], [5000, 5001, 0, 1], id="reset-across-a-segment-gap"),
+            pytest.param(
+                [5000, 5001, 5002, 0, 1, 2],
+                [0, 60, 120, 300, 360, 420],
+                [5000, 5001, 5002, 0, 1, 2],
+                id="restart-minutes-later-placed-by-time",
+            ),
+            pytest.param([10, 11, 13, 14], [200, 201, 81, 82], [13, 14, 10, 11], id="clock-back-at-a-lost-packet"),
+            pytest.param([10, 9010, 9011], [0, 100, 101], [10, 9010, 9011], id="loss-of-over-half-a-wrap"),
+            pytest.param([10, 11, 5, 6], [0, 1, 5, 6], [5, 6, 10, 11], id="backward-step-within-the-window"),
             pytest.param([100, 101, 102, 103], [0, 2, 1, 3], [100, 101, 102, 103], id="time-disagrees"),
             pytest.param([102, 100, 101], [5, 5, 5], [100, 101, 102], id="equal-times"),
             pytest.param(
@@ -131,6 +139,20 @@ class TestUnwrapSequenceCounter:
     )
     def test_orders_by_counter(self, counters, offsets_s, expected):
         assert _order(counters, offsets_s) == expected
+
+    def test_each_cut_is_logged_with_its_counters_and_times(self, caplog):
+        caplog.set_level("INFO", logger=_LOGGER)
+        _order([5000, 5001, 0, 1], [0, 1, 181, 182])
+        messages = [r.getMessage() for r in caplog.records if r.name == _LOGGER and r.levelname == "INFO"]
+        assert len(messages) == 1
+        assert "SRC_SEQ_CTR goes from 5001 at 2026-07-13T08:00:01" in messages[0]
+        assert "to 0 at 2026-07-13T08:03:01" in messages[0]
+        assert "180.0 s later, beyond REORDER_WINDOW (10 s)" in messages[0]
+
+    def test_no_segment_gap_logs_nothing(self, caplog):
+        caplog.set_level("INFO", logger=_LOGGER)
+        _order([10, 11, 12], [0, 180, 360])
+        assert not [r for r in caplog.records if r.name == _LOGGER]
 
     def test_segment_is_placed_by_time_even_where_its_counter_continues_another(self):
         assert _order([12, 13, 10, 11], [0, 1, 300, 301]) == [12, 13, 10, 11]
@@ -218,6 +240,11 @@ class TestSortBySequenceCounter:
         assert len(caught) == n_warnings
         assert result["DATA"].values.tolist() == [0, 1, 3]
 
+    def test_counter_running_on_across_a_two_minute_packet_clock_step_back_raises(self):
+        ds = self._with_data([10, 11, 12, 13], offsets_s=[200, 201, 81, 82])
+        with pytest.raises(ValueError, match="placed a counter wrap apart"):
+            sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
+
     def test_counter_running_on_across_a_packet_clock_jump_raises(self):
         # The clock steps back 300 s between counters 11 and 12, which sit next to each other in the file.
         ds = self._with_data([10, 11, 12, 13], offsets_s=[300, 301, 0, 1])
@@ -225,12 +252,29 @@ class TestSortBySequenceCounter:
             sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
         assert "1 pair(s)" in str(excinfo.value)
 
-    def test_packet_a_wrap_away_by_time_from_its_counter_neighbours_raises(self):
-        # The middle packet's clock reads 300 s late: its counter continues its neighbours in the file,
-        # but its time puts it past a gap of more than SEGMENT_GAP, into the next wrap.
-        ds = self._with_data([10, 11, 12], offsets_s=[0, 300, 1])
+    @pytest.mark.parametrize(
+        ("counters", "offsets_s", "kept"),
+        [
+            pytest.param([10, 11, 12], [0, 300, 1], [10, 12], id="clock-300-s-late"),
+            pytest.param([10, 11, 12, 13, 14], [0, 1, 3e8, 3, 4], [10, 11, 13, 14], id="corrupt-far-future-time"),
+        ],
+    )
+    def test_packet_a_wrap_away_by_time_from_both_counter_neighbors_is_dropped(
+        self, counters, offsets_s, kept, order_log
+    ):
+        ds = self._with_data(counters, offsets_s=offsets_s)
+        with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) whose packet time puts them") as caught:
+            result = sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
+        assert result["SRC_SEQ_CTR"].values.tolist() == kept
+        assert result["DATA"].values.tolist() == kept
+        dropped = sorted(set(counters) - set(kept))[0]
+        assert f"SRC_SEQ_CTR {dropped} at" in str(caught[0].message)
+        assert len(_warnings(order_log)) == 1
+
+    def test_two_neighboring_packets_a_wrap_away_raise(self):
+        # Two bad times side by side leave no packet a wrap from both neighbors, so none is dropped.
+        ds = self._with_data([10, 11, 12, 13], offsets_s=[0, 300, 301, 3])
         with pytest.raises(ValueError, match="placed a counter wrap apart") as excinfo:
             sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
         assert "2 pair(s)" in str(excinfo.value)
-        assert "first at input position 1: SRC_SEQ_CTR 10 -> 11" in str(excinfo.value)
         assert "Report the APID" in str(excinfo.value)

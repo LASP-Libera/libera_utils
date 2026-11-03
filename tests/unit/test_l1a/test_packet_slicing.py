@@ -340,7 +340,7 @@ class TestSelectPackets:
             select_packets(xr.Dataset(), slice(0, 1))
 
     def test_interleaved_packets_keep_their_own_samples(self):
-        """A packet whose samples interleave with its neighbour's still takes exactly its own."""
+        """A packet whose samples interleave with its neighbor's still takes exactly its own."""
         ds = _interleave_packet_pair(_sample_product(n_packets=6, samples_per_packet=4), 2, 4)
         out = select_packets(ds, np.array([2]))
 

@@ -11,11 +11,11 @@ each APID's ``PACKET`` axis in counter order and drop packets received twice, th
 :func:`~libera_utils.l1a.nom_hk_trim.find_obsid_runs` calls :func:`out_of_order_positions` and refuses a
 product whose axis is not in counter order.
 
-The order is found by taking packets in packet-time order and cutting them into segments wherever packet
-time jumps by more than :data:`SEGMENT_GAP`. Inside a segment each counter step is read modulo 16384, so a
-packet whose time is slightly out of order still lands by its counter. Segments are stacked in packet-time
-order, each starting at the smallest forward counter step from the one before it, so counters that continue
-across a gap read as no wrap and no lost packets.
+The order is found by taking packets in packet-time order and reading each counter step modulo 16384, so a
+packet whose time is slightly out of order still lands by its counter. Where the counter repeats or steps
+backward between packets more than :data:`REORDER_WINDOW` apart in packet time, the packets are cut into
+segments, and segments are stacked in packet-time order, each starting at the smallest forward counter step
+from the one before it. The user guide's packet ordering page describes the rule and its limits.
 """
 
 import logging
@@ -33,27 +33,21 @@ SEQUENCE_COUNTER_VAR = "SRC_SEQ_CTR"
 # CCSDS 133.0-B-2, Space Packet Protocol: the Packet Sequence Count is 14 bits and wraps to 0.
 SEQUENCE_COUNTER_MODULUS = 1 << 14
 
-#: Packets in packet-time order are cut into segments wherever packet time jumps by more than this,
-#: either way: across such a gap the counter may have wrapped unseen, or restarted. One bound serves every
-#: APID, so a change to it must keep both of these limits for all of them:
+#: The counter reorders packets only within this window of packet time. Taking packets in packet-time order,
+#: a counter step that repeats or goes backward between packets more than this apart cuts them into segments
+#: placed by packet time: the counter restarted, more than 8,191 packets were lost, or a packet clock is wrong,
+#: and the counter alone cannot tell these apart. A forward step is read as forward across a gap of any length.
 #:
-#: - Lower: the bound must exceed the packet period of the slowest APIDs, with room for lost packets, or
-#:   every packet of theirs starts a segment, their order is packet time alone, and the wrong-wrap check
-#:   never sees them. TEMP-HK (APID 1060), PEC-SW-STAT (1002) and PEV-SW-STAT (1000) report every 59-61 s;
-#:   210 s keeps them in one segment across two consecutive lost packets (about 184 s between survivors).
-#:   It must also exceed the largest backward packet-time step between neighbours in counter order: in the
-#:   second Day-in-the-Life ground test (DITL2), at most 1.99 s across the 33 WFOV SCI files and 3.7 ms
-#:   across NOM-HK.
-#: - Upper: within a segment a counter step is read modulo the counter, which is unambiguous only while
-#:   neighbours in packet time are fewer than half the modulus (8,192 packets) apart. So an APID's
-#:   sustained packet rate times this bound must stay below 8,192 packets: about 39 packets/s at 210 s.
-#:   WFOV SCI (APID 1040) is the fastest APID. On the DITL2 golden day, 2026-07-12, it peaked at 30.3
-#:   packets/s over any 210 s; other DITL2 WFOV captures reached ~85 packets/s. Both are ground-test rates.
-#:   A sustained flight rate above 39 packets/s needs a shorter bound, or a bound per APID.
+#: A change to the window must keep both of these limits:
 #:
-#: A counter restart that resumes within the bound falls in one segment and is placed by its counter,
-#: before the packets built ahead of it; a longer bound widens that window.
-SEGMENT_GAP = np.timedelta64(210, "s")
+#: - Lower: it must exceed the largest backward packet-time step between neighbors in counter order, or
+#:   those packets are placed by packet time instead of by counter. In the second Day-in-the-Life ground test
+#:   (DITL2) that step is at most 1.99 s across the 33 WFOV SCI files and 3.7 ms across NOM-HK.
+#: - Upper: a counter restart that resumes within the window is placed by its counter, ahead of the packets
+#:   built before it, so a longer window misorders more restarts. Losing 8,192 or more packets within the
+#:   window reads as a backward step and is placed by counter, so an APID must send fewer than 8,192 packets
+#:   in it: about 819 packets/s at 10 s, against ~85 packets/s for WFOV SCI (APID 1040) in DITL2.
+REORDER_WINDOW = np.timedelta64(10, "s")
 
 
 def _counters_and_times(packet_ds: xr.Dataset, packet_time_coordinate: str) -> tuple[np.ndarray, np.ndarray]:
@@ -76,19 +70,21 @@ def _counters_and_times(packet_ds: xr.Dataset, packet_time_coordinate: str) -> t
 
 
 def _signed_counter_steps(counters: np.ndarray) -> np.ndarray:
-    """Return each step between neighbouring counters, read modulo the counter as -8192 to 8191."""
+    """Return each step between neighboring counters, read modulo the counter as -8192 to 8191."""
     half = SEQUENCE_COUNTER_MODULUS // 2
     return (np.diff(counters) + half) % SEQUENCE_COUNTER_MODULUS - half
 
 
-def _unwrap_sequence_counter(counters: np.ndarray, times: np.ndarray) -> np.ndarray:
+def _unwrap_sequence_counter(counters: np.ndarray, times: np.ndarray, *, log_prefix: str = "") -> np.ndarray:
     """Return a sort key per packet: its ``SRC_SEQ_CTR`` with the counter's wraps counted.
 
-    Packets are taken in packet-time order and cut into segments wherever packet time jumps by more than
-    :data:`SEGMENT_GAP`. Within a segment, each packet's key is the key of the packet before it in time plus
-    the counter step between them, read modulo the counter as -8192 to 8191, so a packet whose time is
-    slightly out of order still lands by its counter. Segments are stacked in packet-time order, each starting
-    just above the previous one, at the next key whose counter value is its own lowest packet's counter.
+    Packets are taken in packet-time order and cut into segments wherever the counter repeats or steps
+    backward between packets more than :data:`REORDER_WINDOW` apart in packet time. Within a segment, each
+    packet's key is the key of the packet before it in time plus the counter step between them, read modulo
+    the counter as -8192 to 8191, so a packet whose time is slightly out of order still lands by its counter.
+    Segments are stacked in packet-time order, each starting just above the previous one, at the next key
+    whose counter value is its own lowest packet's counter. Each cut is logged at INFO with the counters and
+    packet times either side of it.
 
     Parameters
     ----------
@@ -96,6 +92,8 @@ def _unwrap_sequence_counter(counters: np.ndarray, times: np.ndarray) -> np.ndar
         ``SRC_SEQ_CTR`` values in axis order.
     times : np.ndarray
         Packet times in axis order, ``datetime64``.
+    log_prefix : str, optional
+        Text that starts each cut's log message, such as the APID. Default is no prefix.
 
     Returns
     -------
@@ -110,7 +108,17 @@ def _unwrap_sequence_counter(counters: np.ndarray, times: np.ndarray) -> np.ndar
     sorted_counters = counters[by_time]
 
     steps = _signed_counter_steps(sorted_counters)
-    gaps = np.flatnonzero(np.abs(np.diff(times[by_time])) > SEGMENT_GAP) + 1
+    sorted_times = times[by_time]
+    gaps = np.flatnonzero((steps <= 0) & (np.diff(sorted_times) > REORDER_WINDOW)) + 1
+    one_second = np.timedelta64(1, "s")
+    for cut in gaps:
+        apart_s = (sorted_times[cut] - sorted_times[cut - 1]) / one_second
+        logger.info(
+            f"{log_prefix}{SEQUENCE_COUNTER_VAR} goes from {sorted_counters[cut - 1]} at {sorted_times[cut - 1]} "
+            f"to {sorted_counters[cut]} at {sorted_times[cut]}, {apart_s:.1f} s later, beyond REORDER_WINDOW "
+            f"({REORDER_WINDOW / one_second:.0f} s). The counter restarted, more than 8,191 packets were lost, or a "
+            f"packet clock is wrong; the packets from {sorted_times[cut]} on are placed by packet time."
+        )
     steps[gaps - 1] = 0
     offsets = np.concatenate(([0], np.cumsum(steps)))
 
@@ -145,6 +153,10 @@ def sort_by_sequence_counter(
     ``packet_ds`` is consumed: each ``PACKET`` variable is removed from it as its reordered copy is made,
     so at most one variable is held twice. Use the returned dataset.
 
+    A packet whose packet time would place it a counter wrap away from both of its neighbors in the input,
+    whose counters continue its own, has a wrong packet time: it is dropped, with a ``UserWarning`` and a
+    logged warning.
+
     Parameters
     ----------
     packet_ds : xr.Dataset
@@ -167,18 +179,36 @@ def sort_by_sequence_counter(
     ------
     ValueError
         If ``packet_ds`` has no ``SRC_SEQ_CTR`` or no ``packet_time_coordinate`` variable, if packets
-        adjacent in the input with consecutive counters would be placed a counter wrap apart, or, with
-        ``ground_data`` False, if packets with the same counter differ.
+        adjacent in the input with consecutive counters would be placed a counter wrap apart other than
+        around one such dropped packet, or, with ``ground_data`` False, if packets with the same counter
+        differ.
     """
     counters, times = _counters_and_times(packet_ds, packet_time_coordinate)
-    keys = _unwrap_sequence_counter(counters, times)
+    apid = f"APID {int(packet_ds[PACKET_APID_VAR].values[0])}: " if PACKET_APID_VAR in packet_ds.variables else ""
+    keys = _unwrap_sequence_counter(counters, times, log_prefix=apid)
 
     # Packets next to each other in a file whose counters differ by one were built one after the other;
     # keys further apart mean packet time put one of them in another wrap.
     wrong_wraps = np.flatnonzero((_signed_counter_steps(counters) == 1) & (np.diff(keys) != 1))
+    # A packet a wrap away from both of its neighbors is the one whose packet time is wrong.
+    bad_times = np.intersect1d(wrong_wraps, wrong_wraps + 1)
+    if bad_times.size:
+        first = int(bad_times[0])
+        message = (
+            f"{apid}Dropped {bad_times.size} packet(s) whose packet time puts them a counter wrap away from both "
+            f"neighbors in the input, which continue their {SEQUENCE_COUNTER_VAR}; first at input position "
+            f"{first + 1}: {SEQUENCE_COUNTER_VAR} {counters[first]} at {times[first]}, between {times[first - 1]} "
+            f"and {times[first + 1]}. The packet's time field is wrong, so it cannot be placed."
+        )
+        warnings.warn(message)
+        logger.warning(message)
+        # TODO[LIBSDC-830]: carry the count of packets dropped for a bad packet time on the granule.
+        packet_ds = packet_ds.isel({PACKET_DIM: np.setdiff1d(np.arange(counters.size), bad_times)})
+        counters, times = _counters_and_times(packet_ds, packet_time_coordinate)
+        keys = _unwrap_sequence_counter(counters, times, log_prefix=apid)
+        wrong_wraps = np.flatnonzero((_signed_counter_steps(counters) == 1) & (np.diff(keys) != 1))
     if wrong_wraps.size:
         first = int(wrong_wraps[0])
-        apid = f"APID {int(packet_ds[PACKET_APID_VAR].values[0])}: " if PACKET_APID_VAR in packet_ds.variables else ""
         raise ValueError(
             f"{apid}{wrong_wraps.size} pair(s) of packets adjacent in the input with consecutive {SEQUENCE_COUNTER_VAR} "
             f"were placed a counter wrap apart, because their packet times differ by more than the counter can "
@@ -262,8 +292,8 @@ def sort_by_sequence_counter(
 def out_of_order_positions(packet_ds: xr.Dataset, packet_time_coordinate: str) -> np.ndarray:
     """Return the ``PACKET`` positions ``i`` where ``SRC_SEQ_CTR`` repeats or steps backward from ``i`` to ``i + 1``.
 
-    Only steps whose packet times are within :data:`SEGMENT_GAP` of each other count, since across a larger
-    gap the counter may have wrapped unseen or restarted. An axis in ``SRC_SEQ_CTR`` order, as
+    Only steps whose packet times are within :data:`REORDER_WINDOW` of each other count, since further
+    apart the counter may have restarted. An axis in ``SRC_SEQ_CTR`` order, as
     ``parse_packets_to_l1a_dataset`` writes it, has none.
 
     Parameters
@@ -284,8 +314,8 @@ def out_of_order_positions(packet_ds: xr.Dataset, packet_time_coordinate: str) -
         If ``packet_ds`` has no ``SRC_SEQ_CTR`` or no ``packet_time_coordinate`` variable.
     """
     counters, times = _counters_and_times(packet_ds, packet_time_coordinate)
-    within_gap = np.abs(np.diff(times)) <= SEGMENT_GAP
-    return np.flatnonzero(within_gap & (_signed_counter_steps(counters) <= 0))
+    within_window = np.abs(np.diff(times)) <= REORDER_WINDOW
+    return np.flatnonzero(within_window & (_signed_counter_steps(counters) <= 0))
 
 
 def check_packet_order(packet_ds: xr.Dataset, packet_time_coordinate: str) -> None:
@@ -314,7 +344,7 @@ def check_packet_order(packet_ds: xr.Dataset, packet_time_coordinate: str) -> No
     if not backward.size:
         return
     # TODO[LIBSDC-830]: report each backward step and the missing-packet count (counter steps above 1
-    #  between packets within SEGMENT_GAP), and carry both counts on the granule.
+    #  between neighbors on the PACKET axis), and carry both counts on the granule.
     first = int(backward[0])
     message = (
         f"{packet_time_coordinate} steps backward at {backward.size} position(s) along {SEQUENCE_COUNTER_VAR} "

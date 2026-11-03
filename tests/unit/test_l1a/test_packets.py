@@ -1147,15 +1147,17 @@ def test_parse_packets_to_l1a_dataset_repeated_counter_with_differing_contents(c
 
 
 @pytest.mark.parametrize("ground_data", [False, True])
-def test_parse_packets_to_l1a_dataset_packet_a_wrap_away_from_its_counter_neighbours_raises(
+def test_parse_packets_to_l1a_dataset_drops_a_packet_a_wrap_away_from_its_counter_neighbors(
     counter_disordered_parse, ground_data
 ):
-    """A packet whose clock puts it a counter wrap from its neighbours in the file raises, ground data or not."""
+    """A packet whose clock puts it a counter wrap from both neighbors in the file is dropped, with its samples."""
     packet_ds, _ = counter_disordered_parse
     packet_ds["SRC_SEQ_CTR"].values[:] = [100, 101, 102, 103]
     packet_ds["PKT_MS"].values[:] = [0, 300000, 1000, 2000]
-    with pytest.raises(ValueError, match="placed a counter wrap apart"):
-        _parse_counter_disordered(ground_data=ground_data)
+    with pytest.warns(UserWarning, match=r"Dropped 1 packet\(s\) whose packet time puts them a counter wrap away"):
+        result = _parse_counter_disordered(ground_data=ground_data)
+    assert result["SRC_SEQ_CTR"].values.tolist() == [100, 102, 103]
+    assert result.sizes["TEST_SAMPLE_ICIE_TIME"] == 3
 
 
 def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):
