@@ -4,7 +4,7 @@ attributes:
   # These are populated at write time by the runner / write_libera_data_product (they must be present but their
   # values vary per file).
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
 
 coordinates:
   # The product is defined on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: each classified subsection is identified by the
