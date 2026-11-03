@@ -14,5 +14,4 @@ the tools used for development and how to use them (e.g. git and Docker).
     developer-docs/documentation_generation
     developer-docs/git
     developer-docs/spice
-    developer-docs/footprint_matching_design_decisions
 
