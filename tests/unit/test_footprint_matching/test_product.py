@@ -177,11 +177,11 @@ class TestImagerContent:
         imager = definitions[OperationalMode.IMAGER]
         for name in extended:
             assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
-        for mode in (OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER_CAMTIME):
-            leaked = [name for name in extended if name in definitions[mode].variables]
-            assert leaked == [], f"{mode.value} must not declare IMAGER-only flashflux fields, found {leaked}"
-        # The base FLASHFlux fields, by contrast, still appear in FLASH and IMAGER-CAMTIME.
-        assert "flashflux_cloud_optical_depth_lower" in definitions[OperationalMode.IMAGER_FLASH].variables
+        camtime = definitions[OperationalMode.IMAGER_CAMTIME]
+        leaked = [name for name in extended if name in camtime.variables]
+        assert leaked == [], f"FMATCH-IMAGER-CAMTIME must not declare IMAGER-only flashflux fields, found {leaked}"
+        # The base FLASHFlux fields, by contrast, still appear in IMAGER-CAMTIME.
+        assert "flashflux_cloud_optical_depth_lower" in camtime.variables
 
 
 class TestFmatchDefinitions:

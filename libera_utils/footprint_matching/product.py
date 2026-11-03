@@ -4,7 +4,7 @@ This module is the seam between the footprint-matching *engine* (readers, PSF
 aggregation, geometry) and the Libera *data-product* machinery
 (``LiberaDataProductDefinition`` / ``write_libera_data_product``). It owns the
 FMATCH product definitions and the flow that turns matched footprints into a
-conformant NetCDF file, for all five operational modes.
+conformant NetCDF file, for all four operational modes.
 
 What the product carries
 ------------------------
@@ -201,7 +201,6 @@ _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
 FMATCH_DEFINITION_FILENAMES: dict[OperationalMode, str] = {
     OperationalMode.CAM: "fmatch_cam.yml",
     OperationalMode.CAM_CAMTIME: "fmatch_cam_camtime.yml",
-    OperationalMode.IMAGER_FLASH: "fmatch_imager_flash.yml",
     OperationalMode.IMAGER: "fmatch_imager.yml",
     OperationalMode.IMAGER_CAMTIME: "fmatch_imager_camtime.yml",
 }
@@ -1084,7 +1083,7 @@ def assemble_fmatch_dataset(
       and read from its CF-CAM-CAMTIME product.
       ``inputs`` is that sequence of :class:`PseudoFootprint` objects. See
       :func:`_assemble_camtime_dataset`.
-    * **Radiometer-timescale** (``CAM``, ``IMAGER_FLASH``, ``IMAGER``) - assembled
+    * **Radiometer-timescale** (``CAM``, ``IMAGER``) - assembled
       from the L1B pass-through arrays produced by
       :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
       ``inputs`` is that dict. See :func:`_assemble_radiometer_dataset`.
@@ -1580,8 +1579,7 @@ def _assemble_radiometer_dataset(
 ) -> Dataset:
     """Assemble a radiometer-timescale FMATCH Dataset from L1B pass-through inputs.
 
-    Serves the three radiometer-timescale modes (``CAM``, ``IMAGER_FLASH``,
-    ``IMAGER``). Their footprints are the L1B radiometer footprints themselves, so
+    Serves the two radiometer-timescale modes (``CAM`` and ``IMAGER``). Their footprints are the L1B radiometer footprints themselves, so
     the time coordinate and the geolocation/viewing-angle columns
     (:data:`_RADIOMETER_L1B_VARIABLES`) are carried through verbatim from L1B. The
     derived ``sunglint_angle`` is computed from those angles, and (when
