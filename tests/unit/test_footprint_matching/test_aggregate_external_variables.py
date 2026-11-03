@@ -18,16 +18,39 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from libera_utils.footprint_matching.geometry import MissingGeolocationError
 from libera_utils.footprint_matching.product import aggregate_external_variables, build_radiometer_footprints
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
-from tests.plugins.footprint_matching_fixtures import FakeFootprint
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    CameraFootprintQualityFlag,
+    OperationalMode,
+    PseudoFootprint,
+    RadiometerFootprint,
+)
+from tests.plugins.footprint_matching_fixtures import FakeMeanReader, fake_radiometer_footprint
 
 
-def _footprints() -> list[FakeFootprint]:
+def _footprints() -> list[RadiometerFootprint]:
     return [
-        FakeFootprint(BoundingBox(0.2, 0.8, 0.2, 0.8), 0.5, 0.5),
-        FakeFootprint(BoundingBox(0.2, 0.8, 0.3, 0.9), 0.5, 0.6),
+        fake_radiometer_footprint(BoundingBox(0.2, 0.8, 0.2, 0.8), 0.5, 0.5),
+        fake_radiometer_footprint(BoundingBox(0.2, 0.8, 0.3, 0.9), 0.5, 0.6),
     ]
+
+
+# Spacecraft distance from Earth's center for an ~835 km orbit, km.
+_SATELLITE_RADIUS_KM = 7213.0
+
+
+def _with_ephemeris(l1b: dict, sub_lat, sub_lon) -> dict:
+    """``l1b`` plus the time and L1B ephemeris build_radiometer_footprints requires."""
+    n = len(l1b["latitude"])
+    return {
+        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")] * n),
+        **l1b,
+        "subsatellite_latitude": np.broadcast_to(np.asarray(sub_lat, dtype=np.float64), (n,)).copy(),
+        "subsatellite_longitude": np.broadcast_to(np.asarray(sub_lon, dtype=np.float64), (n,)).copy(),
+        "satellite_radius_km": np.full(n, _SATELLITE_RADIUS_KM),
+    }
 
 
 class TestAggregateExternalVariables:
@@ -67,7 +90,7 @@ class TestAggregateExternalVariables:
     def test_missing_data_yields_nan_fill(self, fake_sources):
         # A footprint whose box is far from the readers' grid gets no samples -> no usable
         # data -> NaN for float and integer variables alike.
-        far = [FakeFootprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
+        far = [fake_radiometer_footprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
         result = aggregate_external_variables(OperationalMode.CAM, far, fake_sources)
         assert np.isnan(result["_fake_agg_mean_field_a"][0])
         # The integer categorical stays NaN; the product's -1 integer fill replaces it on write.
@@ -77,12 +100,29 @@ class TestAggregateExternalVariables:
         with pytest.raises(ValueError, match="either sources or source_file_paths"):
             aggregate_external_variables(OperationalMode.CAM, _footprints())
 
+    def test_subset_of_readers_raises(self, fake_sources):
+        subset = {key: reader for key, reader in fake_sources.items() if key == FakeMeanReader.READER_KEY}
+        with pytest.raises(KeyError, match="sources has no entry for active sources"):
+            aggregate_external_variables(OperationalMode.CAM, _footprints(), subset)
+
+    def test_reader_the_mode_does_not_use_raises(self, fake_sources, tmp_path):
+        extra_path = tmp_path / "extra.bin"
+        extra_path.touch()
+        extra = {**fake_sources, "_fake_extra": FakeMeanReader([extra_path])}
+        with pytest.raises(KeyError, match=r"keys \['_fake_extra'\] that mode 'FMATCH-CAM' does not use"):
+            aggregate_external_variables(OperationalMode.CAM, _footprints(), extra)
+
+    def test_sources_and_paths_together_raise(self, fake_sources, tmp_path):
+        paths = {key: [tmp_path / f"{key}.bin"] for key in fake_sources}
+        with pytest.raises(ValueError, match="not both"):
+            aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources, source_file_paths=paths)
+
     def test_runs_end_to_end_with_angular_psf_weigher(self, fake_sources):
         from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 
         # Footprints carrying the geometry the CERES-PSF weigher needs.
         footprints = [
-            FakeFootprint(
+            fake_radiometer_footprint(
                 BoundingBox(0.2, 0.8, 0.2, 0.8),
                 latitude=0.5,
                 longitude=0.5,
@@ -102,13 +142,26 @@ class TestAggregateExternalVariables:
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0])
         np.testing.assert_array_equal(result["_fake_agg_cat_surface"], [3])
 
-    def test_angular_psf_weigher_rejects_footprints_without_ephemeris(self, fake_sources):
-        from libera_utils.footprint_matching.weighting import AngularPSFWeigher
-
-        # A camera-style footprint carries no subsatellite point or satellite radius, so it has
-        # no viewing frame to weight by.
-        with pytest.raises(ValueError, match="ephemeris"):
-            aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources, weigher=AngularPSFWeigher())
+    def test_pseudo_footprints_raise(self, fake_sources):
+        # A camera pseudo-footprint carries no subsatellite point or satellite radius, so no
+        # weigher can size its PSF.
+        footprint = PseudoFootprint(
+            time=np.datetime64("2026-01-01T00:00:00", "ns"),
+            slice_x=slice(0, 4),
+            slice_y=slice(0, 4),
+            center_ix=2,
+            center_iy=2,
+            latitude=0.5,
+            longitude=0.5,
+            altitude=0.0,
+            solar_zenith_angle=30.0,
+            viewing_zenith_angle=0.0,
+            relative_azimuth_angle=90.0,
+            bbox=BoundingBox(0.2, 0.8, 0.2, 0.8),
+            q_flags=CameraFootprintQualityFlag(0),
+        )
+        with pytest.raises(ValueError, match="no L1B ephemeris"):
+            aggregate_external_variables(OperationalMode.CAM, [footprint], fake_sources)
 
 
 class TestBuildRadiometerFootprints:
@@ -167,6 +220,81 @@ class TestBuildRadiometerFootprints:
         with pytest.raises(ValueError, match="satellite_radius_km"):
             build_radiometer_footprints(inputs)
 
+    def test_each_footprint_gets_a_box_enclosing_its_boresight(self):
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0, -30.0], dtype=np.float32),
+                "longitude": np.array([11.0, 100.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
+            },
+            sub_lat=[1.5, -28.0],
+            sub_lon=[11.0, 100.0],
+        )
+        footprints = build_radiometer_footprints(l1b)
+
+        assert len(footprints) == 2
+        for footprint, lat, lon in zip(footprints, l1b["latitude"], l1b["longitude"], strict=True):
+            assert footprint.bbox.lat_min <= lat <= footprint.bbox.lat_max
+            assert footprint.bbox.lon_min <= lon <= footprint.bbox.lon_max
+            assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
+            # No Cone_Angle_Rate supplied -> unknown scan rate.
+            assert footprint.cone_angle_rate is None
+
+    def test_oblique_view_gives_a_larger_box(self):
+        boresight = {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        (nadir,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=0.0, sub_lon=0.0))
+        (oblique,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=8.0, sub_lon=0.0))
+        assert (oblique.bbox.lat_max - oblique.bbox.lat_min) > (nadir.bbox.lat_max - nadir.bbox.lat_min)
+
+    def test_ephemeris_and_scan_rate_are_carried_onto_the_footprint(self):
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0], dtype=np.float32),
+                "longitude": np.array([11.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
+                "cone_angle_rate": np.array([12.0], dtype=np.float64),
+            },
+            sub_lat=1.5,
+            sub_lon=11.0,
+        )
+        (footprint,) = build_radiometer_footprints(l1b)
+
+        assert footprint.bbox.lat_min <= 1.0 <= footprint.bbox.lat_max
+        assert footprint.subsatellite_latitude == 1.5
+        assert footprint.subsatellite_longitude == 11.0
+        assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
+        assert footprint.cone_angle_rate == 12.0
+
+    def test_oblique_ray_traced_box_is_not_centered_on_the_boresight(self):
+        """A ray-traced oblique footprint is skewed along the scan plane, not centered on the boresight."""
+        # Boresight at the equator, satellite offset to the north along the same meridian.
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([0.0], dtype=np.float32),
+                "longitude": np.array([0.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
+                "cone_angle_rate": np.array([np.nan], dtype=np.float64),
+            },
+            sub_lat=10.0,
+            sub_lon=0.0,
+        )
+        (ray_traced,) = build_radiometer_footprints(l1b)
+
+        assert ray_traced.bbox.lat_min <= 0.0 <= ray_traced.bbox.lat_max
+        assert abs(ray_traced.bbox.lat_max + ray_traced.bbox.lat_min) > 1e-2
+        # A fill cone-angle rate is normalized to None.
+        assert ray_traced.cone_angle_rate is None
+
+    def test_footprint_beyond_the_horizon_raises(self):
+        # 30 deg from the subsatellite point is past the horizon of an ~835 km orbit.
+        l1b = _with_ephemeris(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+            sub_lat=30.0,
+            sub_lon=0.0,
+        )
+        with pytest.raises(MissingGeolocationError):
+            build_radiometer_footprints(l1b)
+
     def test_missing_time_raises(self):
         inputs = self._l1b()
         del inputs["RADIOMETER_TIME"]
@@ -189,6 +317,6 @@ class TestAggregateReturnsCoverage:
         assert set(values) == set(aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources))
 
     def test_uncovered_footprint_reports_zero_coverage(self, fake_sources):
-        far = [FakeFootprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
+        far = [fake_radiometer_footprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5)]
         _values, coverage = aggregate_external_variables(OperationalMode.CAM, far, fake_sources, return_coverage=True)
         np.testing.assert_allclose(coverage, [0.0])

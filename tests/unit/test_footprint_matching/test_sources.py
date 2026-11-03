@@ -51,7 +51,7 @@ class TestBuildSourcesRejects:
     def test_missing_active_source_raises_keyerror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
         del paths["VIIRS_CLDPROP_D3"]
-        with pytest.raises(KeyError, match="No file path supplied for active source 'VIIRS_CLDPROP_D3'"):
+        with pytest.raises(KeyError, match=r"source_file_paths has no entry for active sources \['VIIRS_CLDPROP_D3'\]"):
             build_sources(MODE, paths)
 
     def test_unused_source_raises_keyerror(self, tmp_path):

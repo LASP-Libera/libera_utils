@@ -15,22 +15,22 @@ import pytest
 
 from libera_utils.footprint_matching import product
 from libera_utils.footprint_matching.product import aggregate_external_variables
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
-from tests.plugins.footprint_matching_fixtures import FakeFootprint
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, RadiometerFootprint
+from tests.plugins.footprint_matching_fixtures import fake_radiometer_footprint
 
 _FORK_AVAILABLE = "fork" in multiprocessing.get_all_start_methods()
 
 
-def _footprints(n: int) -> list[FakeFootprint]:
+def _footprints(n: int) -> list[RadiometerFootprint]:
     # Along-track footprints over the fake grid; every third one sits off the grid so the
     # NaN fill and zero coverage also have to line up across chunk boundaries.
     out = []
     for i in range(n):
         if i % 3 == 2:
-            out.append(FakeFootprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5))
+            out.append(fake_radiometer_footprint(BoundingBox(40.2, 40.8, 40.2, 40.8), 40.5, 40.5))
         else:
             lon = 0.3 + 0.001 * i
-            out.append(FakeFootprint(BoundingBox(0.2, 0.8, lon - 0.3, lon + 0.3), 0.5, lon))
+            out.append(fake_radiometer_footprint(BoundingBox(0.2, 0.8, lon - 0.3, lon + 0.3), 0.5, lon))
     return out
 
 
@@ -84,6 +84,12 @@ class TestWorkerCount:
         result = aggregate_external_variables(OperationalMode.CAM, _footprints(10), fake_sources, n_workers=4)
         assert called == []
         assert result["_fake_agg_mean_field_a"].shape == (10,)
+
+    @pytest.mark.parametrize("raw", ["four", "0"])
+    def test_bad_configured_count_names_the_key(self, fake_sources, monkeypatch, raw):
+        monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, raw)
+        with pytest.raises(ValueError, match="FMATCH_WORKERS must be a positive integer, got"):
+            aggregate_external_variables(OperationalMode.CAM, _footprints(3), fake_sources)
 
     def test_zero_workers_rejected(self, fake_sources):
         with pytest.raises(ValueError, match="n_workers must be at least 1"):

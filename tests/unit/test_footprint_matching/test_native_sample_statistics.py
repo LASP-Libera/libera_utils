@@ -26,7 +26,7 @@ from libera_utils.footprint_matching.types import (
     VariableSpec,
 )
 from libera_utils.footprint_matching.weighting import RadialWeigher
-from tests.plugins.footprint_matching_fixtures import FakeFootprint
+from tests.plugins.footprint_matching_fixtures import fake_radiometer_footprint
 
 _LAT0, _LON0 = 40.0, -100.0
 _RNG_SEED = 20261020
@@ -79,9 +79,12 @@ class _PixelReader(StaticReader):
 
 
 @pytest.fixture
-def pixel_run(tmp_path):
+def pixel_run(tmp_path, set_mode_readers):
     """Aggregate one footprint in the middle of the field and return (result, weigher, footprint)."""
-    footprint = FakeFootprint(BoundingBox(_LAT0 + 0.2, _LAT0 + 0.8, _LON0 + 0.2, _LON0 + 0.8), _LAT0 + 0.5, _LON0 + 0.5)
+    set_mode_readers(OperationalMode.CAM, (_PixelReader.READER_KEY,))
+    footprint = fake_radiometer_footprint(
+        BoundingBox(_LAT0 + 0.2, _LAT0 + 0.8, _LON0 + 0.2, _LON0 + 0.8), _LAT0 + 0.5, _LON0 + 0.5
+    )
     granule = tmp_path / "pixels.bin"
     granule.touch()
     sources = {_PixelReader.READER_KEY: _PixelReader([granule])}

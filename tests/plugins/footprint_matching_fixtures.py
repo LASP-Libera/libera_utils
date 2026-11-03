@@ -1,5 +1,5 @@
 """Factory functions for synthetic test fixtures used by footprint matching reader tests,
-and the fake readers, fake footprint and ``fake_sources`` fixture the product tests use.
+and the fake readers, fake radiometer footprints and ``fake_sources`` fixture the product tests use.
 
 These factories create minimal in-memory or on-disk representations of real
 ancillary data files so that unit tests can run without network access or
@@ -49,7 +49,7 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
     Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
 
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import numpy as np
@@ -57,10 +57,12 @@ import pytest
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader
+from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     GridSamples,
     OperationalMode,
+    RadiometerFootprint,
     TimeMatch,
     VariableSpec,
 )
@@ -1313,6 +1315,8 @@ FAKE_GRID_LONS = np.array([0.1, 0.3, 0.5, 0.7, 0.9], dtype=np.float64)
 
 # The footprint time the fake footprints carry; the fake readers are DAILY and ignore it.
 FAKE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
+# The satellite radius the fake footprints carry, km: an ~835 km orbit above the WGS84 equator.
+FAKE_SATELLITE_RADIUS_KM = 7213.0
 
 # Every product carries the fake variables, so the fakes serve whichever mode a test runs.
 _ALL_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
@@ -1379,26 +1383,59 @@ class FakeCatReader(StaticReader):
         return GridSamples(lat_axis=FAKE_GRID_LATS, lon_axis=FAKE_GRID_LONS, data=data)
 
 
-@dataclass
-class FakeFootprint:
-    """Minimal footprint exposing what the weigher and the readers need."""
+def fake_radiometer_footprint(
+    bbox: BoundingBox | None,
+    latitude: float,
+    longitude: float,
+    *,
+    subsatellite_latitude: float | None = None,
+    subsatellite_longitude: float | None = None,
+    satellite_radius_km: float = FAKE_SATELLITE_RADIUS_KM,
+    cone_angle_rate: float | None = None,
+    viewing_zenith_angle: float = 0.0,
+    off_limb: bool = False,
+    time: np.datetime64 = FAKE_TIME,
+) -> RadiometerFootprint:
+    """A radiometer footprint over the fake readers' grid, viewed from nadir unless the ephemeris says otherwise.
 
-    bbox: BoundingBox | None
-    latitude: float
-    longitude: float
-    # Optional geometry consumed by the angular-frame weigher (ignored by RadialWeigher).
-    subsatellite_latitude: float | None = None
-    subsatellite_longitude: float | None = None
-    satellite_radius_km: float | None = None
-    cone_angle_rate: float | None = None
-    viewing_zenith_angle: float | None = 0.0
-    off_limb: bool = False
-    time: np.datetime64 = field(default_factory=lambda: FAKE_TIME)
+    The subsatellite point defaults to the boresight, which matches the default zero viewing zenith angle.
+    """
+    return RadiometerFootprint(
+        bbox=bbox,
+        time=time,
+        latitude=latitude,
+        longitude=longitude,
+        viewing_zenith_angle=viewing_zenith_angle,
+        subsatellite_latitude=latitude if subsatellite_latitude is None else subsatellite_latitude,
+        subsatellite_longitude=longitude if subsatellite_longitude is None else subsatellite_longitude,
+        satellite_radius_km=satellite_radius_km,
+        cone_angle_rate=cone_angle_rate,
+        off_limb=off_limb,
+    )
 
 
 @pytest.fixture
-def fake_sources(tmp_path: Path) -> dict[str, AncillaryReader]:
-    """The two fake readers keyed by registry key, each over one staged (empty) granule."""
+def set_mode_readers(monkeypatch: pytest.MonkeyPatch) -> Callable[[OperationalMode, Iterable[str]], None]:
+    """Set the readers an operational mode uses for one test, so it can aggregate from fakes or a subset.
+
+    Aggregation takes exactly the mode's readers (``FMATCH_MODE_READERS``); a test whose
+    sources are fake readers, or one real reader, declares that set here.
+    """
+
+    def _set(mode: OperationalMode, keys: Iterable[str]) -> None:
+        monkeypatch.setitem(FMATCH_MODE_READERS, mode, frozenset(keys))
+
+    return _set
+
+
+@pytest.fixture
+def fake_sources(tmp_path: Path, set_mode_readers) -> dict[str, AncillaryReader]:
+    """The two fake readers keyed by registry key, each over one staged (empty) granule.
+
+    The CAM modes use exactly these two readers for the test.
+    """
+    for mode in (OperationalMode.CAM, OperationalMode.CAM_CAMTIME):
+        set_mode_readers(mode, (FakeMeanReader.READER_KEY, FakeCatReader.READER_KEY))
     mean_path, cat_path = tmp_path / "mean.bin", tmp_path / "cat.bin"
     mean_path.touch()
     cat_path.touch()

@@ -41,7 +41,7 @@ def _l1b_inputs(n: int = 3) -> dict[str, np.ndarray]:
 
 
 class TestStackedProductVariables:
-    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, tmp_path):
+    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, tmp_path, set_mode_readers):
         """FMATCH-IMAGER carries each ERA5 pressure-level field as one variable on ``PRESSURE_LEVEL``.
 
         The reader aggregates every (field, level) pair on its own, and the product definition declares one
@@ -52,6 +52,7 @@ class TestStackedProductVariables:
         constant, so the PSF-weighted mean is that constant. Asserts every stacked mean holds its layers' constants in
         level order, every stacked standard deviation is zero, and the ``PRESSURE_LEVEL`` coordinate holds the levels.
         """
+        set_mode_readers(OperationalMode.IMAGER, ("era5_pressure",))
         era5_path = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
         l1b = _l1b_inputs()
         l1b["RADIOMETER_TIME"] = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "s")
