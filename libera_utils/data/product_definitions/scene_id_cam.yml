@@ -5,7 +5,7 @@ attributes:
   # These are populated at write time by the runner / write_libera_data_product (they must be present but their
   # values vary per file).
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
 
 coordinates:
   # RADIOMETER_TIME is a SHARED coordinate across the Libera radiometer-timescale products, with one value per footprint.
