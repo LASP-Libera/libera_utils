@@ -102,7 +102,7 @@ def find_obsid_runs(
     ValueError
         If ``nom_hk`` has no ``PACKET`` dimension, or no ``PACKET_ICIE_TIME`` or ``SRC_SEQ_CTR``
         variable, or if ``SRC_SEQ_CTR`` repeats or steps backward between packets whose packet
-        times are within 60 s.
+        times are within ``packet_ordering.SEGMENT_GAP`` (210 s).
 
     Notes
     -----

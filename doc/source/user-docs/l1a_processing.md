@@ -660,12 +660,14 @@ The `PACKET` axis is in **`SRC_SEQ_CTR` order**, whatever the order of the input
 **not** sorted by packet time, which can step backward while `SRC_SEQ_CTR` advances. The counter is
 14 bits and wraps from 16383 to 0; packet time only tells which wrap a packet falls in:
 
-- Packets in packet-time order are cut into segments wherever packet time jumps by more than 60 s.
+- Packets in packet-time order are cut into segments wherever packet time jumps by more than 210 s
+  (`packet_ordering.SEGMENT_GAP`), so the APIDs that report once a minute stay in one segment across
+  two lost packets.
   Within a segment each counter step is read modulo 16384, so `16383 -> 0` is one step and
   `16380 -> 2` counts 5 missing packets. This holds while an APID sends fewer than 8,192 packets, half
-  the counter's range, in 60 s: a sustained rate below about 136 packets/s. WFOV SCI, the fastest APID,
-  reached ~85 packets/s in ground testing.
-- Across a jump over 60 s the counter may have wrapped unseen or restarted, so segments go in
+  the counter's range, in 210 s: a sustained rate below about 39 packets/s. WFOV SCI, the fastest APID,
+  peaked at 30.3 packets/s on the DITL2 golden day and reached ~85 packets/s in other ground captures.
+- Across a jump over 210 s the counter may have wrapped unseen or restarted, so segments go in
   packet-time order.
 - A packet received twice, such as in two overlapping files, has the same counter and is kept once,
   with a `UserWarning`. Packets that share a counter but differ raise `ValueError`, or keep the first
@@ -685,7 +687,7 @@ backward along the counter order it emits a `UserWarning` with the count, the la
 one's counters and times; the packets stay in counter order, and a backward step raises nothing. A dataset without
 `SRC_SEQ_CTR` or its packet time variable raises `ValueError`. `nom_hk_trim.find_obsid_runs` raises
 `ValueError` on a NOM-HK product whose packet counter repeats or steps backward between packets within
-60 s of each other, as that indicates a previous bad run of the L1A preprocessor.
+210 s of each other, as that indicates a previous bad run of the L1A preprocessor.
 
 **For consumers.** `{group}_packet_index` and `CAMERA_PACKET_INDEX` index the `PACKET` axis by
 position. `PACKET_IMAGE_ID` lies on `PACKET` but its values index `CAMERA_TIME`, with `-1` for a packet

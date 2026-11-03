@@ -34,16 +34,26 @@ SEQUENCE_COUNTER_VAR = "SRC_SEQ_CTR"
 SEQUENCE_COUNTER_MODULUS = 1 << 14
 
 #: Packets in packet-time order are cut into segments wherever packet time jumps by more than this,
-#: either way: across such a gap the counter may have wrapped unseen, or restarted. Within a segment a
-#: counter step is read modulo the counter, which is unambiguous only while neighbours in packet time are
-#: fewer than half the modulus (8,192 packets) apart. So an APID's sustained packet rate times this gap
-#: must stay below 8,192 packets: about 136 packets/s at 60 s. WFOV SCI (APID 1040) is the fastest APID;
-#: it reached ~85 packets/s in the WFOV captures of the second Day-in-the-Life ground test (DITL2), a
-#: ground-test rate, not a flight one. The gap must also exceed the largest backward
-#: packet-time step between neighbours in counter order, or those packets are split into segments ordered
-#: by packet time: in DITL2, again ground-test data, that step is at most 1.99 s across the 33 WFOV SCI
-#: files and 3.7 ms across NOM-HK.
-SEGMENT_GAP = np.timedelta64(60, "s")
+#: either way: across such a gap the counter may have wrapped unseen, or restarted. One bound serves every
+#: APID, so a change to it must keep both of these limits for all of them:
+#:
+#: - Lower: the bound must exceed the packet period of the slowest APIDs, with room for lost packets, or
+#:   every packet of theirs starts a segment, their order is packet time alone, and the wrong-wrap check
+#:   never sees them. TEMP-HK (APID 1060), PEC-SW-STAT (1002) and PEV-SW-STAT (1000) report every 59-61 s;
+#:   210 s keeps them in one segment across two consecutive lost packets (about 184 s between survivors).
+#:   It must also exceed the largest backward packet-time step between neighbours in counter order: in the
+#:   second Day-in-the-Life ground test (DITL2), at most 1.99 s across the 33 WFOV SCI files and 3.7 ms
+#:   across NOM-HK.
+#: - Upper: within a segment a counter step is read modulo the counter, which is unambiguous only while
+#:   neighbours in packet time are fewer than half the modulus (8,192 packets) apart. So an APID's
+#:   sustained packet rate times this bound must stay below 8,192 packets: about 39 packets/s at 210 s.
+#:   WFOV SCI (APID 1040) is the fastest APID. On the DITL2 golden day, 2026-07-12, it peaked at 30.3
+#:   packets/s over any 210 s; other DITL2 WFOV captures reached ~85 packets/s. Both are ground-test rates.
+#:   A sustained flight rate above 39 packets/s needs a shorter bound, or a bound per APID.
+#:
+#: A counter restart that resumes within the bound falls in one segment and is placed by its counter,
+#: before the packets built ahead of it; a longer bound widens that window.
+SEGMENT_GAP = np.timedelta64(210, "s")
 
 
 def _counters_and_times(packet_ds: xr.Dataset, packet_time_coordinate: str) -> tuple[np.ndarray, np.ndarray]:

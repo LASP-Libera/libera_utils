@@ -1153,7 +1153,7 @@ def test_parse_packets_to_l1a_dataset_packet_a_wrap_away_from_its_counter_neighb
     """A packet whose clock puts it a counter wrap from its neighbours in the file raises, ground data or not."""
     packet_ds, _ = counter_disordered_parse
     packet_ds["SRC_SEQ_CTR"].values[:] = [100, 101, 102, 103]
-    packet_ds["PKT_MS"].values[:] = [0, 200000, 1000, 2000]
+    packet_ds["PKT_MS"].values[:] = [0, 300000, 1000, 2000]
     with pytest.raises(ValueError, match="placed a counter wrap apart"):
         _parse_counter_disordered(ground_data=ground_data)
 

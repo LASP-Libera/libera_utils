@@ -78,7 +78,12 @@ class TestOutOfOrderPositions:
         ds = _packets([10, 11, 5, 6], offsets_s=[100, 101, 60, 61])
         assert out_of_order_positions(ds, "PACKET_ICIE_TIME").tolist() == [1]
 
-    @pytest.mark.parametrize("offsets_s", [[0, 1, 62, 63], [100, 101, 0, 1]], ids=["gap-forward", "gap-backward"])
+    def test_backward_counter_after_two_lost_once_a_minute_packets_is_out_of_order(self):
+        # A once-a-minute APID that loses two packets leaves 180 s between survivors, inside SEGMENT_GAP.
+        ds = _packets([10, 11, 5, 6], offsets_s=[0, 60, 240, 300])
+        assert out_of_order_positions(ds, "PACKET_ICIE_TIME").tolist() == [1]
+
+    @pytest.mark.parametrize("offsets_s", [[0, 1, 212, 213], [300, 301, 0, 1]], ids=["gap-forward", "gap-backward"])
     def test_counter_restart_across_a_gap_is_not_out_of_order(self, offsets_s):
         assert out_of_order_positions(_packets([10, 11, 0, 1], offsets_s), "PACKET_ICIE_TIME").tolist() == []
 
@@ -105,7 +110,7 @@ class TestUnwrapSequenceCounter:
             pytest.param([10, 11, 11, 12], None, [10, 11, 11, 12], id="repeated-counter"),
             pytest.param([10, 8010], [0, 59], [10, 8010], id="forward-step-inside-the-segment-gap"),
             pytest.param([12, 13, 10, 11], [120, 121, 0, 1], [10, 11, 12, 13], id="segments-placed-by-time"),
-            pytest.param([0, 1, 5000, 5001], [120, 121, 0, 1], [5000, 5001, 0, 1], id="reset-across-a-segment-gap"),
+            pytest.param([0, 1, 5000, 5001], [300, 301, 0, 1], [5000, 5001, 0, 1], id="reset-across-a-segment-gap"),
             pytest.param([100, 101, 102, 103], [0, 2, 1, 3], [100, 101, 102, 103], id="time-disagrees"),
             pytest.param([102, 100, 101], [5, 5, 5], [100, 101, 102], id="equal-times"),
             pytest.param(
@@ -221,9 +226,9 @@ class TestSortBySequenceCounter:
         assert "1 pair(s)" in str(excinfo.value)
 
     def test_packet_a_wrap_away_by_time_from_its_counter_neighbours_raises(self):
-        # The middle packet's clock reads 200 s late: its counter continues its neighbours in the file,
+        # The middle packet's clock reads 300 s late: its counter continues its neighbours in the file,
         # but its time puts it past a gap of more than SEGMENT_GAP, into the next wrap.
-        ds = self._with_data([10, 11, 12], offsets_s=[0, 200, 1])
+        ds = self._with_data([10, 11, 12], offsets_s=[0, 300, 1])
         with pytest.raises(ValueError, match="placed a counter wrap apart") as excinfo:
             sort_by_sequence_counter(ds, "PACKET_ICIE_TIME")
         assert "2 pair(s)" in str(excinfo.value)
