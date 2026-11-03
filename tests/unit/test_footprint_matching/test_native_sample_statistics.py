@@ -103,6 +103,7 @@ def _reference(weigher, footprint, sources):
         subsatellite_lon_deg=footprint.longitude,
         satellite_radius_km=7213.0,
         sample_resolution_km=1.0,
+        viewing_zenith_deg=footprint.viewing_zenith_angle,
     ).weights
     texture, classes = samples.values
     use = weights > 0
