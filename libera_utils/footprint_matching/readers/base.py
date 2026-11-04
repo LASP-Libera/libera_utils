@@ -264,9 +264,11 @@ class AncillaryReader(abc.ABC):
         Examples: ``"igbp"``, ``"nise"``, ``"era5_surface"``, ``"viirs_aod"``.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
-        for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
-        *name* is ``f"{READER_KEY}_{spec.name}"``; the instrument is appended to the
-        product-definition ``long_name`` as ``"... ({INSTRUMENT})"``.
+        for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable's
+        internal name is ``f"{READER_KEY}_{spec.name}"`` and its product name is
+        :func:`~libera_utils.io.product_variable_names.product_variable_name` of that;
+        the instrument is appended to the product-definition ``long_name`` as
+        ``"... ({INSTRUMENT})"``.
     RESOLUTION_KM : float
         Native sample spacing of the source in km. The weigher sizes its coverage
         measure from it, unless the reader measures the spacing on the granule itself
@@ -398,9 +400,10 @@ class AncillaryReader(abc.ABC):
     def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
         """Return every variable this reader contributes to the product definition.
 
-        This is the full set of *output* variables -- what appears in the FMATCH
-        product definition YAMLs and what the product/test cross-check is built
-        against. It is distinct from ``VARIABLES`` (the smaller set actually read
+        This is the full set of *output* variables -- what appears, under each
+        name's :func:`~libera_utils.io.product_variable_names.product_variable_name`,
+        in the FMATCH product definition YAMLs and what the product/test cross-check
+        is built against. It is distinct from ``VARIABLES`` (the smaller set actually read
         from the source file) and is composed of, in order:
 
         1. each read variable in ``VARIABLES``;

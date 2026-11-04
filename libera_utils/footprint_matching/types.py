@@ -43,7 +43,7 @@ class OperationalMode(enum.Enum):
 
 
 class FmatchCoverageFlag(enum.IntFlag):
-    """Bitwise coverage/QA flags folded into a footprint's ``q_flags`` variable.
+    """Bitwise coverage/QA flags folded into a footprint's ``q_flags`` variable (``Quality_Flag`` in the product).
 
     Set by the product orchestrator from the CERES 75%/95% PSF-energy coverage rule once
     the external-variable aggregation has run. The values are OR-combined and tested
@@ -480,9 +480,10 @@ _STANDARD_DEVIATION_AGGREGATION: dict[str, str] = {
     "weighted_log_mean": "weighted_positive_std",
 }
 
-#: Suffix appended to a continuous variable's name to form its std-dev companion.
-#: Kept as a module constant so the readers, product definitions, and tests all
-#: agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``).
+#: Suffix appended to a continuous variable's internal name to form its std-dev
+#: companion. Kept as a module constant so the readers, product definitions, and
+#: tests all agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``,
+#: written to the product as ``ERA5_Surface_Wind_U10_Standard_Deviation``).
 STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
 
 
@@ -497,10 +498,11 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
 
     The companion is declared here so the reader ``VariableSpec`` tuple stays the
     single source of truth for the FMATCH product variables (the product
-    definition YAMLs and the cross-check test both derive variable names from
-    these specs). The companion's ``aggregation`` is ``"weighted_std"`` for a
-    ``weighted_mean`` parent and ``"weighted_positive_std"`` for a
-    ``weighted_log_mean`` parent, so the spread covers the same samples as the mean.
+    definition YAMLs name each one by the product name of its spec's internal
+    name, and the cross-check test derives the names from these specs). The
+    companion's ``aggregation`` is ``"weighted_std"`` for a ``weighted_mean``
+    parent and ``"weighted_positive_std"`` for a ``weighted_log_mean`` parent, so
+    the spread covers the same samples as the mean.
 
     Parameters
     ----------
@@ -547,8 +549,9 @@ class ProductStack:
     Attributes
     ----------
     name : str
-        Bare product variable name (the caller prefixes it with ``<source>_``, as for any
-        product variable), e.g. ``"temperature"``.
+        Bare internal variable name (the caller prefixes it with ``<source>_``, as for any
+        product variable, and the product name is that name's
+        :func:`~libera_utils.io.product_variable_names.product_variable_name`), e.g. ``"temperature"``.
     dimension : str
         The product dimension the stack runs along, as named in the Libera standard
         dimensions file, e.g. ``"PRESSURE_LEVEL"``.
