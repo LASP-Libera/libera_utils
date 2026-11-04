@@ -49,7 +49,7 @@ from tests.test_data.footprint_matching.fixtures import (
 CAM_CONFIG = FMATCH_RUNNER_CONFIGS["cam"]
 CAM_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["cam-camtime"]
 IMAGER_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["imager-camtime"]
-IMAGER_FLASH_CONFIG = FMATCH_RUNNER_CONFIGS["imager-flash"]
+IMAGER_CONFIG = FMATCH_RUNNER_CONFIGS["imager"]
 
 
 def cam_algorithm(manifest_path):
@@ -305,7 +305,7 @@ class TestManifestInputSelection:
             _libera_product_name(DataProductIdentifier.l2_cf_cam),
         )
 
-        for config in (IMAGER_FLASH_CONFIG, IMAGER_CAMTIME_CONFIG):
+        for config in (IMAGER_CONFIG, IMAGER_CAMTIME_CONFIG):
             assert _collect_cloud_fraction_files(manifest, config) == []
 
     def test_fmatch_product_in_manifest_is_not_mistaken_for_an_input(self, tmp_path):
@@ -370,7 +370,7 @@ class TestRunnerConfiguration:
                 DataProductIdentifier.l2_cf_cam_camtime,
                 None,
             ),
-            (IMAGER_FLASH_CONFIG, OperationalMode.IMAGER_FLASH, DataProductIdentifier.l1b_rad, None),
+            (IMAGER_CONFIG, OperationalMode.IMAGER, DataProductIdentifier.l1b_rad, None),
             (IMAGER_CAMTIME_CONFIG, OperationalMode.IMAGER_CAMTIME, DataProductIdentifier.l2_cf_cam_camtime, None),
         ],
     )
