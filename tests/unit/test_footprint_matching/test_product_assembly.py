@@ -261,25 +261,26 @@ class TestAncillaryInputs:
 
 
 class TestFillValueFor:
-    """_fill_value_for gives integers -1 (0 for a bitmask) and floats NaN."""
+    """_fill_value_for gives the declared fill, 0 for a bitmask and NaN for a float; an undeclared integer raises."""
 
     @staticmethod
     def _definition(dtype: str, attributes: dict) -> LiberaVariableDefinition:
         return LiberaVariableDefinition(dtype=dtype, dimensions=["RADIOMETER_TIME"], attributes=attributes)
 
     def test_declared_fill_wins(self):
-        assert _fill_value_for(self._definition("int16", {"long_name": "x", "_FillValue": -999}))[1] == -999
+        assert _fill_value_for("x", self._definition("int16", {"long_name": "x", "_FillValue": -999}))[1] == -999
 
-    def test_integer_takes_minus_one(self):
-        dtype, fill = _fill_value_for(self._definition("int16", {"long_name": "surface type"}))
-        assert dtype == np.int16
-        assert fill == -1
+    def test_undeclared_integer_raises(self):
+        with pytest.raises(
+            ValueError, match="Integer variable surface_type declares neither _FillValue nor flag_masks"
+        ):
+            _fill_value_for("surface_type", self._definition("int16", {"long_name": "surface type"}))
 
     def test_bitmask_takes_zero(self):
-        assert _fill_value_for(self._definition("int32", {"long_name": "flags", "flag_masks": [1, 4]}))[1] == 0
+        assert _fill_value_for("flags", self._definition("int32", {"long_name": "flags", "flag_masks": [1, 4]}))[1] == 0
 
     def test_float_takes_nan(self):
-        assert np.isnan(_fill_value_for(self._definition("float32", {"long_name": "x"}))[1])
+        assert np.isnan(_fill_value_for("x", self._definition("float32", {"long_name": "x"}))[1])
 
 
 class TestNormalizeLongitude:
@@ -539,9 +540,9 @@ class TestWriteFmatchProduct:
                 np.where(coverage < product.PARTIAL_COVERAGE_THRESHOLD, _PARTIAL, 0),
             )
             np.testing.assert_array_equal(written["q_flags"].values, expected)
-            # The fake readers feed no IGBP data, so the column is the -1 integer fill on disk.
+            # The fake readers feed no IGBP data, so the column is the -1 integer fill on disk, declared as such.
             np.testing.assert_array_equal(written["igbp_surface_type"].values, [-1, -1, -1])
-            assert "_FillValue" not in written["igbp_surface_type"].attrs
+            assert written["igbp_surface_type"].attrs["_FillValue"] == -1
 
 
 def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:

@@ -25,8 +25,8 @@ variable is filled by one of three routes:
 
 A placeholder is *structurally* correct (declared dtype, shape and attributes)
 but numerically meaningless. Floating-point placeholders are filled with ``NaN``
-and integer placeholders with :data:`FMATCH_INTEGER_FILL_VALUE` (``-1``), or ``0`` for a
-bitmask; see
+and integer placeholders with their declared ``_FillValue`` (:data:`FMATCH_INTEGER_FILL_VALUE`,
+``-1``), or ``0`` for a bitmask; see
 :func:`_fill_placeholder_variables`.
 
 Why a thin seam here
@@ -207,8 +207,9 @@ _CAMERA_TIMESCALE_MODES = frozenset({OperationalMode.CAM_CAMTIME, OperationalMod
 # value in each of them (IGBP surface types 1-17, VIIRS Deep Blue aerosol types 0-7, CLDPIX cloud
 # mask 0-3 and phase 1-5, as the igbp, aod and cldpix readers define them, and camera pixel
 # indices from 0), so the fill sits below every domain. Integer bitmasks are filled with 0 instead,
-# meaning no flag set (see :func:`_fill_value_for`). Public because readers of the FMATCH products
-# (e.g. SCENE-ID) must recognize it: the product definitions declare no _FillValue for these columns.
+# meaning no flag set (see :func:`_fill_value_for`). Each such column declares this value as its
+# _FillValue in the FMATCH product definitions. Public because readers of the FMATCH products
+# (e.g. SCENE-ID) must recognize it.
 FMATCH_INTEGER_FILL_VALUE: int = -1
 
 
@@ -972,7 +973,7 @@ def _merge_computed_variables(
     # the declared fill); the radiometer products keep the 1-D column as-is. Integer columns arrive as float with NaN
     # where a footprint had no usable data, and take the integer fill there.
     def _place(name: str, values: np.ndarray) -> np.ndarray:
-        dtype, fill_value = _fill_value_for(definition.variables[name])
+        dtype, fill_value = _fill_value_for(name, definition.variables[name])
         if np.issubdtype(dtype, np.integer):
             values = np.where(np.isnan(values), fill_value, values)
         return np.asarray(values, dtype=dtype) if to_grid is None else to_grid(values, dtype, fill_value)
@@ -1042,7 +1043,7 @@ def _merge_coverage_qa(
         ``None``, its ``truncated`` flag.
     """
     if "psf_coverage_fraction" in definition.variables:
-        dtype, fill_value = _fill_value_for(definition.variables["psf_coverage_fraction"])
+        dtype, fill_value = _fill_value_for("psf_coverage_fraction", definition.variables["psf_coverage_fraction"])
         data["psf_coverage_fraction"] = (
             np.asarray(coverage, dtype=dtype) if to_grid is None else to_grid(coverage, dtype, fill_value)
         )
@@ -1190,18 +1191,21 @@ def assemble_fmatch_dataset(
     )
 
 
-def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
+def _fill_value_for(name: str, variable_definition: Any) -> tuple[np.dtype, Any]:
     """Return the ``(dtype, fill_value)`` a variable or coordinate uses for absent cells.
 
     The fill is the definition's declared ``_FillValue`` when present, and otherwise ``NaN``
     for floating-point definitions. An integer bitmask (a definition declaring
     ``flag_masks``, such as ``q_flags``) takes ``0``, meaning no flag set. Any other integer
-    takes :data:`FMATCH_INTEGER_FILL_VALUE`, because 0 is a real category or pixel index there.
+    must declare its ``_FillValue``, :data:`FMATCH_INTEGER_FILL_VALUE` in the FMATCH
+    definitions, because no value of an integer column is missing by default.
     Used both for not-yet-computed placeholder variables and for the padded cells of the
     camera-timescale grid (images segmented into fewer subsections than the widest image).
 
     Parameters
     ----------
+    name : str
+        The variable or coordinate name, for the error message.
     variable_definition : LiberaVariableDefinition
         The product-definition entry for the variable or coordinate.
 
@@ -1209,6 +1213,11 @@ def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
     -------
     tuple[numpy.dtype, Any]
         The declared dtype and the fill value to use for missing/padded cells.
+
+    Raises
+    ------
+    ValueError
+        If an integer definition declares neither ``_FillValue`` nor ``flag_masks``.
     """
     dtype = np.dtype(variable_definition.dtype)
     fill_value = variable_definition.attributes.get("_FillValue")
@@ -1218,7 +1227,10 @@ def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
         return dtype, np.nan
     if "flag_masks" in variable_definition.attributes:
         return dtype, 0
-    return dtype, FMATCH_INTEGER_FILL_VALUE
+    raise ValueError(
+        f"Integer variable {name} declares neither _FillValue nor flag_masks, so its missing cells have no fill: "
+        f"declare _FillValue: {FMATCH_INTEGER_FILL_VALUE} (or flag_masks for a bitmask) in its product definition."
+    )
 
 
 def _stack_coordinates(mode: OperationalMode, definition: LiberaDataProductDefinition) -> dict[str, np.ndarray]:
@@ -1283,7 +1295,7 @@ def _fill_placeholder_variables(
         if name not in data:
             further = variable_definition.dimensions[len(record_shape) :]
             placeholder_shape = record_shape + tuple(len(data[dimension]) for dimension in further)
-            dtype, fill_value = _fill_value_for(variable_definition)
+            dtype, fill_value = _fill_value_for(name, variable_definition)
             data[name] = np.full(placeholder_shape, fill_value, dtype=dtype)
 
 
@@ -1480,7 +1492,7 @@ def _assemble_camtime_dataset(
         "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
     }
     for coordinate_name, values in pixel_columns.items():
-        dtype, fill_value = _fill_value_for(definition.coordinates[coordinate_name])
+        dtype, fill_value = _fill_value_for(coordinate_name, definition.coordinates[coordinate_name])
         data[coordinate_name] = to_grid(values, dtype, fill_value)
 
     # Cast each real column to the exact dtype the definition declares and scatter it into the
@@ -1491,7 +1503,7 @@ def _assemble_camtime_dataset(
         variable_definition = definition.variables.get(name)
         if variable_definition is None:
             continue
-        dtype, fill_value = _fill_value_for(variable_definition)
+        dtype, fill_value = _fill_value_for(name, variable_definition)
         data[name] = to_grid(values, dtype, fill_value)
 
     # Internal (non-reader) Camera Cloud Fraction values, scattered into the same grid, for
@@ -1582,7 +1594,7 @@ def _merge_cloud_fraction_camera(
             f"cloud_fraction_camera has {len(cloud_fraction_camera)} values for {n_footprints} footprints: pass one "
             "value per footprint, in footprint order."
         )
-    dtype, fill_value = _fill_value_for(variable_definition)
+    dtype, fill_value = _fill_value_for("cloud_fraction_camera", variable_definition)
     if to_grid is None:
         data["cloud_fraction_camera"] = np.asarray(cloud_fraction_camera, dtype=dtype)
     else:

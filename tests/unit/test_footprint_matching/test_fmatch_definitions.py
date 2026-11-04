@@ -29,6 +29,7 @@ import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.product import (
     FMATCH_DEFINITION_FILENAMES,
+    FMATCH_INTEGER_FILL_VALUE,
     fmatch_time_variable,
     load_fmatch_definition,
 )
@@ -234,6 +235,22 @@ class TestFmatchDefinitions:
         definition = definitions[mode]
         all_names = list(definition.variables) + list(definition.coordinates)
         assert len(all_names) == len(set(all_names))
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_integer_columns_declare_the_fmatch_fill(self, mode, definitions):
+        # 0 is a real category, pixel index or pixel bound, so every integer column but a bitmask and a
+        # dimension index declares FMATCH_INTEGER_FILL_VALUE, the fill SCENE-ID reads back.
+        definition = definitions[mode]
+        entries = {**definition.coordinates, **definition.variables}
+        undeclared = {
+            name: entry.attributes.get("_FillValue")
+            for name, entry in entries.items()
+            if np.issubdtype(np.dtype(entry.dtype), np.integer)
+            and "flag_masks" not in entry.attributes
+            and entry.dimensions != [name]
+            and entry.attributes.get("_FillValue") != FMATCH_INTEGER_FILL_VALUE
+        }
+        assert undeclared == {}
 
     def test_imager_camtime_has_no_era5_pressure_variables(self, definitions):
         # The ERA5 pressure-level fields are a radiometer-timescale quantity: the

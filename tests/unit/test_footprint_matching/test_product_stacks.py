@@ -89,6 +89,7 @@ class TestStackedProductVariables:
         temperature = dataset["era5_pressure_temperature"]
         assert temperature.shape == (3, len(_ERA5_PRESSURE_LEVELS))
         _, fill_value = _fill_value_for(
-            load_fmatch_definition(OperationalMode.IMAGER).variables["era5_pressure_temperature"]
+            "era5_pressure_temperature",
+            load_fmatch_definition(OperationalMode.IMAGER).variables["era5_pressure_temperature"],
         )
         np.testing.assert_array_equal(temperature.values, fill_value)
