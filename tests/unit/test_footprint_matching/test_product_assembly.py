@@ -852,7 +852,10 @@ class TestPseudofootprintsFromCamtime:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
     def test_every_required_name_is_one_the_fmatch_camtime_products_declare(self, mode):
-        """FMATCH copies these straight into its camera-timescale products, so each must be declared there."""
-        definition = load_fmatch_definition(mode)
+        """FMATCH copies these straight into its camera-timescale products, so each must be declared there.
+
+        FMATCH carries them under these names internally; the product declares the product name of each.
+        """
+        definition = _internal_name_view(load_fmatch_definition(mode))
         declared = {*definition.variables, *definition.coordinates}
         assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"psf_bbox_flags"} == set()

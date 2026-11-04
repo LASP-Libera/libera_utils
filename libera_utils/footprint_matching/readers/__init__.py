@@ -56,12 +56,15 @@ are unaffected unless step 3 changes a variable.
    aggregation, the products that carry it in ``modes``, its valid range with the
    document it comes from, and for a mode-aggregated code ``n_categories`` and an
    ``int16`` dtype.
-2. Add the product variable ``<reader key>_<variable name>`` to each product definition
-   whose mode carries it, with a ``long_name`` ending in ``(<INSTRUMENT>)`` and its
-   units. A continuous variable also gets a
-   ``<reader key>_<variable name>_standard_deviation`` companion, and an integer
-   category declares ``_FillValue: -1``. A variable the reader stacks in
-   ``PRODUCT_STACKS`` (ERA5's pressure levels) is published as its stack instead,
+2. Add the product variable to each product definition whose mode carries it, named
+   :func:`~libera_utils.io.product_variable_names.product_variable_name` of
+   ``<reader key>_<variable name>`` (e.g. ``ERA5_Surface_Wind_U10``), with a
+   ``long_name`` ending in ``(<INSTRUMENT>)`` and its units. A token the naming table
+   does not spell yet, such as a new acronym, needs a ``token`` row in
+   ``libera_utils/data/product_variable_names.csv``. A continuous variable also gets a
+   ``..._Standard_Deviation`` companion, and an integer category declares
+   ``_FillValue: -1``. A variable the reader stacks in ``PRODUCT_STACKS`` (ERA5's
+   pressure levels) is published as its stack instead, named from
    ``<reader key>_<stack name>`` on the stack's dimension.
 3. Extend the reader's synthetic fixture in ``tests/plugins/footprint_matching_fixtures.py``
    and its tests, and record the change under ``## [Unreleased]`` in ``CHANGELOG.md``.
