@@ -18,7 +18,11 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching import product
 from libera_utils.footprint_matching.geometry import MissingGeolocationError
 from libera_utils.footprint_matching.product import (
+    CAMTIME_BBOX_TRUNCATED_BIT,
+    CAMTIME_BBOX_WRAPS_DATELINE_BIT,
+    CAMTIME_PSEUDOFOOTPRINT_VARIABLES,
     L1B_PASSTHROUGH_VARIABLES,
+    MissingCamtimeVariablesError,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     _fill_value_for,
@@ -30,6 +34,7 @@ from libera_utils.footprint_matching.product import (
     compute_derived_viewing_geometry,
     fmatch_time_variable,
     load_fmatch_definition,
+    pseudofootprints_from_camtime_dataset,
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader
@@ -58,6 +63,7 @@ from tests.plugins.footprint_matching_fixtures import (
     FakeMeanReader,
     era5_pressure_fixture_value,
     fake_radiometer_footprint,
+    make_cf_cam_camtime_dataset,
     make_era5_pressure_netcdf_fixture,
     make_era5_surface_netcdf_fixture,
 )
@@ -801,3 +807,52 @@ class TestStackedProductVariables:
             load_fmatch_definition(OperationalMode.IMAGER).variables["ERA5_Pressure_Temperature"],
         )
         np.testing.assert_array_equal(temperature.values, fill_value)
+
+
+class TestPseudofootprintsFromCamtime:
+    """Camera pseudo-footprints are rebuilt from the CF-CAM-CAMTIME grid the Camera Cloud Fraction algorithm writes."""
+
+    def test_rebuilds_one_footprint_per_real_cell_in_row_major_order(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2)
+
+        footprints = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert len(footprints) == 8
+        assert [f.time for f in footprints] == [dataset["CAMERA_TIME"].values[i] for i in (0, 0, 0, 0, 1, 1, 1, 1)]
+        assert [(f.center_ix, f.center_iy) for f in footprints[:4]] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    def test_inclusive_pixel_bounds_become_half_open_slices(self):
+        footprint = pseudofootprints_from_camtime_dataset(make_cf_cam_camtime_dataset(n_images=1))[0]
+
+        assert footprint.slice_x == slice(0, 1)
+        assert footprint.slice_y == slice(0, 1)
+
+    def test_padded_cells_are_skipped(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2, n_padded=3)
+
+        assert len(pseudofootprints_from_camtime_dataset(dataset)) == 5
+
+    def test_bbox_and_quality_flags_are_decoded(self):
+        dataset = make_cf_cam_camtime_dataset(n_images=1, n_pixels_x=1, n_pixels_y=2)
+        dataset["psf_bbox_flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
+        dataset["q_flags"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
+
+        clean, flagged = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert (clean.bbox.wraps_dateline, clean.bbox.is_polar, clean.bbox.truncated) == (False, False, False)
+        assert (flagged.bbox.wraps_dateline, flagged.bbox.is_polar, flagged.bbox.truncated) == (True, False, True)
+        assert clean.q_flags == CameraFootprintQualityFlag(0)
+        assert flagged.q_flags == CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
+
+    def test_missing_variable_raises_naming_it(self):
+        dataset = make_cf_cam_camtime_dataset().drop_vars(["psf_bbox_flags", "camera_pixel_x_min"])
+
+        with pytest.raises(MissingCamtimeVariablesError, match="camera_pixel_x_min, psf_bbox_flags"):
+            pseudofootprints_from_camtime_dataset(dataset)
+
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_every_required_name_is_one_the_fmatch_camtime_products_declare(self, mode):
+        """FMATCH copies these straight into its camera-timescale products, so each must be declared there."""
+        definition = load_fmatch_definition(mode)
+        declared = {*definition.variables, *definition.coordinates}
+        assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"psf_bbox_flags"} == set()
