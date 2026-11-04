@@ -24,6 +24,7 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
 )
 from libera_utils.footprint_matching.types import STANDARD_DEVIATION_SUFFIX, BoundingBox
 from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
+from libera_utils.io.product_variable_names import product_variable_name
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
@@ -79,17 +80,20 @@ class TestERA5PressureLevelProductDefinition:
     """The FMATCH-IMAGER definition declares exactly the reader's stacked variables, on ``PRESSURE_LEVEL``."""
 
     def test_variables_match_reader_stacks(self, definition):
-        """The definition's ``era5_pressure_*`` variables are the reader's stacks, each on time and pressure level.
+        """The definition's ``ERA5_Pressure_*`` variables are the reader's stacks, each on time and pressure level.
 
         The product writer fills each stacked variable from the reader's stack of the same name; a variable with no
         stack would be left empty, and a stack with no variable would have nowhere to go.
 
-        Asserts the definition's ``era5_pressure_`` variable names equal ``era5_pressure_<stack name>`` for every
-        stack, and each has dimensions ``["RADIOMETER_TIME", "PRESSURE_LEVEL"]``.
+        Asserts the definition's ``ERA5_Pressure_`` variable names equal the product names of
+        ``era5_pressure_<stack name>`` for every stack, and each has dimensions ``["RADIOMETER_TIME", "PRESSURE_LEVEL"]``.
         """
         prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
-        declared = {name: var for name, var in definition.variables.items() if name.startswith(prefix)}
-        expected = {f"{prefix}{stack.name}" for stack in ERA5PressureLevelReader.product_stacks()}
+        product_prefix = f"{product_variable_name(ERA5PressureLevelReader.READER_KEY)}_"
+        declared = {name: var for name, var in definition.variables.items() if name.startswith(product_prefix)}
+        expected = {
+            product_variable_name(f"{prefix}{stack.name}") for stack in ERA5PressureLevelReader.product_stacks()
+        }
         assert set(declared) == expected
         for var in declared.values():
             assert var.dimensions == ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
@@ -104,8 +108,8 @@ class TestERA5PressureLevelProductDefinition:
         """
         prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
         for stack in ERA5PressureLevelReader.PRODUCT_STACKS:
-            mean = definition.variables[f"{prefix}{stack.name}"]
-            spread = definition.variables[f"{prefix}{stack.name}{STANDARD_DEVIATION_SUFFIX}"]
+            mean = definition.variables[product_variable_name(f"{prefix}{stack.name}")]
+            spread = definition.variables[product_variable_name(f"{prefix}{stack.name}{STANDARD_DEVIATION_SUFFIX}")]
             assert spread.attributes["units"] == mean.attributes["units"]
 
     def test_pressure_level_coordinate_is_declared_in_hpa(self, definition):

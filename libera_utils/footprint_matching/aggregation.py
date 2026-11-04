@@ -579,7 +579,9 @@ def aggregate_sample_variables(
     variable (see ``_map_product_specs``), dispatches to that variable's
     aggregation strategy with the PSF ``weight_field``, and returns the single scalar
     the product stores -- keyed by the *bare* spec name (the caller prefixes it with
-    ``<source>_`` to form the product variable name).
+    ``<source>_`` to form the internal variable name, whose
+    :func:`~libera_utils.io.product_variable_names.product_variable_name` is the product
+    variable name).
 
     An empty or all-NaN sample set yields NaN for every variable (the aggregation
     strategies return NaN when nothing is usable), which is the signal for a region
