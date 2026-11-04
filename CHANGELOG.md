@@ -10,8 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `libera_utils.footprint_matching.footprint_match_algorithm`, the manifest-driven runners for the four FMATCH products, run by the `libera-utils fmatch <manifest>` command and the `libera-utils-fmatch` Docker target; the `LIBERA_FMATCH_VARIANT` environment variable selects the product. The radiometer-timescale runners read L1B RAD-4CH. Both camera-timescale runners, FMATCH-CAM-CAMTIME and FMATCH-IMAGER-CAMTIME, read their pseudo-footprints from the CF-CAM-CAMTIME product written by the Camera Cloud Fraction algorithm, and raise `MissingCamtimeVariablesError` when it lacks a variable they need (`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`). A runner raises when `FMATCH_ANCILLARY_PATH` is unset, an active reader's directory under it is missing or empty, or an ancillary granule is staged in S3. Until CF-CAM-CAMTIME carries the camera ephemeris, both camera-timescale runners raise `ValueError` when they aggregate. FMATCH-CAM requires a CF-CAM input: it reads every CF-CAM file in the manifest once and writes each L1B footprint's CF-CAM `Cloud_Fraction` (percent) as `Cloud_Fraction_Camera`, matched by exact `radiometer_time`, with fill for footprints CF-CAM does not cover. Both Camera Cloud Fraction products carry the cloud fraction as `Cloud_Fraction` (`CF_CAM_CLOUD_FRACTION_VARIABLE`). A runner raises `MissingCloudFractionInputError` when a FMATCH-CAM manifest lists no CF-CAM product or a CF-CAM or CF-CAM-CAMTIME input lacks `Cloud_Fraction`, and `CloudFractionTimeMismatchError` when two CF-CAM rows share a time, a CF-CAM value inside an L1B granule's time span matches none of its footprints, or none of the granule's footprints match a CF-CAM row; both subclass `ValueError`.
-- SCENE-ID-IMAGER, SCENE-ID-IMAGER-CAMTIME and SCENE-ID-IMAGER-FLASH runners, each with a product definition and a `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` / `from_fmatch_imager_flash` reader, registered in `scene_id_algorithm.RUNNER_CONFIGS` so `LIBERA_SCENE_ID_VARIANT=imager`, `imager-camtime` or `imager-flash` selects them. All three run the TRMM classification as well as ERBE and unfiltering.
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners, each with a product definition and a `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` reader, registered in `scene_id_algorithm.RUNNER_CONFIGS` so `LIBERA_SCENE_ID_VARIANT=imager` or `imager-camtime` selects them. Both run the TRMM classification as well as ERBE and unfiltering.
+
+### Changed
+
 - SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
+- The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
+- `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
+
+### Fixed
+
+- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.25.0] - 2026-11-11
 
@@ -127,13 +136,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `notebooks/04_sources_query.ipynb` also demonstrates coverage.
-- SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
-- The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
-- `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
-
-### Fixed
-
-- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.19.0] - 2026-10-30
 

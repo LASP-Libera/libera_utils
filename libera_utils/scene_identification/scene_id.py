@@ -33,12 +33,11 @@ logger = logging.getLogger(__name__)
 # libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
-# The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
+# The camera-timescale counterpart of the constant above. The camera-timescale scene-ID product (CAM-CAMTIME) is
 # written on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
 # sorted image-acquisition axis (one 2048x2048 image = one entry) and PSEUDOFOOTPRINT is the 0-based subsection index within
 # each image (subsections may overlap and do not tile the image). Both are dimension coordinates and every data
 # variable hangs on both.
-PSEUDOFOOTPRINT_DIMENSION = "PSEUDOFOOTPRINT"
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # Identifier variables that the camera-timescale FMATCH products carry and the camera-timescale SCENE-ID products
@@ -840,15 +839,6 @@ _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
 }
 
-# FMATCH-IMAGER-FLASH: optical_depth is the CERES SSF lower-layer cloud optical depth (ssf_cloud_optical_depth_lower),
-# injected directly -- the two-layer calculate_cloud_fraction_weighted_optical_depth is bypassed because FLASH carries
-# only the single lower-layer value per footprint. FLASH carries NO cloud-phase source; the reader injects cloud_phase
-# as all-NaN (see nan_columns in from_fmatch_imager_flash) so the phase-gated TRMM scenes fall through to unmatched.
-_FMATCH_IMAGER_FLASH_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
-    **_FMATCH_IMAGER_COMMON_COLUMNS,
-    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_cloud_optical_depth_lower", np.float32),
-}
-
 # FMATCH-IMAGER (RBSP): prefer the native RBSP CLDPIX fields where both CLDPIX and SSF exist. The
 # CLDPIX cloud particle phase code is remapped to the classifier's 1 = liquid / 2 = ice convention via
 # map_cldpix_phase_to_trmm (see its TODO[LIBSDC-817] -- the code meanings are a placeholder pending the CLDPIX data dictionary).
@@ -987,7 +977,6 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             context="SCENE-ID-CAM reader (FMATCH-CAM)",
@@ -1022,45 +1011,10 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimensions=(CAMERA_TIME_VARIABLE, PSEUDOFOOTPRINT_DIMENSION),
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
             context="SCENE-ID-CAM-CAMTIME reader (FMATCH-CAM-CAMTIME)",
-        )
-        return cls(extracted_data)
-
-    @classmethod
-    def from_fmatch_imager_flash(cls, fmatch_path: pathlib.Path) -> "FootprintData":
-        """Read a FMATCH-IMAGER-FLASH product into a FootprintData (radiometer timescale).
-
-        FMATCH-IMAGER-FLASH is the operational input to SCENE-ID-IMAGER-FLASH: one footprint per
-        ``RADIOMETER_TIME``. Its cloud fraction is derived from the CERES SSF clear coverage and its optical depth
-        from the CERES SSF cloud optical depth; it carries ERA5 winds (for surface wind) and the IGBP surface type.
-
-        It carries **no cloud-phase source**, so ``cloud_phase`` is injected as all-NaN. TRMM is still run (per the
-        product design), which classifies the clear/surface TRMM scenes that leave ``cloud_phase`` unbounded while
-        leaving every phase-gated cloudy TRMM scene unmatched (scene ID 0).
-
-        Parameters
-        ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-IMAGER-FLASH NetCDF product file.
-
-        Returns
-        -------
-        FootprintData
-            Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
-        """
-        extracted_data = cls._extract_data_from_fmatch(
-            fmatch_path,
-            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
-            time_variable=RADIOMETER_TIME_DIMENSION,
-            column_map=_FMATCH_IMAGER_FLASH_COLUMN_MAP,
-            # FMATCH-IMAGER-FLASH has no cloud-phase field; inject an all-NaN cloud_phase so identify_scenes does
-            # not try (and fail) to derive it, and so phase-gated TRMM scenes are left unmatched.
-            nan_columns=(FootprintVariables.CLOUD_PHASE,),
-            context="SCENE-ID-IMAGER-FLASH reader (FMATCH-IMAGER-FLASH)",
         )
         return cls(extracted_data)
 
@@ -1074,7 +1028,7 @@ class FootprintData:
         the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
 
         The reader validates the RBSP CLDPIX/SSF variables up front and raises a clear error if handed a file that
-        lacks them (e.g. a FMATCH-IMAGER-FLASH product); see :meth:`_require_variables`.
+        lacks them (e.g. a FMATCH-CAM product); see :meth:`_require_variables`.
 
         Parameters
         ----------
@@ -1088,7 +1042,6 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             context=(
@@ -1130,7 +1083,6 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimensions=(CAMERA_TIME_VARIABLE, PSEUDOFOOTPRINT_DIMENSION),
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
@@ -1147,7 +1099,7 @@ class FootprintData:
 
         This turns what would otherwise be an opaque ``KeyError`` deep in extraction into one message naming every
         missing variable and the reader that expected it. Its most important use is catching a FMATCH file routed
-        to the wrong reader -- e.g. a FMATCH-IMAGER-FLASH file handed to the IMAGER reader, which lacks the RBSP
+        to the wrong reader -- e.g. a FMATCH-CAM file handed to the IMAGER reader, which lacks the RBSP
         ``ssf``/``cldpix`` variables -- so this reports that clearly instead of failing on the first missing lookup.
 
         Parameters
@@ -1175,16 +1127,14 @@ class FootprintData:
     def _extract_data_from_fmatch(
         fmatch_path: pathlib.Path,
         *,
-        record_dimensions: tuple[str, ...],
         time_variable: str,
         column_map: dict[FootprintVariables, "_FmatchColumn"],
-        nan_columns: tuple[FootprintVariables, ...] = (),
         passthrough_variables: tuple[str, ...] = (),
         context: str = "FMATCH reader",
     ) -> xr.Dataset:
         """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
 
-        The radiometer-timescale FMATCH products (CAM, IMAGER-FLASH, IMAGER) carry a flat one-value-per-footprint
+        The radiometer-timescale FMATCH products (CAM, IMAGER) carry a flat one-value-per-footprint
         (1-D ``RADIOMETER_TIME``) layout; the camera-timescale product (CAM-CAMTIME) carries a 2-D
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
         dimensions, so both layouts flow through unchanged. This helper is driven by a declarative ``column_map``
@@ -1202,23 +1152,14 @@ class FootprintData:
         ----------
         fmatch_path : pathlib.Path
             Path to a Libera FMATCH NetCDF product file.
-        record_dimensions : tuple of str
-            The record-grid dimensions of the product: ``("RADIOMETER_TIME",)`` for the radiometer-timescale readers,
-            or ``("CAMERA_TIME", "PSEUDOFOOTPRINT")`` for the camera-timescale reader. Classification columns are emitted on
-            their own source dimensions (which match this grid); this tuple sizes the all-NaN ``nan_columns`` fill so
-            it spans the full grid.
         time_variable : str
             Name of the datetime time coordinate, read from the FMATCH file and emitted under the same name (it is
             the SCENE-ID product's declared time-coordinate name): ``RADIOMETER_TIME`` for SCENE-ID-CAM and
-            SCENE-ID-IMAGER(-FLASH), or ``CAMERA_TIME`` for SCENE-ID-CAM-CAMTIME. Carried as a plain data variable so
+            SCENE-ID-IMAGER, or ``CAMERA_TIME`` for SCENE-ID-CAM-CAMTIME. Carried as a plain data variable so
             it rides through scene identification; the runner promotes it to a coordinate via
             :meth:`to_time_product` before writing.
         column_map : dict[FootprintVariables, _FmatchColumn]
             Mapping of standardized output column -> FMATCH source column spec (name, dtype, scale, transform).
-        nan_columns : tuple of FootprintVariables, optional
-            Standardized columns to emit as all-NaN ``float32`` because the product has no source for them (e.g.
-            ``cloud_phase`` for FMATCH-IMAGER-FLASH). Present-but-NaN keeps :meth:`identify_scenes` from trying to
-            derive them and leaves the corresponding footprints unmatched for any scene that bounds them.
         passthrough_variables : tuple of str, optional
             FMATCH variables to copy verbatim onto the output (e.g. the camera-timescale identifier variables). Empty
             for the radiometer-timescale products.
@@ -1228,7 +1169,7 @@ class FootprintData:
         Returns
         -------
         xr.Dataset
-            Footprint data on ``record_dimensions`` ready for :meth:`identify_scenes`.
+            Footprint data on the product's record dimensions, ready for :meth:`identify_scenes`.
         """
         logger.info("Reading FMATCH product %s", fmatch_path)
         try:
@@ -1238,7 +1179,7 @@ class FootprintData:
             raise FileNotFoundError(f"Unable to parse input file: {fmatch_path}")
 
         # Fail fast (with one clear, actionable message) if any expected source variable is absent -- most
-        # importantly a FMATCH file routed to the wrong reader (e.g. an IMAGER-FLASH file to the IMAGER reader,
+        # importantly a FMATCH file routed to the wrong reader (e.g. a FMATCH-CAM file to the IMAGER reader,
         # which lacks the RBSP columns).
         required_source_names = tuple(column.source_name for column in column_map.values()) + tuple(
             passthrough_variables
@@ -1260,14 +1201,6 @@ class FootprintData:
             # always matches the dtype the SCENE-ID product definition declares (np.where in a transform can widen to
             # float64, and the scale multiply can promote dtype).
             data_variables[target] = (list(source_variable.dims), np.asarray(values).astype(column.dtype, copy=False))
-
-        # Columns with no FMATCH source: emit all-NaN float32 over the full record grid (see nan_columns docstring).
-        grid_shape = tuple(fmatch_dataset.sizes[dimension] for dimension in record_dimensions)
-        for target in nan_columns:
-            data_variables[target] = (
-                list(record_dimensions),
-                np.full(grid_shape, np.nan, dtype=np.float32),
-            )
 
         # The FMATCH time coordinate is decoded to datetime64[ns] by xarray; carry it on its own dimension(s) -- the
         # 1-D RADIOMETER_TIME axis, or the 1-D CAMERA_TIME axis of the camera-timescale grid -- under the SCENE-ID
