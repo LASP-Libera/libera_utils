@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `libera_utils.footprint_matching.footprint_match_algorithm`, the manifest-driven runners for the four FMATCH products, run by the `libera-utils fmatch <manifest>` command and the `libera-utils-fmatch` Docker target; the `LIBERA_FMATCH_VARIANT` environment variable selects the product. The radiometer-timescale runners read L1B RAD-4CH. Both camera-timescale runners, FMATCH-CAM-CAMTIME and FMATCH-IMAGER-CAMTIME, read their pseudo-footprints from the CF-CAM-CAMTIME product written by the Camera Cloud Fraction algorithm, and raise `MissingCamtimeVariablesError` when it lacks a variable they need (`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`). A runner raises when `FMATCH_ANCILLARY_PATH` is unset, an active reader's directory under it is missing or empty, or an ancillary granule is staged in S3, and FMATCH-CAM-CAMTIME raises `ValueError` when its CF-CAM-CAMTIME input has no `cloud_fraction`. Until CF-CAM-CAMTIME carries the camera ephemeris, both camera-timescale runners raise `ValueError` when they aggregate, and FMATCH-CAM writes `cloud_fraction_camera` as fill because the radiometer-timescale CF-CAM is not yet read.
+
 ## [5.23.0] - 2026-11-05
 
 ### Added
