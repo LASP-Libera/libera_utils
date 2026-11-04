@@ -1,7 +1,7 @@
 """SCENE-ID algorithm runners for the Libera radiometer.
 
 This module is the single home for every SCENE-ID runner. The radiometer-timescale
-(``SCENE-ID-CAM``, ``SCENE-ID-IMAGER``, ``SCENE-ID-IMAGER-FLASH``) and camera-timescale
+(``SCENE-ID-CAM``, ``SCENE-ID-IMAGER``) and camera-timescale
 (``SCENE-ID-CAM-CAMTIME``, ``SCENE-ID-IMAGER-CAMTIME``) products are structurally identical: read an input
 manifest, keep the FMATCH input files of a particular product, run scene identification on each footprint, write
 the resulting SCENE-ID product, and emit an output manifest. They differ only by a handful of parameters:
@@ -13,8 +13,8 @@ the resulting SCENE-ID product, and emit an output manifest. They differ only by
 * logging labels.
 
 :func:`run_algorithm` is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
-the five :data:`SceneIdRunnerConfig` values collected in ``RUNNER_CONFIGS``, keyed by variant name (``"cam"``,
-``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``, ``"imager-flash"``). Every variant runs from the one
+the four :data:`SceneIdRunnerConfig` values collected in ``RUNNER_CONFIGS``, keyed by variant name (``"cam"``,
+``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``). Every variant runs from the one
 ``libera-utils scene-id <manifest>`` command, and so from one container image: :func:`scene_id_cli_handler` selects
 the config named by the ``LIBERA_SCENE_ID_VARIANT`` environment variable, which each processing step sets. A new
 SCENE-ID variant is one config plus one registry entry, no new module.
@@ -118,7 +118,7 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
 # CERES SSF clear coverage for cloud fraction, the RBSP CLDPIX cloud optical depth and particle phase for TRMM, the
 # ERA5 winds for surface wind, and the IGBP surface type). Because those extra TRMM inputs are present it runs the
 # full TRMM classification in addition to ERBE and unfiltering. from_fmatch_imager raises a clear error if handed a
-# file lacking the RBSP ssf/cldpix variables (e.g. a FMATCH-IMAGER-FLASH product).
+# file lacking the RBSP ssf/cldpix variables (e.g. a FMATCH-CAM product).
 IMAGER_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_imager,
     output_product_id=DataProductIdentifier.aux_scene_id_imager,
@@ -144,21 +144,6 @@ IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
     log_prefix="scene_id_imager_camtime",
 )
 
-# SCENE-ID-IMAGER-FLASH (radiometer timescale, flash latency): input is FMATCH-IMAGER-FLASH (one footprint per
-# RADIOMETER_TIME carrying the CERES SSF clear coverage for cloud fraction, the CERES SSF cloud optical depth, the
-# ERA5 winds, and the IGBP surface type). TRMM is run for parity with SCENE-ID-IMAGER, but FLASH has NO cloud-phase
-# source, so from_fmatch_imager_flash injects an all-NaN cloud_phase: TRMM then matches only clear/surface scenes that
-# leave cloud_phase unbounded and leaves every phase-gated cloudy TRMM scene unmatched.
-IMAGER_FLASH_CONFIG = SceneIdRunnerConfig(
-    input_product_id=DataProductIdentifier.aux_fmatch_imager_flash,
-    output_product_id=DataProductIdentifier.aux_scene_id_imager_flash,
-    reader=FootprintData.from_fmatch_imager_flash,
-    product_definition_path=Path(config.get("SCENE_ID_IMAGER_FLASH_PRODUCT_DEFINITION")),
-    time_variable="RADIOMETER_TIME",
-    scene_types=["erbe", "unfiltering", "trmm"],
-    log_prefix="scene_id_imager_flash",
-)
-
 # Registry of every SCENE-ID runner, keyed by the variant name the LIBERA_SCENE_ID_VARIANT environment variable
 # selects. Adding a variant is one config plus one entry.
 RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
@@ -166,7 +151,6 @@ RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
     "cam-camtime": CAM_CAMTIME_CONFIG,
     "imager": IMAGER_CONFIG,
     "imager-camtime": IMAGER_CAMTIME_CONFIG,
-    "imager-flash": IMAGER_FLASH_CONFIG,
 }
 
 # Environment variable naming the RUNNER_CONFIGS entry to run; set per processing step.

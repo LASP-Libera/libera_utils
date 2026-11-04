@@ -1191,7 +1191,7 @@ class TestSceneIdImagerProductDtypes:
 
     @pytest.mark.parametrize(
         "definition_filename",
-        ["scene_id_imager.yml", "scene_id_imager_flash.yml", "scene_id_imager_camtime.yml"],
+        ["scene_id_imager.yml", "scene_id_imager_camtime.yml"],
     )
     def test_scene_id_trmm_is_uint16(self, definition_filename):
         """scene_id_trmm is uint16 (not uint8): the TRMM definition assigns IDs up to 650, which overflows a byte."""
@@ -1203,7 +1203,7 @@ class TestSceneIdImagerProductDtypes:
 
     @pytest.mark.parametrize(
         "definition_filename",
-        ["scene_id_imager.yml", "scene_id_imager_flash.yml", "scene_id_imager_camtime.yml"],
+        ["scene_id_imager.yml", "scene_id_imager_camtime.yml"],
     )
     def test_trmm_input_and_bin_variables_present(self, definition_filename):
         """The extra TRMM inputs and their bin bounds are declared."""
