@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.22.0] - 2026-11-03
+
 ### Added
 
 - Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when a requested tag other than `latest` already exists in the ECR repository, whatever image it holds: found by a check before anything is pushed, or refused by ECR during the push when another push took the tag after that check. The message names every such tag and the repository, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. A refused push is not retried, and `ecr-upload` registers nothing.
-- Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME) products. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, gated to IMAGER via `VariableSpec.only_modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `era5_pressure_temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `cloud_fraction_camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input. Dimensionless variables carry no `units` attribute (CF §3.1), and `viirs_cldprop_d3_cloud_optical_thickness` carries the CLDPROP_D3 source's combined-phase long_name and its `valid_min`/`valid_max` `[0, 150]`.
+- Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME) products. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, gated to IMAGER via `VariableSpec.only_modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `era5_pressure_temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `cloud_fraction_camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input. Every integer category, pixel-index and camera pixel-bound variable declares `_FillValue: -1`, since 0 is a real value in each; the `q_flags` bitmask and the `PSEUDOFOOTPRINT` index declare none. Dimensionless variables carry no `units` attribute (CF §3.1), and `viirs_cldprop_d3_cloud_optical_thickness` carries the CLDPROP_D3 source's combined-phase long_name and its `valid_min`/`valid_max` `[0, 150]`.
 - `libera_utils.footprint_matching.aggregation.stack_product_values` collects a reader's stacked specs into one array per stacked product variable and raises `ValueError` when a member's scalar is missing.
 
 ### Changed
@@ -1044,7 +1046,7 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...HEAD
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
 [5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0
 [5.21.0]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...5.21.0
