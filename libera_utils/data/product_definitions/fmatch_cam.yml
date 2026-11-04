@@ -113,21 +113,25 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: IGBP surface type classification (MODIS)
   igbp_surface_type_primary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_secondary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Second most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_tertiary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Third most common IGBP surface type in footprint (MODIS)
   # --- source reader: nise (resolution 25.0 km) ---
   nise_sea_ice_concentration:

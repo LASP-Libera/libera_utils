@@ -182,11 +182,13 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Cloud particle phase (NOAA20)
   cldpix_cloud_mask:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: CERES cloud mask (NOAA20)
   # --- source reader: era5_surface (resolution 28.0 km) ---
   era5_surface_wind_u10:
@@ -393,16 +395,19 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: CERES cloud classification code (encoded) (NOAA20)
   flashflux_shortwave_adm_type:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: CERES shortwave ADM scene type (encoded) (NOAA20)
   flashflux_longwave_adm_type:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: CERES longwave ADM scene type (encoded) (NOAA20)
   flashflux_layer_coverage_lower:
     dtype: float32
@@ -695,21 +700,25 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: IGBP surface type classification (MODIS)
   igbp_surface_type_primary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_secondary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Second most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_tertiary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Third most common IGBP surface type in footprint (MODIS)
   # --- source reader: nise (resolution 25.0 km) ---
   nise_sea_ice_concentration:
@@ -777,21 +786,25 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: "VIIRS Deep Blue aerosol type (land+ocean), modal value (0=dust 1=smoke 2=high-altitude smoke 3=pyrocumulonimbus 4=non-smoke fine mode 5=mixed 6=background maritime 7=fine dominated) (NOAA20)"
   viirs_aod_aerosol_type_primary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
   viirs_aod_aerosol_type_secondary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Second most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
   viirs_aod_aerosol_type_tertiary:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: -1
       long_name: Third most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
   # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance

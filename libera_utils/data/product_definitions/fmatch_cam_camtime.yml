@@ -44,21 +44,25 @@ coordinates:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
   camera_pixel_x_max:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
   camera_pixel_y_min:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
   camera_pixel_y_max:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
 
 variables:
@@ -154,21 +158,25 @@ variables:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: IGBP surface type classification (MODIS)
   igbp_surface_type_primary:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_secondary:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Second most common IGBP surface type in footprint (MODIS)
   igbp_surface_type_tertiary:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Third most common IGBP surface type in footprint (MODIS)
   # --- source reader: nise (resolution 25.0 km) ---
   nise_sea_ice_concentration:
@@ -429,9 +437,11 @@ variables:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
   center_pixel_y:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
