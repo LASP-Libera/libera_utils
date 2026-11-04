@@ -14,14 +14,22 @@ variable is filled by one of three routes:
 * **Input pass-through** - the geolocation and viewing angles come straight from
   the L1B Daily inputs (:data:`_RADIOMETER_L1B_VARIABLES` for the radiometer
   modes, :data:`_CAMTIME_SEGMENTATION_VARIABLES` for the camera-segmented ones).
-* **Computed** - the derived viewing geometry (``sunglint_angle``, via
+* **Computed** - the derived viewing geometry (``Sunglint_Angle``, via
   :func:`compute_derived_viewing_geometry`) is always calculated, and the external
   aggregated variables (:func:`aggregate_external_variables`) plus the coverage/QA
-  columns (``psf_coverage_fraction`` / ``q_flags``) are calculated whenever staged
+  columns (``PSF_Coverage_Fraction`` / ``Quality_Flag``) are calculated whenever staged
   ancillary inputs are supplied - the PSF aggregation of each source's native samples.
 * **Placeholders** - a declared variable no input produced, when the caller opts in
   with ``allow_placeholders=True``: the external columns when no ancillary data is
   staged, and ``cloud_fraction_camera`` when it is omitted for a CAM mode.
+
+Variable names
+--------------
+Assembly fills each column under its internal snake_case name (``sunglint_angle``,
+``q_flags``, ``<source_key>_<spec_name>``); the product carries the
+:func:`~libera_utils.io.product_variable_names.product_variable_name` of each
+(``Sunglint_Angle``, ``Quality_Flag``), renamed once in ``_finalize_product_dataset``.
+Dimension coordinates keep their names.
 
 A placeholder is *structurally* correct (declared dtype, shape and attributes)
 but numerically meaningless. Floating-point placeholders are filled with ``NaN``
@@ -79,6 +87,7 @@ from libera_utils.footprint_matching.weighting import (
 )
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
 
 if TYPE_CHECKING:
     # Imported only for type hints to avoid pulling heavy deps at import time.
@@ -91,7 +100,7 @@ if TYPE_CHECKING:
     from libera_utils.footprint_matching.types import VariableSpec
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
-# Product-definition variable names that the camera-segmentation tool fills with
+# Internal names of the variables that the camera-segmentation tool fills with
 # *real* per-footprint values (center-pixel geolocation/geometry, the corner-derived
 # PSF bounding box, and the QA flags). Every other declared variable is filled by the
 # derived-geometry engine (:func:`compute_derived_viewing_geometry`, always) or the
@@ -122,16 +131,21 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
     }
 )
 
-# Mapping of FMATCH product variable name -> L1B RAD-4CH variable name, for the
-# per-footprint quantities FMATCH copies straight out of L1B rather than computing.
+# Mapping of FMATCH internal variable name -> L1B RAD-4CH variable name, for the
+# per-footprint quantities FMATCH copies straight out of L1B rather than computing. These
+# keep their L1B name in the product, so the L1B name is the product name
+# (product_variable_names.csv renames the angles to their L1B spellings).
 
 L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
-    "latitude": "Latitude",
-    "longitude": "Longitude",
-    "altitude": "Altitude",
-    "solar_zenith_angle": "Solar_Zenith_Surface",
-    "viewing_zenith_angle": "Viewing_Zenith_Surface",
-    "relative_azimuth_angle": "Relative_Azimuth_Surface",
+    name: product_variable_name(name)
+    for name in (
+        "latitude",
+        "longitude",
+        "altitude",
+        "solar_zenith_angle",
+        "viewing_zenith_angle",
+        "relative_azimuth_angle",
+    )
 }
 
 # L1B fields (beyond the pass-through product columns) that FMATCH reads only to build
@@ -402,10 +416,12 @@ def aggregate_external_variables(
     additionally has era5_pressure, viirs_aod, and the RBSP flashflux and cldpix fields).
     Per-spec gating also applies (see below).
 
-    Every output variable is named ``<source_key>_<spec_name>`` (e.g.
-    ``era5_surface_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
-    product definition variable names. The reader's ``INSTRUMENT`` is recorded in
-    each variable's ``long_name`` rather than in the name. A spec is aggregated only
+    Every output variable is named by its internal name ``<source_key>_<spec_name>`` (e.g.
+    ``era5_surface_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``); the product
+    definition declares the
+    :func:`~libera_utils.io.product_variable_names.product_variable_name` of each. The
+    reader's ``INSTRUMENT`` is recorded in each variable's ``long_name`` rather than in
+    the name. A spec is aggregated only
     when ``mode`` is in its ``modes`` (e.g. the extended FLASHFlux
     cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
@@ -596,16 +612,16 @@ def _aggregate_footprints(
             # FMATCH-IMAGER only), so skip specs whose modes exclude this one.
             if mode not in spec.modes:
                 continue
-            # Product variable name is ``<source_key>_<name>`` (no instrument
-            # token); the reader's INSTRUMENT is carried in the variable's long_name
-            # by the product definition, per the FMATCH naming contract.
-            product_name = f"{key}_{name}"
+            # Internal column name is ``<source_key>_<name>`` (no instrument token);
+            # the product definition declares its product name and carries the
+            # reader's INSTRUMENT in the variable's long_name.
+            column_name = f"{key}_{name}"
             dtype = np.dtype(spec.dtype)
             if not np.issubdtype(dtype, np.floating):
                 dtype = np.dtype(np.float64)
             shape = n_footprints if width is None else (n_footprints, width)
-            outputs[product_name] = np.full(shape, np.nan, dtype=dtype)
-            entries.append((product_name, name))
+            outputs[column_name] = np.full(shape, np.nan, dtype=dtype)
+            entries.append((column_name, name))
         plan[key] = entries
 
     # Per-footprint coverage accumulator: track the minimum across sources. Start at
@@ -645,8 +661,8 @@ def _aggregate_footprints(
             # variable, keyed by the bare spec or stack name.
             scalars = aggregate_sample_variables(reader_cls, samples, weight_field)
             values = stack_product_values(reader_cls, scalars)
-            for product_name, name in plan[key]:
-                outputs[product_name][i] = values[name]
+            for column_name, name in plan[key]:
+                outputs[column_name][i] = values[name]
 
     if not return_coverage:
         return outputs
@@ -766,8 +782,8 @@ def compute_derived_viewing_geometry(
 ) -> dict[str, np.ndarray]:
     """Compute derived viewing-geometry variables from the geolocation angles.
 
-    Produces the ``sunglint_angle`` variable present in every FMATCH product
-    definition: the angle between the sensor view direction and the specular
+    Produces the ``sunglint_angle`` column, written as the ``Sunglint_Angle`` variable
+    every FMATCH product definition declares: the angle between the sensor view direction and the specular
     reflection of the solar beam, in degrees. Small values indicate potential sun
     glint contamination.
 
@@ -992,8 +1008,8 @@ def _merge_computed_variables(
         if allow_placeholders:
             return
         raise ValueError(
-            f"No ancillary inputs were supplied for {mode.value}, so its external variables, psf_coverage_fraction "
-            "and q_flags cannot be computed. Pass sources or source_file_paths, or pass "
+            f"No ancillary inputs were supplied for {mode.value}, so its external variables, PSF_Coverage_Fraction "
+            "and Quality_Flag cannot be computed. Pass sources or source_file_paths, or pass "
             "allow_placeholders=True to write those columns as fill values."
         )
 
@@ -1106,12 +1122,14 @@ def assemble_fmatch_dataset(
       :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
       ``inputs`` is that dict. See :func:`_assemble_radiometer_dataset`.
 
-    In both cases the derived viewing geometry (``sunglint_angle``) is always computed
+    In both cases the derived viewing geometry (``Sunglint_Angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
     coverage/QA columns are computed from the ancillary inputs (``sources`` or
     ``source_file_paths``, forwarded to :func:`aggregate_external_variables`). Without
     them assembly raises, unless ``allow_placeholders=True`` asks for those columns to
-    be written as conformant placeholders.
+    be written as conformant placeholders. Columns are named by the
+    :func:`~libera_utils.io.product_variable_names.product_variable_name` of their
+    internal names, as the product definition declares them.
 
     Parameters
     ----------
@@ -1133,7 +1151,7 @@ def assemble_fmatch_dataset(
         algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
         the same order as the time coordinate. This is an *internal* algorithm
         output - it does not come from a reader and is already aggregated to one
-        value per footprint - so it is merged directly into the ``cloud_fraction_camera``
+        value per footprint - so it is merged directly into the ``Cloud_Fraction_Camera``
         variable rather than going through :func:`aggregate_external_variables`.
         Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable: it is
         required for them unless ``allow_placeholders`` is ``True``, and must be ``None``
@@ -1149,9 +1167,10 @@ def assemble_fmatch_dataset(
         :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`.
     allow_placeholders : bool, optional
         When ``True``, a declared input the call does not supply is written as fill
-        instead of raising: the external, ``psf_coverage_fraction`` and ``q_flags``
+        instead of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag``
         columns when neither ``sources`` nor ``source_file_paths`` is given, and
-        ``cloud_fraction_camera`` when it is omitted for a CAM mode. Defaults to ``False``.
+        ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera`` is omitted for a CAM mode.
+        Defaults to ``False``.
 
     Returns
     -------
@@ -1168,7 +1187,9 @@ def assemble_fmatch_dataset(
         mode without ``allow_placeholders``, given for an IMAGER mode, or not one value per
         footprint; if a footprint has no finite viewing zenith angle; if a
         camera-timescale mode is aggregated, since camera pseudo-footprints carry no L1B
-        ephemeris; or if a footprint's time is NaT and a source selects by time.
+        ephemeris; if a footprint's time is NaT and a source selects by time; or if the
+        definition declares a variable off the product variable naming rule or assembly
+        produces a column it does not declare.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active
         in ``mode``.
@@ -1229,7 +1250,8 @@ def _fill_value_for(name: str, variable_definition: Any) -> tuple[np.dtype, Any]
         return dtype, 0
     raise ValueError(
         f"Integer variable {name} declares neither _FillValue nor flag_masks, so its missing cells have no fill: "
-        f"declare _FillValue: {FMATCH_INTEGER_FILL_VALUE} (or flag_masks for a bitmask) in its product definition."
+        f"declare _FillValue: {FMATCH_INTEGER_FILL_VALUE} (or flag_masks for a bitmask) on "
+        f"{product_variable_name(name)} in its product definition."
     )
 
 
@@ -1299,6 +1321,40 @@ def _fill_placeholder_variables(
             data[name] = np.full(placeholder_shape, fill_value, dtype=dtype)
 
 
+def _internal_name_view(definition: LiberaDataProductDefinition) -> LiberaDataProductDefinition:
+    """Return a copy of ``definition`` keyed by internal (snake_case) variable names.
+
+    Assembly fills its columns under internal names, so it looks variables up in this view;
+    :func:`_finalize_product_dataset` renames the columns to the product names the real
+    definition declares. Variables and non-dimension coordinates are re-keyed by
+    :func:`~libera_utils.io.product_variable_names.internal_variable_name`; a dimension
+    coordinate (one whose only dimension is itself, e.g. ``RADIOMETER_TIME``) keeps its key.
+
+    Parameters
+    ----------
+    definition : LiberaDataProductDefinition
+        The product definition, keyed by product names.
+
+    Returns
+    -------
+    LiberaDataProductDefinition
+        The same definition with its variables and non-dimension coordinates keyed by
+        internal name.
+
+    Raises
+    ------
+    ValueError
+        If a declared variable or non-dimension coordinate does not follow the product
+        variable naming rule.
+    """
+    coordinates = {
+        name if coordinate.dimensions == [name] else internal_variable_name(name): coordinate
+        for name, coordinate in definition.coordinates.items()
+    }
+    variables = {internal_variable_name(name): variable for name, variable in definition.variables.items()}
+    return definition.model_copy(update={"coordinates": coordinates, "variables": variables})
+
+
 def _finalize_product_dataset(
     definition: LiberaDataProductDefinition,
     data: dict[str, np.ndarray],
@@ -1308,16 +1364,20 @@ def _finalize_product_dataset(
 ) -> Dataset:
     """Build a conformant Dataset from assembled arrays and set the dynamic global attributes.
 
-    Shared tail of both assembly paths. Dynamic (per-run) global attributes are set
-    directly on the Dataset; they are declared (as null) in the definition, so
-    ``enforce_dataset_conformance`` keeps them rather than stripping them as extras.
+    Shared tail of both assembly paths. Assembly keys ``data`` by internal names; each key
+    becomes its :func:`~libera_utils.io.product_variable_names.product_variable_name` here,
+    except a dimension coordinate, which keeps its name. The real definition's non-dimension
+    coordinate keys are product names, so an internal key never matches one. Dynamic
+    (per-run) global attributes are set directly on the Dataset; they are declared (as null)
+    in the definition, so ``enforce_dataset_conformance`` keeps them rather than stripping
+    them as extras.
 
     Parameters
     ----------
     definition : LiberaDataProductDefinition
-        The product definition to build against.
+        The product definition to build against, keyed by product names.
     data : dict[str, np.ndarray]
-        Every coordinate and variable array the product declares.
+        Every coordinate and variable array the product declares, keyed by internal name.
     algorithm_version : str, optional
         Value for the required dynamic ``algorithm_version`` global attribute.
     input_files : str, optional
@@ -1327,8 +1387,17 @@ def _finalize_product_dataset(
     -------
     xarray.Dataset
         The conformance-enforced dataset, ready to write.
+
+    Raises
+    ------
+    ValueError
+        If a key of ``data`` is not a snake_case internal name, or names a variable the
+        definition does not declare.
     """
-    dataset = definition.create_product_dataset(data)
+    product_data = {
+        name if name in definition.coordinates else product_variable_name(name): values for name, values in data.items()
+    }
+    dataset = definition.create_product_dataset(product_data)
     dataset = definition.enforce_dataset_conformance(dataset)
     if input_files is not None:
         dataset.attrs["InputGranules"] = input_files
@@ -1410,7 +1479,9 @@ def _assemble_camtime_dataset(
     ValueError
         If ``mode`` is not a camera-timescale mode, or ``footprints`` is empty
         (there would be no time axis to write), or as :func:`_merge_computed_variables`
-        raises.
+        raises, or if the definition declares a name off the product variable naming
+        rule (``_internal_name_view``) or assembly produces a column it does not declare
+        (``_finalize_product_dataset``).
     """
     if mode not in _CAMERA_TIMESCALE_MODES:
         raise ValueError(
@@ -1419,6 +1490,7 @@ def _assemble_camtime_dataset(
         )
     if definition is None:
         definition = load_fmatch_definition(mode)
+    internal = _internal_name_view(definition)
 
     footprints = list(footprints)
     if not footprints:
@@ -1476,7 +1548,7 @@ def _assemble_camtime_dataset(
     # Grid coordinates: CAMERA_TIME is the 1-D image-acquisition axis (one unique, sorted entry per image);
     # PSEUDOFOOTPRINT is the 0-based subsection index within each image, generated here. create_product_dataset routes
     # both to .coords because the definition declares them under coordinates:.
-    footprint_dtype = np.dtype(definition.coordinates["PSEUDOFOOTPRINT"].dtype)
+    footprint_dtype = np.dtype(internal.coordinates["PSEUDOFOOTPRINT"].dtype)
     data: dict[str, np.ndarray] = {
         time_variable: np.array(unique_times, dtype="datetime64[ns]"),
         "PSEUDOFOOTPRINT": np.arange(n_footprints_per_image, dtype=footprint_dtype),
@@ -1492,7 +1564,7 @@ def _assemble_camtime_dataset(
         "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
     }
     for coordinate_name, values in pixel_columns.items():
-        dtype, fill_value = _fill_value_for(coordinate_name, definition.coordinates[coordinate_name])
+        dtype, fill_value = _fill_value_for(coordinate_name, internal.coordinates[coordinate_name])
         data[coordinate_name] = to_grid(values, dtype, fill_value)
 
     # Cast each real column to the exact dtype the definition declares and scatter it into the
@@ -1500,7 +1572,7 @@ def _assemble_camtime_dataset(
     # declare the same segmentation variables, but the guard keeps the assembly robust to
     # definition drift.
     for name, values in real_columns.items():
-        variable_definition = definition.variables.get(name)
+        variable_definition = internal.variables.get(name)
         if variable_definition is None:
             continue
         dtype, fill_value = _fill_value_for(name, variable_definition)
@@ -1510,7 +1582,7 @@ def _assemble_camtime_dataset(
     # the products that declare them (CAM-CAMTIME, not IMAGER-CAMTIME).
     _merge_cloud_fraction_camera(
         data,
-        definition,
+        internal,
         cloud_fraction_camera,
         n_footprints=n_footprints,
         allow_placeholders=allow_placeholders,
@@ -1521,7 +1593,7 @@ def _assemble_camtime_dataset(
     # supplied, the external aggregated variables + coverage/QA (OR-ed into q_flags).
     _merge_computed_variables(
         data,
-        definition,
+        internal,
         mode,
         footprints,
         solar_zenith_angle=np.asarray(real_columns["solar_zenith_angle"], dtype=float),
@@ -1535,7 +1607,7 @@ def _assemble_camtime_dataset(
     )
 
     # Every remaining declared variable no input produced is filled with a placeholder.
-    _fill_placeholder_variables(data, definition, grid_shape)
+    _fill_placeholder_variables(data, internal, grid_shape)
 
     return _finalize_product_dataset(
         definition,
@@ -1585,7 +1657,8 @@ def _merge_cloud_fraction_camera(
     if cloud_fraction_camera is None:
         if not allow_placeholders:
             raise ValueError(
-                f"{product_id} declares cloud_fraction_camera but no values were given: pass the CF-CAM values, or "
+                f"{product_id} declares Cloud_Fraction_Camera but no values were given: pass the CF-CAM values as "
+                "cloud_fraction_camera, or "
                 "allow_placeholders=True to write the column as fill."
             )
         return
@@ -1658,7 +1731,9 @@ def _assemble_radiometer_dataset(
     ValueError
         If ``mode`` is a camera-timescale mode, if a required pass-through input is
         missing, if the inputs have inconsistent lengths, or if they are empty, or as
-        :func:`_merge_computed_variables` raises.
+        :func:`_merge_computed_variables` raises, or if the definition declares a name off
+        the product variable naming rule (``_internal_name_view``) or assembly produces a
+        column it does not declare (``_finalize_product_dataset``).
     MissingGeolocationError
         If a record's ephemeris is unusable (see :func:`build_radiometer_footprints`).
     """
@@ -1669,6 +1744,7 @@ def _assemble_radiometer_dataset(
         )
     if definition is None:
         definition = load_fmatch_definition(mode)
+    internal = _internal_name_view(definition)
 
     time_variable = fmatch_time_variable(mode)  # "RADIOMETER_TIME"
 
@@ -1693,14 +1769,14 @@ def _assemble_radiometer_dataset(
     # dtype the definition declares.
     data: dict[str, np.ndarray] = {
         time_variable: np.asarray(l1b_inputs[time_variable], dtype="datetime64[ns]"),
-        **_stack_coordinates(mode, definition),
+        **_stack_coordinates(mode, internal),
     }
     for name in sorted(_RADIOMETER_L1B_VARIABLES):
-        data[name] = np.asarray(l1b_inputs[name], dtype=np.dtype(definition.variables[name].dtype))
+        data[name] = np.asarray(l1b_inputs[name], dtype=np.dtype(internal.variables[name].dtype))
 
     # Internal (non-reader) Camera Cloud Fraction values (CAM only).
     _merge_cloud_fraction_camera(
-        data, definition, cloud_fraction_camera, n_footprints=n_footprints, allow_placeholders=allow_placeholders
+        data, internal, cloud_fraction_camera, n_footprints=n_footprints, allow_placeholders=allow_placeholders
     )
 
     # Computed columns: derived geometry (always) and, when ancillary inputs are
@@ -1718,7 +1794,7 @@ def _assemble_radiometer_dataset(
         weigher = AngularPSFWeigher()
     _merge_computed_variables(
         data,
-        definition,
+        internal,
         mode,
         footprints,
         solar_zenith_angle=np.asarray(l1b_inputs["solar_zenith_angle"], dtype=float),
@@ -1731,7 +1807,7 @@ def _assemble_radiometer_dataset(
     )
 
     # Every remaining declared variable no input produced is filled with a placeholder.
-    _fill_placeholder_variables(data, definition, n_footprints)
+    _fill_placeholder_variables(data, internal, n_footprints)
 
     return _finalize_product_dataset(
         definition,
@@ -1790,9 +1866,10 @@ def write_fmatch_product(
         PSF weigher used by the aggregation path (defaults to the radial stand-in).
     allow_placeholders : bool, optional
         When ``True``, a declared input the call does not supply is written as fill
-        instead of raising: the external, ``psf_coverage_fraction`` and ``q_flags``
+        instead of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag``
         columns when neither ``sources`` nor ``source_file_paths`` is given, and
-        ``cloud_fraction_camera`` when it is omitted for a CAM mode. Defaults to ``False``.
+        ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera`` is omitted for a CAM mode.
+        Defaults to ``False``.
 
     Returns
     -------
@@ -1806,7 +1883,8 @@ def write_fmatch_product(
         ancillary inputs without ``allow_placeholders`` or both kinds given, a missing,
         unexpected or wrong-length ``cloud_fraction_camera``, a footprint with no viewing
         zenith angle, camera pseudo-footprints aggregated without ephemeris, a footprint whose time
-        is NaT when a source selects by time), or if the assembled
+        is NaT when a source selects by time, a declared variable off the product variable
+        naming rule, an assembled column the definition does not declare), or if the assembled
         Dataset does not conform to the product definition.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active

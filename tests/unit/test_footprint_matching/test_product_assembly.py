@@ -22,6 +22,7 @@ from libera_utils.footprint_matching.product import (
     _assemble_radiometer_dataset,
     _fill_value_for,
     _footprint_geometry,
+    _internal_name_view,
     _merge_coverage_qa,
     _normalize_longitude,
     assemble_fmatch_dataset,
@@ -46,6 +47,7 @@ from libera_utils.footprint_matching.types import (
 )
 from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 from libera_utils.io.product_definition import LiberaVariableDefinition
+from libera_utils.io.product_variable_names import product_variable_name
 from tests.plugins.footprint_matching_fixtures import (
     FAKE_GRID_LATS,
     FAKE_GRID_LONS,
@@ -131,7 +133,7 @@ class TestRadiometerPassThrough:
         dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
 
         for name in _RADIOMETER_L1B_VARIABLES:
-            np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
+            np.testing.assert_allclose(dataset[product_variable_name(name)].values, l1b_inputs[name], rtol=1e-6)
         np.testing.assert_array_equal(dataset["RADIOMETER_TIME"].values, l1b_inputs["RADIOMETER_TIME"])
 
     @pytest.mark.parametrize("mode", RADIOMETER_MODES)
@@ -142,7 +144,7 @@ class TestRadiometerPassThrough:
         l1b_inputs["altitude"] = np.array([0.0, 150.0, 4000.0], dtype=np.float32)
         dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
 
-        np.testing.assert_array_equal(dataset["altitude"].values, l1b_inputs["altitude"])
+        np.testing.assert_array_equal(dataset[product_variable_name("altitude")].values, l1b_inputs["altitude"])
 
     def test_cloud_fraction_camera_is_merged_when_declared(self):
         """FMATCH-CAM declares cloud_fraction_camera, so supplied values become real, not placeholder."""
@@ -151,7 +153,7 @@ class TestRadiometerPassThrough:
             OperationalMode.CAM, _l1b_inputs(), cloud_fraction_camera=values, allow_placeholders=True
         )
 
-        np.testing.assert_allclose(dataset["cloud_fraction_camera"].values, values, rtol=1e-6)
+        np.testing.assert_allclose(dataset[product_variable_name("cloud_fraction_camera")].values, values, rtol=1e-6)
 
 
 class TestCloudFractionCamera:
@@ -165,12 +167,12 @@ class TestCloudFractionCamera:
         ],
     )
     def test_omitted_raises(self, mode, inputs):
-        with pytest.raises(ValueError, match="declares cloud_fraction_camera but no values were given"):
+        with pytest.raises(ValueError, match="declares Cloud_Fraction_Camera but no values were given"):
             assemble_fmatch_dataset(mode, inputs(), allow_placeholders=False)
 
     def test_omitted_with_placeholders_is_fill(self):
         dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), allow_placeholders=True)
-        assert np.isnan(dataset["cloud_fraction_camera"].values).all()
+        assert np.isnan(dataset[product_variable_name("cloud_fraction_camera")].values).all()
 
     @pytest.mark.parametrize("mode", [OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME])
     def test_values_for_an_imager_mode_raise(self, mode):
@@ -255,9 +257,9 @@ class TestAncillaryInputs:
     def test_allow_placeholders_writes_fills(self):
         dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), allow_placeholders=True)
         # Integer categories take the -1 fill, not 0 (a real category); q_flags 0 means no flag set.
-        np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [-1, -1, -1])
-        np.testing.assert_array_equal(dataset["q_flags"].values, [0, 0, 0])
-        assert np.isnan(dataset["psf_coverage_fraction"].values).all()
+        np.testing.assert_array_equal(dataset[product_variable_name("igbp_surface_type")].values, [-1, -1, -1])
+        np.testing.assert_array_equal(dataset[product_variable_name("q_flags")].values, [0, 0, 0])
+        assert np.isnan(dataset[product_variable_name("psf_coverage_fraction")].values).all()
 
 
 class TestFillValueFor:
@@ -356,7 +358,7 @@ class TestMergeCoverageQa:
         return fake_radiometer_footprint(bbox, 0.5, 0.5, off_limb=off_limb)
 
     def test_coverage_bits(self):
-        definition = load_fmatch_definition(OperationalMode.CAM)
+        definition = _internal_name_view(load_fmatch_definition(OperationalMode.CAM))
         footprints = [
             self._footprint(),
             self._footprint(),
@@ -385,11 +387,16 @@ class TestMergeCoverageQa:
         assert product.ACCEPT_COVERAGE_THRESHOLD == 0.75
         assert product.PARTIAL_COVERAGE_THRESHOLD == 0.95
         data: dict[str, np.ndarray] = {}
-        _merge_coverage_qa(data, load_fmatch_definition(OperationalMode.CAM), np.array([coverage]), [self._footprint()])
+        _merge_coverage_qa(
+            data,
+            _internal_name_view(load_fmatch_definition(OperationalMode.CAM)),
+            np.array([coverage]),
+            [self._footprint()],
+        )
         assert data["q_flags"][0] == bits
 
     def test_existing_flags_are_kept(self):
-        definition = load_fmatch_definition(OperationalMode.CAM)
+        definition = _internal_name_view(load_fmatch_definition(OperationalMode.CAM))
         data = {"q_flags": np.array([_TRUNCATED], dtype=np.int32)}
         _merge_coverage_qa(data, definition, np.array([0.8]), [self._footprint()])
         assert data["q_flags"][0] == _TRUNCATED | _PARTIAL
@@ -447,7 +454,7 @@ class TestCoverageOverSources:
         np.testing.assert_allclose(coverage, half_coverage)
 
         data: dict[str, np.ndarray] = {}
-        _merge_coverage_qa(data, load_fmatch_definition(OperationalMode.CAM), coverage, footprints)
+        _merge_coverage_qa(data, _internal_name_view(load_fmatch_definition(OperationalMode.CAM)), coverage, footprints)
         assert data["q_flags"][0] & _INSUFFICIENT
 
 
@@ -460,13 +467,15 @@ class TestCamtimeAssembly:
             cloud_fraction_camera=cloud_fraction,
             allow_placeholders=True,
         )
-        assert dataset["latitude"].shape == (2, 2)
+        assert dataset[product_variable_name("latitude")].shape == (2, 2)
         # Row 1 holds the second image's single subsection; its second cell is padding.
-        np.testing.assert_array_equal(dataset["center_pixel_x"].values, [[0, 6], [1, -1]])
-        np.testing.assert_array_equal(dataset["camera_pixel_x_max"].values, [[3, 7], [3, -1]])
-        assert np.isnan(dataset["latitude"].values[1, 1])
-        np.testing.assert_allclose(dataset["cloud_fraction_camera"].values, [[0.1, 0.2], [0.3, np.nan]])
-        np.testing.assert_array_equal(dataset["igbp_surface_type"].values, np.full((2, 2), -1))
+        np.testing.assert_array_equal(dataset[product_variable_name("center_pixel_x")].values, [[0, 6], [1, -1]])
+        np.testing.assert_array_equal(dataset[product_variable_name("camera_pixel_x_max")].values, [[3, 7], [3, -1]])
+        assert np.isnan(dataset[product_variable_name("latitude")].values[1, 1])
+        np.testing.assert_allclose(
+            dataset[product_variable_name("cloud_fraction_camera")].values, [[0.1, 0.2], [0.3, np.nan]]
+        )
+        np.testing.assert_array_equal(dataset[product_variable_name("igbp_surface_type")].values, np.full((2, 2), -1))
 
 
 class TestIntegerAggregatePlacement:
@@ -486,8 +495,8 @@ class TestIntegerAggregatePlacement:
         dataset = assemble_fmatch_dataset(
             OperationalMode.CAM, _l1b_inputs(), sources=fake_sources, cloud_fraction_camera=_CLOUD_FRACTION
         )
-        assert dataset["igbp_surface_type"].dtype == np.int16
-        np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [-1, 3, 3])
+        assert dataset[product_variable_name("igbp_surface_type")].dtype == np.int16
+        np.testing.assert_array_equal(dataset[product_variable_name("igbp_surface_type")].values, [-1, 3, 3])
 
     def test_camtime_grid(self, fake_sources, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
@@ -498,7 +507,7 @@ class TestIntegerAggregatePlacement:
             cloud_fraction_camera=_CLOUD_FRACTION,
         )
         # The first footprint's gap and the padded cell both take -1.
-        np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [[-1, 3], [3, -1]])
+        np.testing.assert_array_equal(dataset[product_variable_name("igbp_surface_type")].values, [[-1, 3], [3, -1]])
 
 
 class TestRadiometerAggregation:
@@ -532,17 +541,45 @@ class TestWriteFmatchProduct:
         assert filename.data_product_id == DataProductIdentifier.aux_fmatch_cam
 
         with xr.open_dataset(filename.path, mask_and_scale=False) as written:
-            coverage = written["psf_coverage_fraction"].values
+            coverage = written[product_variable_name("psf_coverage_fraction")].values
             assert np.all((coverage >= 0.0) & (coverage <= 1.0))
             expected = np.where(
                 coverage < product.ACCEPT_COVERAGE_THRESHOLD,
                 _INSUFFICIENT,
                 np.where(coverage < product.PARTIAL_COVERAGE_THRESHOLD, _PARTIAL, 0),
             )
-            np.testing.assert_array_equal(written["q_flags"].values, expected)
+            np.testing.assert_array_equal(written[product_variable_name("q_flags")].values, expected)
             # The fake readers feed no IGBP data, so the column is the -1 integer fill on disk, declared as such.
-            np.testing.assert_array_equal(written["igbp_surface_type"].values, [-1, -1, -1])
-            assert written["igbp_surface_type"].attrs["_FillValue"] == -1
+            np.testing.assert_array_equal(written[product_variable_name("igbp_surface_type")].values, [-1, -1, -1])
+            assert written[product_variable_name("igbp_surface_type")].attrs["_FillValue"] == -1
+
+    @pytest.mark.parametrize(
+        "mode",
+        [OperationalMode.CAM, OperationalMode.IMAGER, OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME],
+    )
+    def test_written_product_carries_only_product_names(self, tmp_path, mode):
+        """The written file holds exactly the definition's product names, never an internal one.
+
+        Assembly fills internal snake_case columns; each is written under its product name. The camera-timescale
+        products also carry the Camera_Pixel_* non-dimension coordinates, which must reopen as coordinates.
+        """
+        camtime = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
+        filename = write_fmatch_product(
+            mode,
+            _pseudo_footprints() if camtime else _l1b_inputs(),
+            tmp_path,
+            algorithm_version="1.0.0",
+            input_files="x",
+            cloud_fraction_camera=_CLOUD_FRACTION
+            if mode in (OperationalMode.CAM, OperationalMode.CAM_CAMTIME)
+            else None,
+            allow_placeholders=True,
+        )
+
+        definition = load_fmatch_definition(mode)
+        with xr.open_dataset(filename.path, mask_and_scale=False) as written:
+            assert set(written.data_vars) == set(definition.variables)
+            assert set(written.coords) == set(definition.coordinates)
 
 
 def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
@@ -604,15 +641,17 @@ class TestAssemblyWithAggregation:
         )
 
         # Weighted mean of a constant field is that constant.
-        np.testing.assert_allclose(dataset["era5_surface_wind_u10"].values, [2.5], rtol=1e-4)
-        np.testing.assert_allclose(dataset["era5_surface_wind_v10"].values, [-1.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset[product_variable_name("era5_surface_wind_u10")].values, [2.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset[product_variable_name("era5_surface_wind_v10")].values, [-1.5], rtol=1e-4)
         # A constant field has zero within-footprint spread.
-        np.testing.assert_allclose(dataset["era5_surface_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
+        np.testing.assert_allclose(
+            dataset[product_variable_name("era5_surface_wind_u10_standard_deviation")].values, [0.0], atol=1e-4
+        )
         # Fully covered -> coverage ~1 and no coverage QA bits set.
-        assert dataset["psf_coverage_fraction"].values[0] > 0.99
-        assert int(dataset["q_flags"].values[0]) == 0
+        assert dataset[product_variable_name("psf_coverage_fraction")].values[0] > 0.99
+        assert int(dataset[product_variable_name("q_flags")].values[0]) == 0
         # igbp is not among the readers set for the test, so its column stays the -1 integer category fill.
-        assert int(dataset["igbp_surface_type"].values[0]) == -1
+        assert int(dataset[product_variable_name("igbp_surface_type")].values[0]) == -1
         # The product still conforms strictly with the computed columns in place.
         assert load_fmatch_definition(OperationalMode.CAM).check_dataset_conformance(dataset, strict=True) == []
 
@@ -623,6 +662,6 @@ class TestAssemblyWithAggregation:
             OperationalMode.CAM, l1b, sources=self._era5_sources(tmp_path), cloud_fraction_camera=np.zeros(1)
         )
 
-        assert np.isnan(dataset["era5_surface_wind_u10"].values[0])
-        np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
-        assert int(dataset["q_flags"].values[0]) & _INSUFFICIENT
+        assert np.isnan(dataset[product_variable_name("era5_surface_wind_u10")].values[0])
+        np.testing.assert_allclose(dataset[product_variable_name("psf_coverage_fraction")].values, [0.0])
+        assert int(dataset[product_variable_name("q_flags")].values[0]) & _INSUFFICIENT

@@ -10,10 +10,11 @@ imager fields. These tests confirm, for every shipped definition, that:
 - The schema declares the expected geolocation, derived-geometry, and QA variables
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
-  VariableSpec definitions for the mode. Every reader-sourced variable is named
-  `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type,
-  cldpix_cloud_mask), or `<source_key>_<stack_name>` for a reader's stacked specs
-  (e.g. era5_pressure_temperature on PRESSURE_LEVEL); the reader's instrument is recorded in each variable's
+  VariableSpec definitions for the mode. Every reader-sourced variable is declared
+  under the product name of `<source_key>_<spec_name>` (e.g. ERA5_Surface_Wind_U10 for
+  era5_surface_wind_u10), or of `<source_key>_<stack_name>` for a reader's stacked specs
+  (e.g. ERA5_Pressure_Temperature on PRESSURE_LEVEL); the content checks read the
+  definitions keyed by internal name. The reader's instrument is recorded in each variable's
   ``long_name`` instead (e.g. "... (ECMWF)").
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
@@ -30,6 +31,7 @@ from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.product import (
     FMATCH_DEFINITION_FILENAMES,
     FMATCH_INTEGER_FILL_VALUE,
+    _internal_name_view,
     fmatch_time_variable,
     load_fmatch_definition,
 )
@@ -75,12 +77,13 @@ def _production_readers_for_mode(mode: OperationalMode) -> dict:
 
 
 def _expected_external_variables(mode: OperationalMode) -> dict[str, tuple[str, str | None]]:
-    """{output_variable_name: (dtype, stack dimension or None)} for every active production reader variable.
+    """{internal_variable_name: (dtype, stack dimension or None)} for every active production reader variable.
 
-    Mirrors the product-definition naming rule: every reader-sourced variable is
-    named `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type), or
+    Mirrors the internal naming rule: every reader-sourced variable is named
+    `<source_key>_<spec_name>` (e.g. era5_surface_wind_u10, igbp_surface_type), or
     `<source_key>_<stack_name>` for specs a reader stacks along a further dimension (e.g.
-    era5_pressure_temperature on PRESSURE_LEVEL). The reader's instrument is not part of the
+    era5_pressure_temperature on PRESSURE_LEVEL); the definition declares the product
+    name of each. The reader's instrument is not part of the
     name -- it is recorded in the variable's ``long_name`` instead (see
     ``test_reader_instrument_is_recorded_in_long_name``). A spec is carried when ``mode`` is in
     its ``modes`` (e.g. the extended FLASHFlux cloud/aerosol/albedo fields appear in
@@ -112,6 +115,16 @@ def definitions() -> dict[OperationalMode, LiberaDataProductDefinition]:
     return {mode: load_fmatch_definition(mode) for mode in ALL_MODES}
 
 
+@pytest.fixture(scope="module")
+def internal_definitions(definitions) -> dict[OperationalMode, LiberaDataProductDefinition]:
+    """Each mode's definition keyed by internal names, as assembly reads it.
+
+    The content checks compare against the readers' internal ``<source_key>_<spec_name>`` names; the YAML declares
+    the product name of each, which ``tests/unit/test_io/test_product_variable_names.py`` holds to the naming rule.
+    """
+    return {mode: _internal_name_view(definition) for mode, definition in definitions.items()}
+
+
 class TestFmatchIdentifiers:
     """Every mode's product ID must be an AUX member matching the mode string."""
 
@@ -128,13 +141,13 @@ class TestFmatchIdentifiers:
 class TestImagerContent:
     """Guards the FMATCH-IMAGER content: it carries both the RBSP and the ERA5 fields."""
 
-    def test_imager_has_rbsp_variables(self, definitions):
-        definition = definitions[OperationalMode.IMAGER]
+    def test_imager_has_rbsp_variables(self, internal_definitions):
+        definition = internal_definitions[OperationalMode.IMAGER]
         assert any(name.startswith("cldpix_") for name in definition.variables)
         assert any(name.startswith("flashflux_") for name in definition.variables)
 
-    def test_imager_keeps_full_era5_field_set(self, definitions):
-        definition = definitions[OperationalMode.IMAGER]
+    def test_imager_keeps_full_era5_field_set(self, internal_definitions):
+        definition = internal_definitions[OperationalMode.IMAGER]
         # The winds (every product), the single-level fields, and the pressure-level
         # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
         # (spot-check one per family; full sync is covered by
@@ -145,7 +158,7 @@ class TestImagerContent:
         assert "era5_pressure_temperature" in definition.variables
         assert "era5_pressure_relative_humidity_standard_deviation" in definition.variables
 
-    def test_extended_flashflux_fields_are_imager_only(self, definitions):
+    def test_extended_flashflux_fields_are_imager_only(self, internal_definitions):
         # The extended FLASHFlux cloud-layer / aerosol / albedo fields are carried by
         # FMATCH-IMAGER alone (their modes) and must NOT leak into FMATCH-IMAGER-CAMTIME, the
         # other product that activates the flashflux reader. Spot-check one field per secondary
@@ -158,10 +171,10 @@ class TestImagerContent:
             "flashflux_aerosol_type_percentage_type6",
             "flashflux_surface_albedo",
         )
-        imager = definitions[OperationalMode.IMAGER]
+        imager = internal_definitions[OperationalMode.IMAGER]
         for name in extended:
             assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
-        camtime = definitions[OperationalMode.IMAGER_CAMTIME]
+        camtime = internal_definitions[OperationalMode.IMAGER_CAMTIME]
         leaked = [name for name in extended if name in camtime.variables]
         assert leaked == [], f"FMATCH-IMAGER-CAMTIME must not declare IMAGER-only flashflux fields, found {leaked}"
         # The base FLASHFlux fields, by contrast, still appear in IMAGER-CAMTIME.
@@ -188,14 +201,14 @@ class TestFmatchDefinitions:
         assert definition.coordinates[time_var].dimensions == [time_var]
 
     @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_common_variables_present(self, mode, definitions):
-        definition = definitions[mode]
+    def test_common_variables_present(self, mode, internal_definitions):
+        definition = internal_definitions[mode]
         for name in GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES:
             assert name in definition.variables, f"{mode.value} missing {name}"
 
     @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_external_variables_match_readers(self, mode, definitions):
-        definition = definitions[mode]
+    def test_external_variables_match_readers(self, mode, internal_definitions):
+        definition = internal_definitions[mode]
         for name, (dtype, _) in _expected_external_variables(mode).items():
             assert name in definition.variables, f"{mode.value} missing external variable {name}"
             assert definition.variables[name].dtype == dtype, (
@@ -204,12 +217,12 @@ class TestFmatchDefinitions:
             )
 
     @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
+    def test_reader_instrument_is_recorded_in_long_name(self, mode, internal_definitions):
         # The instrument token is carried in the variable's long_name rather than the
         # variable name (e.g. era5_surface_wind_u10 has long_name "... (ECMWF)"). Guard that every
         # reader-sourced variable's long_name carries its reader's INSTRUMENT, so
         # provenance is not silently lost from the ~hundreds of hand-written long_names.
-        definition = definitions[mode]
+        definition = internal_definitions[mode]
         readers = _production_readers_for_mode(mode)
         for name in _expected_external_variables(mode):
             instrument = next(cls.INSTRUMENT for key, cls in readers.items() if name.startswith(f"{key}_"))
@@ -219,13 +232,13 @@ class TestFmatchDefinitions:
             )
 
     @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_all_variables_use_mode_record_dimension(self, mode, definitions):
+    def test_all_variables_use_mode_record_dimension(self, mode, internal_definitions):
         # Radiometer modes hang variables on the 1-D RADIOMETER_TIME axis; camera-timescale modes hang every variable
         # on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. A reader's stacked variable adds its stack's dimension.
         time_var = fmatch_time_variable(mode)
         expected_dims = ["CAMERA_TIME", "PSEUDOFOOTPRINT"] if time_var == "CAMERA_TIME" else [time_var]
         stacked = {name: dim for name, (_, dim) in _expected_external_variables(mode).items() if dim is not None}
-        for name, var_def in definitions[mode].variables.items():
+        for name, var_def in internal_definitions[mode].variables.items():
             dims = expected_dims + [stacked[name]] if name in stacked else expected_dims
             assert var_def.dimensions == dims, f"{mode.value}/{name} wrong dimension"
 
@@ -252,16 +265,16 @@ class TestFmatchDefinitions:
         }
         assert undeclared == {}
 
-    def test_imager_camtime_has_no_era5_pressure_variables(self, definitions):
+    def test_imager_camtime_has_no_era5_pressure_variables(self, internal_definitions):
         # The ERA5 pressure-level fields are a radiometer-timescale quantity: the
         # camera-timescale FMATCH-IMAGER-CAMTIME product must not declare them, while
         # the radiometer FMATCH-IMAGER product still does. Standing guard against the
         # pressure block drifting back into the camtime YAML (there is no general
         # no-extra-variables check).
-        camtime = definitions[OperationalMode.IMAGER_CAMTIME]
+        camtime = internal_definitions[OperationalMode.IMAGER_CAMTIME]
         offenders = [name for name in camtime.variables if name.startswith("era5_pressure_")]
         assert offenders == [], f"FMATCH-IMAGER-CAMTIME must not declare era5_pressure variables, found {offenders}"
-        imager = definitions[OperationalMode.IMAGER]
+        imager = internal_definitions[OperationalMode.IMAGER]
         assert any(name.startswith("era5_pressure_") for name in imager.variables)
 
 
