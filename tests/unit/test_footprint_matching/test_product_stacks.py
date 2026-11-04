@@ -16,6 +16,7 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
     ERA5PressureLevelReader,
 )
 from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.io.product_variable_names import product_variable_name
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
@@ -67,11 +68,11 @@ class TestStackedProductVariables:
 
         np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
         for var_index, (field_name, _) in enumerate(_ERA5_PRESSURE_LEVEL_VARIABLES):
-            mean = dataset[f"era5_pressure_{field_name}"]
+            mean = dataset[product_variable_name(f"era5_pressure_{field_name}")]
             assert mean.dims == ("RADIOMETER_TIME", "PRESSURE_LEVEL")
             expected = [era5_pressure_fixture_value(var_index, level) for level in _ERA5_PRESSURE_LEVELS]
             np.testing.assert_allclose(mean.values, np.tile(expected, (3, 1)), rtol=1e-6)
-            spread = dataset[f"era5_pressure_{field_name}_standard_deviation"]
+            spread = dataset[product_variable_name(f"era5_pressure_{field_name}_standard_deviation")]
             np.testing.assert_allclose(spread.values, 0.0, atol=1e-6 * np.max(np.abs(expected)))
 
     def test_unstaged_era5_pressure_leaves_stacked_placeholders(self):
@@ -86,10 +87,12 @@ class TestStackedProductVariables:
         dataset = assemble_fmatch_dataset(OperationalMode.IMAGER, _l1b_inputs(), allow_placeholders=True)
 
         np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
-        temperature = dataset["era5_pressure_temperature"]
+        temperature = dataset[product_variable_name("era5_pressure_temperature")]
         assert temperature.shape == (3, len(_ERA5_PRESSURE_LEVELS))
         _, fill_value = _fill_value_for(
             "era5_pressure_temperature",
-            load_fmatch_definition(OperationalMode.IMAGER).variables["era5_pressure_temperature"],
+            load_fmatch_definition(OperationalMode.IMAGER).variables[
+                product_variable_name("era5_pressure_temperature")
+            ],
         )
         np.testing.assert_array_equal(temperature.values, fill_value)
