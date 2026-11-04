@@ -1501,7 +1501,7 @@ def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootpr
     Parameters
     ----------
     dataset : xarray.Dataset
-        A CF-CAM-CAMTIME dataset carrying every name in :data:`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`.
+        A CF-CAM-CAMTIME dataset carrying every name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
 
     Returns
     -------
@@ -1511,7 +1511,7 @@ def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootpr
     Raises
     ------
     MissingCamtimeVariablesError
-        If ``dataset`` lacks any name in :data:`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`.
+        If ``dataset`` lacks any name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
     """
     missing = [name for name in CAMTIME_PSEUDOFOOTPRINT_VARIABLES if name not in dataset.variables]
     if missing:
