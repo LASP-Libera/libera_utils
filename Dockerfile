@@ -111,3 +111,11 @@ ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
 FROM libera-utils AS libera-utils-scene-id
 
 ENTRYPOINT ["libera-utils", "scene-id"]
+
+
+# CLI for the FMATCH algorithms from a manifest file. The LIBERA_FMATCH_VARIANT environment variable, set per
+# processing step, selects the variant (e.g. "cam", "imager-camtime").
+# -------------------------------------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch
+
+ENTRYPOINT ["libera-utils", "fmatch"]
