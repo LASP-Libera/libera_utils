@@ -16,7 +16,7 @@ handful of parameters:
 
 Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
 :func:`run_algorithm` and is parameterized by a small :class:`FmatchRunnerConfig`. The concrete
-runners are just the four :data:`FmatchRunnerConfig` values collected in :data:`RUNNER_CONFIGS`,
+runners are just the four :data:`FmatchRunnerConfig` values collected in ``RUNNER_CONFIGS``,
 keyed by variant name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``). Every variant runs from the one ``libera-utils fmatch <manifest>`` command, and so
 from one container image: :func:`fmatch_cli_handler` selects the config named by the
 ``LIBERA_FMATCH_VARIANT`` environment variable, which each processing step sets. A new FMATCH variant
@@ -33,7 +33,7 @@ Environment
 Three environment variables are required at run time:
 
 ``LIBERA_FMATCH_VARIANT``
-    The :data:`RUNNER_CONFIGS` entry the CLI runs (e.g. ``cam``, ``imager-camtime``).
+    The ``RUNNER_CONFIGS`` entry the CLI runs (e.g. ``cam``, ``imager-camtime``).
 ``PROCESSING_PATH``
     The dropbox directory (or S3 prefix) products and the output manifest are written
     to. This is the standard Libera runner convention.
@@ -304,12 +304,12 @@ def resolve_runner_config_from_env() -> FmatchRunnerConfig:
     Returns
     -------
     FmatchRunnerConfig
-        The :data:`RUNNER_CONFIGS` entry for the named variant.
+        The ``RUNNER_CONFIGS`` entry for the named variant.
 
     Raises
     ------
     ValueError
-        If the variable is not set or names no entry in :data:`RUNNER_CONFIGS`.
+        If the variable is not set or names no entry in ``RUNNER_CONFIGS``.
     """
     variant = os.getenv(FMATCH_VARIANT_ENV, "").strip()
     if not variant:
@@ -651,7 +651,7 @@ def run_footprint_matching(
     Notes
     -----
     Both paths use :func:`xarray.open_dataset`, which needs a real local file, so an S3 input is first
-    materialized to a temporary file by :class:`_as_local_path`; local inputs are read in place.
+    materialized to a temporary file by ``_as_local_path``; local inputs are read in place.
     """
     with _as_local_path(input_file_path) as local_input_path:
         if config.is_camera_timescale:
@@ -874,7 +874,7 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
 
     Pulls every quantity the FMATCH product contract takes straight from L1B Daily:
     the ``RADIOMETER_TIME`` coordinate plus all variables in
-    :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+    ``L1B_PASSTHROUGH_VARIABLES``
     (footprint ``latitude``/``longitude`` and the solar/viewing zenith and
     relative-azimuth angles).
 
@@ -889,18 +889,18 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     ----------
     l1b_file : pathlib.Path
         Path to a local L1B RAD-4CH NetCDF file. Remote inputs must be materialized
-        locally first (see :class:`_as_local_path`), because
+        locally first (see ``_as_local_path``), because
         :func:`xarray.open_dataset` seeks within the file.
 
     Returns
     -------
     dict[str, np.ndarray]
         Mapping keyed by FMATCH variable name: ``"RADIOMETER_TIME"`` (datetime64[ns])
-        plus each key of :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+        plus each key of ``L1B_PASSTHROUGH_VARIABLES``
         (float32). It additionally carries the scan-reference geometry used to build
         footprints (not product columns): each key of
-        :data:`~libera_utils.footprint_matching.product.L1B_SCAN_REFERENCE_VARIABLES` and
-        :data:`~libera_utils.footprint_matching.product.FMATCH_CONE_ANGLE_RATE_KEY`
+        ``L1B_SCAN_REFERENCE_VARIABLES`` and
+        ``FMATCH_CONE_ANGLE_RATE_KEY``
         (float64). All arrays are 1-D and the same length.
 
     Raises
