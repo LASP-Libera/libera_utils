@@ -368,18 +368,28 @@ class PseudoFootprint:
         The ``CAMERA_TIME`` of the image this footprint came from. All footprints
         segmented from the same image share this timestamp. The readers' time
         selection (:class:`TimeMatch`) matches ancillary samples to it.
-    slice_x, slice_y : slice
-        The block's half-open extent in the ``CAMERA_PIXEL_COUNT_X`` /
-        ``CAMERA_PIXEL_COUNT_Y`` pixel grid.
-    center_ix, center_iy : int
-        Pixel indices of the footprint's center (the boresight stand-in), after any
+    slice_x : slice
+        The block's half-open extent in the ``CAMERA_PIXEL_COUNT_X`` pixel grid.
+    slice_y : slice
+        The block's half-open extent in the ``CAMERA_PIXEL_COUNT_Y`` pixel grid.
+    center_ix : int
+        X pixel index of the footprint's center (the boresight stand-in), after any
         nearest-valid-pixel substitution.
-    latitude, longitude : float
-        Center-pixel geodetic latitude/longitude, degrees.
+    center_iy : int
+        Y pixel index of the footprint's center, after any nearest-valid-pixel
+        substitution.
+    latitude : float
+        Center-pixel geodetic latitude, degrees.
+    longitude : float
+        Center-pixel longitude, degrees.
     altitude : float
         Center-pixel altitude, meters (as stored in L1B).
-    solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
-        Center-pixel viewing-geometry angles, degrees.
+    solar_zenith_angle : float
+        Center-pixel solar zenith angle, degrees.
+    viewing_zenith_angle : float
+        Center-pixel viewing zenith angle, degrees.
+    relative_azimuth_angle : float
+        Center-pixel relative azimuth angle, degrees.
     bbox : BoundingBox
         Geographic box enclosing the block's valid corner pixels.
     q_flags : CameraFootprintQualityFlag

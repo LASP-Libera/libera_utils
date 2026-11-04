@@ -12,8 +12,8 @@ Assembly and writing are wired for **every** operational mode, and each declared
 variable is filled by one of three routes:
 
 * **Input pass-through** - the geolocation and viewing angles come straight from
-  the L1B Daily inputs (:data:`_RADIOMETER_L1B_VARIABLES` for the radiometer
-  modes, :data:`_CAMTIME_SEGMENTATION_VARIABLES` for the camera-segmented ones).
+  the L1B Daily inputs (``_RADIOMETER_L1B_VARIABLES`` for the radiometer
+  modes, ``_CAMTIME_SEGMENTATION_VARIABLES`` for the camera-segmented ones).
 * **Computed** - the derived viewing geometry (``Sunglint_Angle``, via
   :func:`compute_derived_viewing_geometry`) is always calculated, and the external
   aggregated variables (:func:`aggregate_external_variables`) plus the coverage/QA
@@ -33,9 +33,8 @@ Dimension coordinates keep their names.
 
 A placeholder is *structurally* correct (declared dtype, shape and attributes)
 but numerically meaningless. Floating-point placeholders are filled with ``NaN``
-and integer placeholders with their declared ``_FillValue`` (:data:`FMATCH_INTEGER_FILL_VALUE`,
-``-1``), or ``0`` for a bitmask; see
-:func:`_fill_placeholder_variables`.
+and integer placeholders with their declared ``_FillValue`` (``FMATCH_INTEGER_FILL_VALUE``,
+``-1``), or ``0`` for a bitmask; see ``_fill_placeholder_variables``.
 
 Why a thin seam here
 --------------------
@@ -44,10 +43,6 @@ are the contract every downstream consumer (Scene ID, Camera Cloud Fraction, ADM
 binning) reads against. Keeping the loaders next to the writers means there is a
 single place that knows how a FMATCH file is produced, while the reader plugins
 stay decoupled from product I/O.
-
-See Also
---------
-libera_utils.footprint_matching._runner : Manifest-driven runners that call into this module.
 """
 
 from __future__ import annotations
@@ -261,7 +256,8 @@ def load_fmatch_definition(mode: OperationalMode) -> LiberaDataProductDefinition
     """Load and validate the FMATCH product definition for an operational mode.
 
     Resolves the mode's YAML under the configured product-definitions directory
-    and parses it into a validated :class:`LiberaDataProductDefinition`.
+    and parses it into a validated
+    :class:`~libera_utils.io.product_definition.LiberaDataProductDefinition`.
 
     Parameters
     ----------
@@ -441,14 +437,14 @@ def aggregate_external_variables(
     the scientifically faithful angular-frame PSF
     (:class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`), oriented by
     the L1B ephemeris (subsatellite point + satellite radius) and cone-angle rate (see
-    :func:`_assemble_radiometer_dataset`). Both weighers size the PSF from the ephemeris,
+    ``_assemble_radiometer_dataset``). Both weighers size the PSF from the ephemeris,
     so camera pseudo-footprints, which carry none yet, raise ``ValueError``.
 
     Coverage-based *acceptance* (the CERES 75%/95% discard/flag rule) is not applied
     here -- this function computes each footprint's coverage and, when
     ``return_coverage`` is set, returns it alongside the values, but turning coverage
     into QA flags (or discarding a footprint) is the caller's job (see
-    :func:`_merge_coverage_qa`). Per-footprint coverage is the fraction of the PSF's
+    ``_merge_coverage_qa``). Per-footprint coverage is the fraction of the PSF's
     in-contour energy backed by a usable sample, measured by the weigher on its
     reference grid (see :class:`~libera_utils.footprint_matching.weighting.WeightField`),
     taken as the **minimum** across the active sources so a footprint is scored no
@@ -480,7 +476,7 @@ def aggregate_external_variables(
         Worker processes to run the footprints on. ``None`` (the default) reads the
         ``FMATCH_WORKERS`` configuration key (``config.json``, overridable through the
         environment variable of the same name); ``1`` runs in the calling process. Fewer
-        than :data:`_MIN_FOOTPRINTS_PER_WORKER` footprints per worker also runs in the
+        than ``_MIN_FOOTPRINTS_PER_WORKER`` footprints per worker also runs in the
         calling process, since the pool would cost more than it saves.
 
     Returns
@@ -490,7 +486,7 @@ def aggregate_external_variables(
         name to a 1-D array indexed by footprint, carrying ``NaN`` where a footprint had
         no usable data. Float variables keep their reader dtype; categorical (integer)
         variables are returned as ``float64`` so they can carry ``NaN`` too, and the
-        product's integer fill (see :func:`_fill_value_for`) replaces it when the column is
+        product's integer fill (see ``_fill_value_for``) replaces it when the column is
         written. With
         ``return_coverage=True``: a ``(values, coverage)`` tuple, where
         ``coverage`` is a 1-D float array in ``[0, 1]`` indexed by footprint (the
@@ -825,7 +821,7 @@ def compute_derived_viewing_geometry(
 
 
 def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[RadiometerFootprint]:
-    """Build per-footprint :class:`RadiometerFootprint` objects from L1B pass-through arrays.
+    """Build one :class:`~libera_utils.footprint_matching.types.RadiometerFootprint` per L1B pass-through record.
 
     Gives each radiometer-timescale footprint the geographic bounding box the external
     aggregation path needs: the **true ray-traced footprint** from
@@ -845,12 +841,11 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The arrays from
-        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`
-        (already filtered to finite geolocation). ``RADIOMETER_TIME``, ``latitude``,
+        The L1B pass-through arrays the FMATCH runner reads from L1B Daily (already
+        filtered to finite geolocation). ``RADIOMETER_TIME``, ``latitude``,
         ``longitude``, ``viewing_zenith_angle`` and every
-        :data:`L1B_SCAN_REFERENCE_VARIABLES` key are required;
-        :data:`FMATCH_CONE_ANGLE_RATE_KEY` is read when present.
+        ``L1B_SCAN_REFERENCE_VARIABLES`` key are required;
+        ``FMATCH_CONE_ANGLE_RATE_KEY`` is read when present.
 
     Returns
     -------
@@ -1115,12 +1110,12 @@ def assemble_fmatch_dataset(
     * **Camera-timescale** (``CAM_CAMTIME``, ``IMAGER_CAMTIME``) - assembled from
       the camera pseudo-footprints segmented by the Camera Cloud Fraction algorithm
       and read from its CF-CAM-CAMTIME product.
-      ``inputs`` is that sequence of :class:`PseudoFootprint` objects. See
-      :func:`_assemble_camtime_dataset`.
+      ``inputs`` is that sequence of
+      :class:`~libera_utils.footprint_matching.types.PseudoFootprint` objects. See
+      ``_assemble_camtime_dataset``.
     * **Radiometer-timescale** (``CAM``, ``IMAGER``) - assembled
-      from the L1B pass-through arrays produced by
-      :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
-      ``inputs`` is that dict. See :func:`_assemble_radiometer_dataset`.
+      from the L1B pass-through arrays the FMATCH runner reads from L1B Daily.
+      ``inputs`` is that dict. See ``_assemble_radiometer_dataset``.
 
     In both cases the derived viewing geometry (``Sunglint_Angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
@@ -1701,9 +1696,8 @@ def _assemble_radiometer_dataset(
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The pass-through arrays from
-        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`:
-        the ``RADIOMETER_TIME`` coordinate plus each of
+        The pass-through arrays the FMATCH runner reads from L1B Daily: the
+        ``RADIOMETER_TIME`` coordinate plus each of
         :data:`_RADIOMETER_L1B_VARIABLES`, all the same length.
     mode : OperationalMode
         Which radiometer-timescale mode to assemble.
