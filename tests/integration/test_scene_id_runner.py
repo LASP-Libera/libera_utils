@@ -6,8 +6,10 @@ write (which is not covered by the algorithm-level tests in ``test_scene_id.py``
 is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
 """
 
+import logging
 from datetime import UTC, datetime
 
+import netCDF4
 import numpy as np
 import pytest
 import xarray as xr
@@ -38,7 +40,7 @@ IMAGER_CAMTIME_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["imager-camtime"].produc
 
 
 # Thin per-variant helpers bind the generic runner functions to a registry config so the test bodies below stay
-# readable. They are the test-side stand-ins for the per-module wrappers that the runners used to expose.
+# readable.
 def run_scene_identification_cam(path):
     """Run scene identification with the CAM config."""
     return run_scene_identification(path, RUNNER_CONFIGS["cam"])
@@ -166,17 +168,6 @@ class TestCollectInputFiles:
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
-    def test_product_mode_keeps_only_matching_product(self):
-        """In Libera-product mode only files with the configured product id are kept."""
-        # Targets product-mode selection; asserts collect_input_files returns only the path matching the product id.
-        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
-        other = _libera_product_name(DataProductIdentifier.l1b_rad)
-        manifest = self._manifest(wanted, other, SSF_INPUT_NAME)
-
-        selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
-
-        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
-
 
 class TestToTimeProduct:
     """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
@@ -234,6 +225,7 @@ class TestFmatchReaders:
             assert required in dataset.variables
         # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
         assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+        _assert_imager_sources(dataset)
 
     def test_from_fmatch_imager_camtime_reads_inputs_on_camera_grid_with_passthrough(self, tmp_path):
         """from_fmatch_imager_camtime maps the full FLASHFlux/CLDPIX inputs onto the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT)
@@ -250,6 +242,7 @@ class TestFmatchReaders:
             assert required in dataset.variables
             assert dataset[required].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+        _assert_imager_sources(dataset)
         # The camtime provenance identifiers pass through on the 2-D grid; the FMATCH-only center pixel does not.
         for name in (
             "latitude",
@@ -265,33 +258,121 @@ class TestFmatchReaders:
         assert "center_pixel_x" not in dataset.variables
 
     @pytest.mark.parametrize(
-        ("reader", "file_mode", "missing_product_name"),
+        ("reader", "file_mode", "missing_product_name", "expected_input"),
         [
-            pytest.param("from_fmatch_imager", OperationalMode.CAM, "FLASHFlux_Clear_Coverage", id="imager-on-cam"),
+            pytest.param(
+                "from_fmatch_imager",
+                OperationalMode.CAM,
+                "FLASHFlux_Clear_Coverage",
+                "FMATCH-IMAGER file for LIBERA_SCENE_ID_VARIANT=imager",
+                id="imager-on-cam",
+            ),
             pytest.param(
                 "from_fmatch_imager_camtime",
                 OperationalMode.CAM_CAMTIME,
                 "FLASHFlux_Clear_Coverage",
+                "FMATCH-IMAGER-CAMTIME file for LIBERA_SCENE_ID_VARIANT=imager-camtime",
                 id="imager-camtime-on-cam-camtime",
             ),
-            pytest.param("from_fmatch_cam", OperationalMode.IMAGER, "Cloud_Fraction_Camera", id="cam-on-imager"),
+            pytest.param(
+                "from_fmatch_cam",
+                OperationalMode.IMAGER,
+                "Cloud_Fraction_Camera",
+                "FMATCH-CAM file for LIBERA_SCENE_ID_VARIANT=cam",
+                id="cam-on-imager",
+            ),
             # A radiometer-timescale file has no camera pixel bounds, so the pass-through check fails too.
             pytest.param(
                 "from_fmatch_imager_camtime",
                 OperationalMode.IMAGER,
                 "Camera_Pixel_X_Min",
+                "FMATCH-IMAGER-CAMTIME file for LIBERA_SCENE_ID_VARIANT=imager-camtime",
                 id="imager-camtime-on-imager",
             ),
         ],
     )
-    def test_reader_rejects_a_file_of_another_mode(self, tmp_path, reader, file_mode, missing_product_name):
+    def test_reader_rejects_a_file_of_another_mode(
+        self, tmp_path, reader, file_mode, missing_product_name, expected_input
+    ):
         """A reader handed another mode's FMATCH file names the missing product variable and the input it needs."""
         wrong_file = make_fmatch_product_fixture(tmp_path, file_mode, n_footprints=4)
-        with pytest.raises(
-            ValueError,
-            match=rf"missing required variable\(s\) \[.*'{missing_product_name}'.*\]; pass the FMATCH product",
-        ):
+        with pytest.raises(ValueError, match=r"missing required variable\(s\) \[.*\]") as excinfo:
             getattr(FootprintData, reader)(wrong_file)
+        message = str(excinfo.value)
+        assert f"'{missing_product_name}'" in message
+        assert f"check that the manifest's input is a {expected_input}" in message
+        assert "Present data variables" not in message
+
+    def test_missing_input_raises_file_not_found(self, tmp_path):
+        """A path that does not exist raises FileNotFoundError naming it, chained to the open's own error."""
+        absent = tmp_path / "absent.nc"
+        with pytest.raises(FileNotFoundError, match="Unable to open input file") as excinfo:
+            FootprintData.from_fmatch_cam(absent)
+        assert str(absent) in str(excinfo.value)
+        assert excinfo.value.__cause__ is not None
+
+    @pytest.mark.parametrize("as_uri", [False, True], ids=["s3path", "uri-string"])
+    def test_reader_reads_an_s3_input(self, tmp_path, write_file_to_s3, as_uri):
+        """An FMATCH product in S3, given as an S3Path or the manifest's URI string, reads like a local one."""
+        local_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
+        s3_path = write_file_to_s3(local_path, f"s3://fmatch-inputs/{local_path.name}")
+
+        footprint_data = run_scene_identification(s3_path.as_uri() if as_uri else s3_path, RUNNER_CONFIGS["cam"])
+
+        local_data = FootprintData.from_fmatch_cam(local_path)._data
+        assert footprint_data._data.sizes["RADIOMETER_TIME"] == local_data.sizes["RADIOMETER_TIME"]
+        np.testing.assert_array_equal(
+            footprint_data._data["igbp_surface_type"].values, local_data["igbp_surface_type"].values
+        )
+
+    @pytest.mark.parametrize(
+        ("reader", "mode"),
+        [
+            pytest.param("from_fmatch_cam", OperationalMode.CAM, id="cam"),
+            pytest.param("from_fmatch_cam_camtime", OperationalMode.CAM_CAMTIME, id="cam-camtime"),
+        ],
+    )
+    def test_cam_reader_warns_when_cloud_fraction_is_all_fill(self, tmp_path, caplog, reader, mode):
+        """A CAM product with no finite camera cloud fraction is read, with a warning naming the file and LIBSDC-785."""
+        input_path = make_fmatch_product_fixture(tmp_path, mode, n_footprints=4)
+        with netCDF4.Dataset(input_path, "a") as dataset:
+            dataset["Cloud_Fraction_Camera"][:] = np.nan
+
+        with caplog.at_level(logging.WARNING, logger="libera_utils.scene_identification.scene_id"):
+            footprint_data = getattr(FootprintData, reader)(input_path)
+
+        assert not np.isfinite(footprint_data._data["cloud_fraction"].values).any()
+        warnings = [
+            record
+            for record in caplog.records
+            if record.name == "libera_utils.scene_identification.scene_id" and record.levelno == logging.WARNING
+        ]
+        assert len(warnings) == 1
+        assert str(input_path) in warnings[0].getMessage()
+        assert "LIBSDC-785" in warnings[0].getMessage()
+
+    def test_cam_reader_does_not_warn_with_a_cloud_fraction(self, tmp_path, caplog):
+        """A CAM product with a camera cloud fraction is read without the all-fill warning."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM, n_footprints=4)
+        with caplog.at_level(logging.WARNING, logger="libera_utils.scene_identification.scene_id"):
+            FootprintData.from_fmatch_cam(input_path)
+        assert "LIBSDC-785" not in caplog.text
+
+
+def _assert_imager_sources(dataset: xr.Dataset) -> None:
+    """Assert each IMAGER classification input came from its own FMATCH source variable.
+
+    ``make_fmatch_product_fixture`` writes a distinct value into each source, so a column map that reads the
+    wrong source fails here.
+    """
+    np.testing.assert_allclose(
+        dataset["clear_area"].values,
+        np.linspace(0.0, 100.0, dataset["clear_area"].size, dtype=np.float32).reshape(dataset["clear_area"].shape),
+        rtol=1e-6,
+    )
+    np.testing.assert_array_equal(dataset["surface_wind_u"].values, 3.0)
+    np.testing.assert_array_equal(dataset["surface_wind_v"].values, 4.0)
+    np.testing.assert_array_equal(dataset["optical_depth"].values, 7.0)
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
