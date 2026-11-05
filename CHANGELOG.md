@@ -10,17 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `libera_utils.footprint_matching.footprint_match_algorithm`, the manifest-driven runners for the four FMATCH products, run by the `libera-utils fmatch <manifest>` command and the `libera-utils-fmatch` Docker target; the `LIBERA_FMATCH_VARIANT` environment variable selects the product. The radiometer-timescale runners read L1B RAD-4CH. Both camera-timescale runners, FMATCH-CAM-CAMTIME and FMATCH-IMAGER-CAMTIME, read their pseudo-footprints from the CF-CAM-CAMTIME product written by the Camera Cloud Fraction algorithm, and raise `MissingCamtimeVariablesError` when it lacks a variable they need (`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`). A runner raises when `FMATCH_ANCILLARY_PATH` is unset, an active reader's directory under it is missing or empty, or an ancillary granule is staged in S3, and FMATCH-CAM-CAMTIME raises `ValueError` when its CF-CAM-CAMTIME input has no `cloud_fraction`. Until CF-CAM-CAMTIME carries the camera ephemeris, both camera-timescale runners raise `ValueError` when they aggregate, and FMATCH-CAM writes `cloud_fraction_camera` as fill because the radiometer-timescale CF-CAM is not yet read.
-- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners, each with a product definition and a `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` reader, registered in `scene_id_algorithm.RUNNER_CONFIGS` so `LIBERA_SCENE_ID_VARIANT=imager` or `imager-camtime` selects them. Both run the TRMM classification as well as ERBE and unfiltering.
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners, each with a product definition and a `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` reader, registered in `scene_id_algorithm.RUNNER_CONFIGS` so `LIBERA_SCENE_ID_VARIANT=imager` or `imager-camtime` selects them. Both run the TRMM classification as well as ERBE and unfiltering. Their variables take product names (`Scene_ID_TRMM`, `Surface_Wind`, `Cloud_Phase`, `Optical_Depth`, `Scene_Bin_TRMM_...`); a `trmm` → `TRMM` row in `product_variable_names.csv` spells the TRMM token.
 
 ### Changed
 
 - SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
-- The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
+- The SCENE-ID FMATCH readers read a missing `IGBP_Surface_Type` (the `_FillValue` FMATCH declares, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells, which xarray decodes to NaN) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
 - `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
 
 ### Fixed
 
-- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
+- The `FootprintData.from_fmatch_*` readers read FMATCH variables by their product names, the names FMATCH products declare (a file with the snake_case names raises the readers' missing-variable `ValueError`), and read FMATCH-IMAGER's clear coverage and 10 m winds from `FLASHFlux_Clear_Coverage` and `ERA5_Surface_Wind_U10` / `ERA5_Surface_Wind_V10`, which FMATCH-IMAGER declares.
+- `Scene_ID_TRMM` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.23.0] - 2026-11-05
 

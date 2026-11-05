@@ -20,6 +20,8 @@ CAMEL_CASE_DEFINITIONS = (
     "fmatch_imager_camtime.yml",
     "scene_id_cam.yml",
     "scene_id_cam_camtime.yml",
+    "scene_id_imager.yml",
+    "scene_id_imager_camtime.yml",
 )
 
 
@@ -40,6 +42,8 @@ class TestProductVariableName:
             ("psf_bbox_lat_min", "PSF_Bbox_Lat_Min"),
             ("scene_id_erbe", "Scene_ID_ERBE"),
             ("scene_id_unfiltering", "Scene_ID_Unfiltering"),
+            ("scene_id_trmm", "Scene_ID_TRMM"),
+            ("scene_bin_trmm_surface_wind_min", "Scene_Bin_TRMM_Surface_Wind_Min"),
             ("solar_zenith_angle", "Solar_Zenith_Surface"),
             ("viewing_zenith_angle", "Viewing_Zenith_Surface"),
             ("relative_azimuth_angle", "Relative_Azimuth_Surface"),

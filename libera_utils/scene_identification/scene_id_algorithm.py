@@ -115,10 +115,10 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
 )
 
 # SCENE-ID-IMAGER (radiometer timescale): input is FMATCH-IMAGER (one footprint per RADIOMETER_TIME carrying the
-# CERES SSF clear coverage for cloud fraction, the RBSP CLDPIX cloud optical depth and particle phase for TRMM, the
+# FLASHFlux clear coverage for cloud fraction, the CLDPIX cloud optical depth and particle phase for TRMM, the
 # ERA5 winds for surface wind, and the IGBP surface type). Because those extra TRMM inputs are present it runs the
 # full TRMM classification in addition to ERBE and unfiltering. from_fmatch_imager raises a clear error if handed a
-# file lacking the RBSP ssf/cldpix variables (e.g. a FMATCH-CAM product).
+# file lacking the FLASHFlux/CLDPIX variables (e.g. a FMATCH-CAM product).
 IMAGER_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_imager,
     output_product_id=DataProductIdentifier.aux_scene_id_imager,
@@ -131,9 +131,10 @@ IMAGER_CONFIG = SceneIdRunnerConfig(
 
 # SCENE-ID-IMAGER-CAMTIME (camera timescale): the camera-timescale counterpart of SCENE-ID-IMAGER. Reads
 # FMATCH-IMAGER-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid; like SCENE-ID-IMAGER it runs full TRMM (the
-# input carries the RBSP CLDPIX optical depth/phase, ERA5 winds, CERES SSF clear coverage, and IGBP surface type) and,
+# input carries the CLDPIX optical depth/phase, ERA5 winds, FLASHFlux clear coverage, and IGBP surface type) and,
 # like SCENE-ID-CAM-CAMTIME, passes the FMATCH footprint identifier variables straight through (from_fmatch_imager_
-# camtime + scene_id_imager_camtime.yml). from_fmatch_imager_camtime raises if the RBSP ssf/cldpix variables are absent.
+# camtime + scene_id_imager_camtime.yml). from_fmatch_imager_camtime raises if the FLASHFlux/CLDPIX variables are
+# absent.
 IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
     output_product_id=DataProductIdentifier.aux_scene_id_imager_camtime,

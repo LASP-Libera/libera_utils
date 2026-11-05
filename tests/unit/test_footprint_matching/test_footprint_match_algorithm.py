@@ -10,7 +10,6 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching import product
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
     CAM_CAMTIME_CONFIG,
@@ -43,12 +42,6 @@ def _stage_empty_tree(root: Path, mode: OperationalMode) -> Path:
         (root / reader_key).mkdir(parents=True)
         (root / reader_key / "granule.nc").touch()
     return root
-
-
-@pytest.fixture
-def fake_aggregation(monkeypatch, fake_sources):
-    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files."""
-    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
 
 
 def _write_input_manifest(directory: Path, *files: Path) -> Path:
