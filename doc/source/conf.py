@@ -158,6 +158,8 @@ nitpick_ignore_regex = [
     (r"py:class", r"(optional|Path|PathLike|PathType|S3Path|CloudPath|Dataset|DataArray|ndarray|datetime|ULID|str)"),
     (r"py:class", r"(array_like|sequence)"),
     (r"py:class", r"(AngleLike|ulid\.ULID|boto3\.Session|filenaming\.PathType|LiberaDataProductFilename)"),
+    # A type alias the FMATCH runner defines only for type checking, so it has no documentable target.
+    (r"py:class", r"CameraFootprintLoader"),
     # pydantic internals that surface in model signatures and validator descriptors.
     (r"py:class", r"(PydanticUndefined|FieldValidatorDecoratorInfo)"),
     (r"py:class", r"pydantic\._internal\..*"),
