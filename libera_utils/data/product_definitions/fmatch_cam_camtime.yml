@@ -424,7 +424,7 @@ variables:
   # ---------------------------------------------------------------------------
   # Camera pixel-block provenance: computed here by camera segmentation.
   #     Each pseudo-footprint is a contiguous block of L1B camera pixels
-  #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
+  #     (types.PseudoFootprint), segmented by the Camera Cloud Fraction algorithm. The block's inclusive (min, max) extent
   #     on each pixel axis is carried by the Camera_Pixel_{X,Y}_{Min,Max}
   #     COORDINATES declared above (dims CAMERA_TIME x PSEUDOFOOTPRINT). The
   #     center-pixel indices below point at the boresight stand-in, after any

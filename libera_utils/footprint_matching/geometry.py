@@ -598,7 +598,7 @@ def bounding_box_from_points_batch(
 
     * the radiometer path (:func:`compute_footprint_bounding_boxes`), which passes the
       ray-traced PSF *perimeter* samples, and
-    * the camera path (``libera_utils.footprint_matching.camera_segmentation``),
+    * the camera path (camera segmentation in the Camera Cloud Fraction algorithm),
       which passes the four *corner pixels* of a pseudo-footprint's pixel block.
 
     ``center_lat_deg``/``center_lon_deg`` is each footprint's anchor (the radiometer
