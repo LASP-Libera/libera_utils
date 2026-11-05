@@ -1,10 +1,13 @@
 """Integration tests for the FMATCH runners and their product write path.
 
-These exercise what the FMATCH runner unit tests
-(``tests/unit/test_footprint_matching/test_footprint_match_algorithm.py``) do not: manifest input selection, L1B
-geolocation reaching the written product, dropping non-finite L1B footprints, the FMATCH-IMAGER variable set, and an
-FMATCH product classifying through SCENE-ID. Ancillary aggregation runs through the fake readers
-(``fake_aggregation``), so no real ancillary granule is opened.
+Every class but ``TestRunnerOutputThroughSceneId`` tests the FMATCH runners: what their unit tests
+(``tests/unit/test_footprint_matching/test_footprint_match_algorithm.py``) do not, namely manifest input selection,
+L1B geolocation reaching the written product, dropping non-finite L1B footprints and the FMATCH-IMAGER variable set.
+``TestRunnerOutputThroughSceneId`` is the FMATCH to SCENE-ID chain test: it checks that a product the FMATCH runner
+writes is read by SCENE-ID under the product names both declare, not the classification, since the fake readers supply
+no classification inputs and every footprint is left unmatched. The module sits beside the SCENE-ID tests because the
+fixtures it uses, ``fake_aggregation`` and ``make_fmatch_product_fixture``, arrive with them. Ancillary aggregation
+runs through the fake readers (``fake_aggregation``), so no real ancillary granule is opened.
 """
 
 import argparse
