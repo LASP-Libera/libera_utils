@@ -14,14 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
+- **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files: a manifest that stages only an SSF file now fails with "No FMATCH-CAM input files found", and `SceneIdRunnerConfig.input_product_id` and `collect_input_files`'s `input_product_id` no longer take `None`. The SCENE-ID-CAM step must declare FMATCH-CAM as its input product. The FMATCH readers open local or S3 paths through `smart_open`, and the SCENE-ID-CAM readers log a warning when `Cloud_Fraction_Camera` has no finite value, which leaves every footprint unmatched.
 - The SCENE-ID FMATCH readers read a missing `IGBP_Surface_Type` (the `_FillValue` FMATCH declares, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells, which xarray decodes to NaN) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
 - `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
 
 ### Fixed
 
 - The `FootprintData.from_fmatch_*` readers read FMATCH variables by their product names, the names FMATCH products declare (a file with the snake_case names raises the readers' missing-variable `ValueError`), and read FMATCH-IMAGER's clear coverage and 10 m winds from `FLASHFlux_Clear_Coverage` and `ERA5_Surface_Wind_U10` / `ERA5_Surface_Wind_V10`, which FMATCH-IMAGER declares.
-- `Scene_ID_TRMM` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.23.0] - 2026-11-05
 

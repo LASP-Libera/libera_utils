@@ -18,6 +18,7 @@ from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
@@ -279,23 +280,29 @@ class IGBPSurfaceType(enum.IntEnum):
 class CLDPIXCloudPhase(enum.IntEnum):
     """CLDPIX cloud particle phase codes.
 
-    TODO[LIBSDC-001]: PLACEHOLDER MAPPING -- confirm against the CLDPIX data dictionary.
     FMATCH's ``CLDPIX_Cloud_Particle_Phase`` is the PSF-weighted mode of the CER_CLDPIX ``Cloud_Particle_Phase``
-    code; the CLDPIX reader keeps codes 1-4 and drops 5, which the file labels ``bad_data``. The meaning of each
-    kept code is not yet confirmed. Only the two codes the scene classifier can use are
-    named here (liquid, ice); until the encoding is confirmed, every other code is treated as "no usable phase"
-    (mapped to NaN) so those footprints are simply left unmatched for phase-gated scenes rather than being
-    misclassified.
+    code. The CER_CLDPIX_NOAA20-VIIRS files declare the codes in that variable's own CF ``flag_values`` and
+    ``flag_meanings`` (as in the test granule
+    ``tests/test_data/footprint_matching/CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc``):
+
+    - 1 ``water_cloud``
+    - 2 ``ice_cloud``
+    - 3 ``no_cloud_retrieval``
+    - 4 ``clear``
+    - 5 ``bad_data``, which the CLDPIX reader drops
+
+    Only the two codes that carry a cloud phase are named here. Codes 3 and 4 carry none (no retrieval, or no
+    cloud), so :func:`map_cldpix_phase_to_trmm` maps them to NaN and those footprints stay unmatched for
+    phase-gated scenes.
 
     Attributes
     ----------
     LIQUID : int
-        Liquid-water cloud (mapped to the classifier's cloud_phase value 1).
+        ``water_cloud`` (code 1), mapped to the classifier's cloud_phase value 1.
     ICE : int
-        Ice cloud (mapped to the classifier's cloud_phase value 2).
+        ``ice_cloud`` (code 2), mapped to the classifier's cloud_phase value 2.
     """
 
-    # TODO[LIBSDC-817]: verify these code values (and the meaning of codes 3 and 4) against the CLDPIX data dictionary.
     LIQUID = 1
     ICE = 2
 
@@ -310,9 +317,9 @@ def map_cldpix_phase_to_trmm(cldpix_phase: NDArray) -> NDArray[np.floating]:
     unlike the continuous cloud-fraction-weighted :func:`calculate_cloud_phase`: each CLDPIX code is looked up and
     collapsed onto {1, 2}.
 
-    Any code that is not a recognized liquid/ice value (including fill/NaN, or the not-yet-confirmed CLDPIX codes
-    3 and 4) is mapped to ``NaN``. A ``NaN`` classification value leaves the footprint unmatched (scene ID 0) for any
-    scene that bounds ``cloud_phase`` -- exactly the desired behavior when the phase is unknown.
+    Any code that is not a liquid/ice value (fill/NaN, or CLDPIX codes 3 ``no_cloud_retrieval`` and 4 ``clear``;
+    see :class:`CLDPIXCloudPhase`) is mapped to ``NaN``. A ``NaN`` classification value leaves the footprint unmatched
+    (scene ID 0) for any scene that bounds ``cloud_phase`` -- exactly the desired behavior when the phase is unknown.
 
     Parameters
     ----------
@@ -323,13 +330,8 @@ def map_cldpix_phase_to_trmm(cldpix_phase: NDArray) -> NDArray[np.floating]:
     -------
     ndarray of float
         ``cloud_phase`` values (1.0 = liquid, 2.0 = ice, NaN = unknown), as ``float32`` so NaN is representable.
-
-    Notes
-    -----
-    TODO[LIBSDC-001]: replace this placeholder mapping once the CLDPIX phase encoding is confirmed. See
-    :class:`CLDPIXCloudPhase`.
     """
-    # Compare against the (placeholder) recognized codes and build a float result so unknown codes can be NaN.
+    # Compare against the liquid and ice codes and build a float result so every other code can be NaN.
     phase = np.asarray(cldpix_phase, dtype=np.float32)
     result = np.full(phase.shape, np.nan, dtype=np.float32)
     result[phase == CLDPIXCloudPhase.LIQUID] = 1.0
@@ -771,17 +773,12 @@ class _FmatchColumn:
         holds it under its :func:`~libera_utils.io.product_variable_names.product_variable_name`.
     dtype : type
         NumPy dtype the emitted column is cast to (also what the SCENE-ID product definition declares).
-    scale : float, optional
-        Multiplicative rescale applied to the source values. Defaults to 1.0 (no rescale). Available for source
-        variables whose stored units differ from the classifier/product scale.
     transform : Callable or None, optional
-        Elementwise transform applied to the source array (e.g. a code remap). Applied instead of ``scale`` when
-        set. Defaults to None.
+        Elementwise transform applied to the source array (e.g. a code remap). Defaults to None.
     """
 
     source_name: str
     dtype: type
-    scale: float = 1.0
     transform: Callable | None = None
 
 
@@ -810,8 +807,7 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 # cell of a camera-timescale grid) carries FMATCH's declared integer _FillValue, which xarray decodes to NaN on read,
 # leaving that footprint unmatched for the surface-bounded scenes. The three viewing angles are read straight
 # through. The CLDPIX cloud particle phase code is remapped to the classifier's 1 = liquid / 2 = ice convention via
-# map_cldpix_phase_to_trmm (see its TODO[LIBSDC-817] -- the code meanings are a placeholder pending the CLDPIX data
-# dictionary).
+# map_cldpix_phase_to_trmm (see CLDPIXCloudPhase for the CER_CLDPIX code meanings).
 _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.float32),
     FootprintVariables.CLEAR_AREA: _FmatchColumn("flashflux_clear_coverage", np.float32),
@@ -825,6 +821,28 @@ _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
         "cldpix_cloud_particle_phase", np.float32, transform=map_cldpix_phase_to_trmm
     ),
 }
+
+
+def _warn_if_no_camera_cloud_fraction(footprint_data: xr.Dataset, fmatch_path: str | pathlib.Path | S3Path) -> None:
+    """Log a warning when an FMATCH-CAM product's camera cloud fraction has no finite value.
+
+    Every scene SCENE-ID-CAM classifies bounds cloud fraction, so such a product classifies no footprint: every
+    scene ID is 0. FMATCH-CAM writes ``Cloud_Fraction_Camera`` as fill until it reads the radiometer-timescale CF-CAM
+    product (LIBSDC-785), so the product is still written, and the warning says why it is empty.
+
+    Parameters
+    ----------
+    footprint_data : xarray.Dataset
+        The footprint data a CAM reader extracted, holding the ``cloud_fraction`` column.
+    fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+        The FMATCH product the data was read from, named in the warning.
+    """
+    if not np.isfinite(footprint_data[FootprintVariables.CLOUD_FRACTION].to_numpy()).any():
+        logger.warning(
+            "%s: Cloud_Fraction_Camera has no finite value, so every footprint is left unmatched (scene ID 0). "
+            "FMATCH-CAM writes it as fill until the radiometer-timescale CF-CAM is read (LIBSDC-785).",
+            fmatch_path,
+        )
 
 
 class FootprintData:
@@ -935,32 +953,43 @@ class FootprintData:
         return footprint_data
 
     @classmethod
-    def from_fmatch_cam(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_cam(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
 
         FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
-        Libera-camera-derived cloud fraction and the scene properties needed for classification.
+        Libera-camera-derived cloud fraction and the scene properties needed for classification. A product whose
+        camera cloud fraction has no finite value is read with a logged warning, since every footprint is then left
+        unmatched.
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-CAM NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-CAM NetCDF product file.
 
         Returns
         -------
         FootprintData
             Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
-            context="SCENE-ID-CAM reader (FMATCH-CAM)",
+            expected_product=DataProductIdentifier.aux_fmatch_cam,
+            variant="cam",
         )
+        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
 
     @classmethod
-    def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_cam_camtime(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
 
         FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME. It is defined on a 2-D
@@ -968,30 +997,40 @@ class FootprintData:
         per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
         both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
         ``Camera_Pixel_X_Min``/``Camera_Pixel_X_Max``/``Camera_Pixel_Y_Min``/``Camera_Pixel_Y_Max``, PSF bounding
-        box, boresight geolocation) that the camera-timescale product passes straight through.
+        box, boresight geolocation) that the camera-timescale product passes straight through. A product whose camera
+        cloud fraction has no finite value is read with a logged warning, since every footprint is then left unmatched.
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-CAM-CAMTIME NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-CAM-CAMTIME NetCDF product file.
 
         Returns
         -------
         FootprintData
             Footprint data on the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one entry per image subsection), ready for
             :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
-            context="SCENE-ID-CAM-CAMTIME reader (FMATCH-CAM-CAMTIME)",
+            expected_product=DataProductIdentifier.aux_fmatch_cam_camtime,
+            variant="cam-camtime",
         )
+        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
 
     @classmethod
-    def from_fmatch_imager(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_imager(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-IMAGER product into a FootprintData (radiometer timescale).
 
         The FMATCH-IMAGER product is the operational input to SCENE-ID-IMAGER: one footprint per
@@ -999,32 +1038,35 @@ class FootprintData:
         optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface wind), and
         the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
 
-        The reader validates the FLASHFlux/CLDPIX variables up front and raises a clear error if handed a file that
-        lacks them (e.g. a FMATCH-CAM product); see :meth:`_require_variables`.
-
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-IMAGER NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-IMAGER NetCDF product file.
 
         Returns
         -------
         FootprintData
             Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-CAM file, which has no
+            FLASHFlux or CLDPIX variables.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
-            context=(
-                "SCENE-ID-IMAGER reader (FMATCH-IMAGER); the FMATCH file lacks the FLASHFlux/CLDPIX variables "
-                "required for scene identification"
-            ),
+            expected_product=DataProductIdentifier.aux_fmatch_imager,
+            variant="imager",
         )
         return cls(extracted_data)
 
     @classmethod
-    def from_fmatch_imager_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_imager_camtime(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-IMAGER-CAMTIME product into a FootprintData (camera timescale).
 
         FMATCH-IMAGER-CAMTIME is the operational input to SCENE-ID-IMAGER-CAMTIME. It is the camera-timescale
@@ -1039,70 +1081,46 @@ class FootprintData:
         IMAGER column map (so the FLASHFlux/CLDPIX inputs and the mapped cloud phase are read) on the camera-timescale
         record grid, and additionally carries the footprint *identifier* variables (the inclusive camera pixel-block
         bounds ``Camera_Pixel_{X,Y}_{Min,Max}``, the PSF bounding box, and the boresight geolocation) straight
-        through so a classified scene can be traced back to the exact camera pixels and ground footprint. As with
-        :meth:`from_fmatch_imager`, it raises a clear error if handed a file lacking the FLASHFlux/CLDPIX variables.
+        through so a classified scene can be traced back to the exact camera pixels and ground footprint.
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-IMAGER-CAMTIME NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-IMAGER-CAMTIME NetCDF product file.
 
         Returns
         -------
         FootprintData
             Footprint data on the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one entry per image subsection), ready for
             :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-CAM-CAMTIME file, which has no
+            FLASHFlux or CLDPIX variables.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
-            context=(
-                "SCENE-ID-IMAGER-CAMTIME reader (FMATCH-IMAGER-CAMTIME); the FMATCH file lacks the FLASHFlux/CLDPIX "
-                "variables required for scene identification"
-            ),
+            expected_product=DataProductIdentifier.aux_fmatch_imager_camtime,
+            variant="imager-camtime",
         )
         return cls(extracted_data)
 
     @staticmethod
-    def _require_variables(dataset: xr.Dataset, required_names: tuple[str, ...], *, context: str) -> None:
-        """Raise a single, actionable error if any expected FMATCH source variable is absent.
-
-        This turns what would otherwise be an opaque ``KeyError`` deep in extraction into one message naming every
-        missing variable and the reader that expected it. Its most important use is catching a FMATCH file routed
-        to the wrong reader -- e.g. a FMATCH-CAM file handed to the IMAGER reader, which lacks the FLASHFlux/CLDPIX
-        variables -- so this reports that clearly instead of failing on the first missing lookup.
-
-        Parameters
-        ----------
-        dataset : xr.Dataset
-            The opened FMATCH dataset.
-        required_names : tuple of str
-            Product variable names the reader requires in the FMATCH file.
-        context : str
-            Human-readable description of the reader, included in the error message.
-
-        Raises
-        ------
-        ValueError
-            If any required variable is missing from ``dataset``.
-        """
-        missing = [name for name in required_names if name not in dataset.variables]
-        if missing:
-            raise ValueError(
-                f"{context}: FMATCH file is missing required variable(s) {missing}; pass the FMATCH product this "
-                f"reader reads. Present data variables: {sorted(dataset.data_vars)}"
-            )
-
-    @staticmethod
     def _extract_data_from_fmatch(
-        fmatch_path: pathlib.Path,
+        fmatch_path: str | pathlib.Path | S3Path,
         *,
         time_variable: str,
         column_map: dict[FootprintVariables, "_FmatchColumn"],
+        expected_product: DataProductIdentifier,
+        variant: str,
         passthrough_variables: tuple[str, ...] = (),
-        context: str = "FMATCH reader",
     ) -> xr.Dataset:
         """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
 
@@ -1111,7 +1129,7 @@ class FootprintData:
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
         dimensions, so both layouts flow through unchanged. This helper is driven by a declarative ``column_map``
         supplied by each concrete reader:
-        it reads each mapped source variable, applies its dtype/scale/transform, and emits it under the standardized
+        it reads each mapped source variable, applies its dtype/transform, and emits it under the standardized
         :class:`FootprintVariables` name the scene classifier consumes. Some emitted columns are *raw inputs* to the
         derived-variable calculators (e.g. ``clear_area`` -> ``cloud_fraction``, ``surface_wind_u``/``_v`` ->
         ``surface_wind``, ``igbp_surface_type`` -> ``surface_type``) rather than final classification columns; those
@@ -1122,8 +1140,8 @@ class FootprintData:
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH NetCDF product file, read through ``smart_open``.
         time_variable : str
             Name of the datetime time coordinate, read from the FMATCH file and emitted under the same name (it is
             the SCENE-ID product's declared time-coordinate name): ``RADIOMETER_TIME`` for SCENE-ID-CAM and
@@ -1131,51 +1149,66 @@ class FootprintData:
             it rides through scene identification; the runner promotes it to a coordinate via
             :meth:`to_time_product` before writing.
         column_map : dict[FootprintVariables, _FmatchColumn]
-            Mapping of standardized output column -> FMATCH source column spec (internal name, dtype, scale,
-            transform). Each source is read from the file under its product variable name.
+            Mapping of standardized output column -> FMATCH source column spec (internal name, dtype, transform).
+            Each source is read from the file under its product variable name.
+        expected_product : DataProductIdentifier
+            The FMATCH product this reader reads, named in the missing-variable error.
+        variant : str
+            The ``LIBERA_SCENE_ID_VARIANT`` that selects this reader, named in the missing-variable error.
         passthrough_variables : tuple of str, optional
             Internal names of FMATCH variables to copy verbatim onto the output (e.g. the camera-timescale identifier
             variables), each read under its product variable name and emitted under its internal name. Empty for the
             radiometer-timescale products.
-        context : str, optional
-            Human-readable reader description used in the missing-variable error (see :meth:`_require_variables`).
 
         Returns
         -------
         xr.Dataset
             Footprint data on the product's record dimensions, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable the reader reads, most often a FMATCH file of another product.
         """
         logger.info("Reading FMATCH product %s", fmatch_path)
+        # netCDF4 opens only a filesystem path or an in-memory buffer, so the bytes are read through smart_open (local,
+        # S3 or gzip) and handed to xarray as an in-memory netCDF4 dataset, which xarray closes with the store.
         try:
-            with xr.open_dataset(fmatch_path) as opened_dataset:
-                fmatch_dataset = opened_dataset.load()
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Unable to parse input file: {fmatch_path}")
+            with smart_open(fmatch_path) as file_handle:
+                fmatch_bytes = file_handle.read()
+        except FileNotFoundError as err:
+            raise FileNotFoundError(f"Unable to open input file: {fmatch_path}") from err
+        store = xr.backends.NetCDF4DataStore(nc.Dataset(pathlib.Path(str(fmatch_path)).name, memory=fmatch_bytes))
+        with xr.open_dataset(store) as opened_dataset:
+            fmatch_dataset = opened_dataset.load()
 
-        # Fail fast (with one clear, actionable message) if any expected source variable is absent -- most
-        # importantly a FMATCH file routed to the wrong reader (e.g. a FMATCH-CAM file to the IMAGER reader,
-        # which lacks the FLASHFlux/CLDPIX columns).
         # The file holds every variable under its product name; FootprintData keeps the internal names.
         source_names = {target: product_variable_name(column.source_name) for target, column in column_map.items()}
         passthrough_names = {name: product_variable_name(name) for name in passthrough_variables}
-        FootprintData._require_variables(
-            fmatch_dataset, (*source_names.values(), *passthrough_names.values()), context=context
-        )
+        missing = [
+            name
+            for name in (*source_names.values(), *passthrough_names.values())
+            if name not in fmatch_dataset.variables
+        ]
+        if missing:
+            raise ValueError(
+                f"{fmatch_path} is missing required variable(s) {missing}; check that the manifest's input is a "
+                f"{expected_product.value} file for LIBERA_SCENE_ID_VARIANT={variant}"
+            )
 
         data_variables: dict[str, tuple[list[str], NDArray]] = {}
         for target, column in column_map.items():
             source_variable = fmatch_dataset[source_names[target]]
             values = source_variable.to_numpy()
-            # A transform (a code remap such as CLDPIX phase -> {liquid, ice}) is applied on the raw source values;
-            # otherwise an optional multiplicative scale is applied when the source units differ from the target.
+            # A transform (a code remap such as CLDPIX phase -> {liquid, ice}) is applied on the raw source values.
             if column.transform is not None:
                 values = column.transform(values)
-            elif column.scale != 1.0:
-                values = values * column.scale
             # Emit on the source variable's own dimensions so radiometer inputs stay 1-D (RADIOMETER_TIME) while
             # camera-timescale inputs keep their 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. Cast last so the emitted column
             # always matches the dtype the SCENE-ID product definition declares (np.where in a transform can widen to
-            # float64, and the scale multiply can promote dtype).
+            # float64).
             data_variables[target] = (list(source_variable.dims), np.asarray(values).astype(column.dtype, copy=False))
 
         # The FMATCH time coordinate is decoded to datetime64[ns] by xarray; carry it on its own dimension(s) -- the
@@ -1611,7 +1644,7 @@ class FootprintData:
         if time_variable not in self._data.variables:
             raise ValueError(
                 f"Cannot build a time product: '{time_variable}' is not present in the footprint data. It is "
-                "populated by the FootprintData reader (e.g. from_ceres_ssf()); datasets constructed directly "
+                "populated by the FootprintData reader (e.g. from_fmatch_cam()); datasets constructed directly "
                 "must add it themselves."
             )
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal

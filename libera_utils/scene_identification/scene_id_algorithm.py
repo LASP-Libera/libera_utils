@@ -60,7 +60,7 @@ class SceneIdRunnerConfig:
     output_product_id : DataProductIdentifier
         The SCENE-ID product this runner emits. Used only for documentation/logging; the written filename's product id
         is driven by the product definition's ``ProductID`` attribute.
-    reader : Callable[[Path], FootprintData]
+    reader : Callable[[str | Path | S3Path], FootprintData]
         The :class:`~libera_utils.scene_identification.scene_id.FootprintData` factory that reads one input file (e.g. ``FootprintData.from_fmatch_cam`` or
         ``FootprintData.from_fmatch_cam_camtime``).
     product_definition_path : Path
@@ -277,8 +277,6 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     Keeps exactly the manifest files whose Libera product id equals ``input_product_id`` (e.g. ``aux_fmatch_cam`` or
     ``aux_fmatch_cam_camtime``). Files with any other product id, and files whose names do not parse as a
     ``LiberaDataProductFilename``, are skipped.
-
-    Files whose names do not parse as a ``LiberaDataProductFilename`` are skipped in Libera-product mode.
 
     Parameters
     ----------
