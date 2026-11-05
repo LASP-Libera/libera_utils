@@ -2,7 +2,6 @@
 camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
-import functools
 import logging
 import re
 import shutil
@@ -16,7 +15,7 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
-from libera_utils.footprint_matching import footprint_match_algorithm, product
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     CAM_CAMTIME_CONFIG,
     PROCESSING_STEP_ID_CONFIGURATION_KEY,
@@ -63,24 +62,6 @@ def ancillary_manifest(tmp_path, generate_input_manifest_local, stage_fmatch_anc
         return generate_input_manifest_local(*input_files, *granules.values(), configuration=_step_configuration(step))
 
     return _write
-
-
-@pytest.fixture
-def fake_aggregation(monkeypatch, fake_sources):
-    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
-
-    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
-    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column. The
-    staged granules are empty files with no date to read, so the granule date check is skipped
-    (``TestCheckAncillaryGranuleDates`` tests it on real granules).
-    """
-    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
-    monkeypatch.setattr(footprint_match_algorithm, "check_ancillary_granule_dates", lambda *args: None)
-    monkeypatch.setattr(
-        footprint_match_algorithm,
-        "write_fmatch_product",
-        functools.partial(product.write_fmatch_product, allow_placeholders=True),
-    )
 
 
 def _step_configuration(step: ProcessingStepIdentifier) -> dict:
