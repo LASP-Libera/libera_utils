@@ -71,5 +71,5 @@ class TestSceneIdCamRunnerEndToEnd:
         assert product.attrs["algorithm_version"] == version()
         # The product carries the time axis plus the CAM classifications (ERBE + unfiltering) and the quality flag.
         assert "RADIOMETER_TIME" in product.coords
-        for expected_variable in ("scene_id_erbe", "scene_id_unfiltering", "Quality_Flag"):
+        for expected_variable in ("Scene_ID_ERBE", "Scene_ID_Unfiltering", "Quality_Flag"):
             assert expected_variable in product.data_vars

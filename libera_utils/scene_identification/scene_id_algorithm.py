@@ -35,6 +35,7 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import ALGORITHM_VERSION_ATTRIBUTE, LiberaDataProductDefinition
+from libera_utils.io.product_variable_names import internal_variable_name
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
@@ -360,6 +361,9 @@ def create_and_write_data_product(
     ------
     FileNotFoundError
         If the SCENE-ID product definition cannot be found in the installed libera_utils package.
+    ValueError
+        If a variable the definition declares does not follow the product variable naming rule, or the footprint
+        dataset holds a declared variable under both its internal and its product name.
     """
     if not config.product_definition_path.exists():
         raise FileNotFoundError(f"SCENE-ID product definition not found: {config.product_definition_path}")
@@ -368,14 +372,31 @@ def create_and_write_data_product(
     # correct dimension) so the product aligns 1:1 with its upstream product.
     product_dataset = footprint_data.to_time_product(config.time_variable)
 
-    # Keep only the variables/coordinates declared in the product definition. FootprintData carries intermediate
-    # inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the classification consumes but that are
-    # not part of the SCENE-ID product; dropping them here keeps the written product to exactly its definition
-    # rather than leaking undeclared variables (the conformance check does not flag extras).
+    # Keep only the variables/coordinates declared in the product definition, under their product names.
+    # FootprintData carries intermediate inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the
+    # classification consumes but that are not part of the SCENE-ID product; dropping them here keeps the written
+    # product to exactly its definition rather than leaking undeclared variables (the conformance check does not
+    # flag extras). FootprintData names its variables internally (snake_case); a declared variable is taken under
+    # its product name when the dataset already holds it (the placeholder Quality_Flag) and is otherwise renamed
+    # from its internal name. Coordinates keep their own names.
     definition = LiberaDataProductDefinition.from_yaml(config.product_definition_path)
-    declared = set(definition.coordinates) | set(definition.variables)
-    keep = [name for name in product_dataset.variables if name in declared]
-    product_dataset = product_dataset[keep]
+    keep = [name for name in definition.coordinates if name in product_dataset.variables]
+    renames = {}
+    for name in definition.variables:
+        internal = internal_variable_name(name)
+        has_product = name in product_dataset.variables
+        has_internal = internal != name and internal in product_dataset.variables
+        if has_product and has_internal:
+            raise ValueError(
+                f"The footprint dataset holds both {internal!r} and its product name {name!r}; keep one of them "
+                "before writing the SCENE-ID product."
+            )
+        if has_product:
+            keep.append(name)
+        elif has_internal:
+            keep.append(internal)
+            renames[internal] = name
+    product_dataset = product_dataset[keep].rename(renames)
 
     # Materialize any declared coordinate not yet present in .coords so the written product passes the coordinate
     # conformance check.

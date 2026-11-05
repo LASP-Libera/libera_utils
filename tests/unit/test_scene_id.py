@@ -788,16 +788,16 @@ class TestSceneIdCamProductDtypes:
     def test_surface_type_variables_are_uint8(self):
         """The categorical surface_type / scene_id variables are declared as compact uint8."""
         definition = self._scene_id_cam_definition()
-        assert definition.variables["surface_type"].dtype == "uint8"
-        assert definition.variables["igbp_surface_type"].dtype == "uint8"
-        assert definition.variables["scene_id_erbe"].dtype == "uint8"
-        assert definition.variables["scene_id_unfiltering"].dtype == "uint8"
+        assert definition.variables["Surface_Type"].dtype == "uint8"
+        assert definition.variables["IGBP_Surface_Type"].dtype == "uint8"
+        assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
+        assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
 
     def test_continuous_bin_bounds_are_float32(self):
         """The continuous scene-bin bounds are declared as float32 rather than float64."""
         definition = self._scene_id_cam_definition()
-        assert definition.variables["scene_bin_erbe_cloud_fraction_min"].dtype == "float32"
-        assert definition.variables["scene_bin_unfiltering_relative_azimuth_angle_max"].dtype == "float32"
+        assert definition.variables["Scene_Bin_ERBE_Cloud_Fraction_Min"].dtype == "float32"
+        assert definition.variables["Scene_Bin_Unfiltering_Relative_Azimuth_Angle_Max"].dtype == "float32"
 
     def test_surface_type_bin_bounds_are_uint8(self):
         """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
@@ -806,8 +806,8 @@ class TestSceneIdCamProductDtypes:
         (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
         """
         definition = self._scene_id_cam_definition()
-        assert definition.variables["scene_bin_erbe_surface_type_min"].dtype == "uint8"
-        assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
+        assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "uint8"
+        assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "uint8"
         # And no variable in the definition declares a _FillValue.
         assert not any("_FillValue" in var.encoding for var in definition.variables.values())
 

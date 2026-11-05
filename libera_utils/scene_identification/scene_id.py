@@ -18,6 +18,7 @@ from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
+from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
@@ -25,21 +26,21 @@ logger = logging.getLogger(__name__)
 
 # Names used throughout footprint data processing and when emitting a Libera SCENE-ID product. FootprintData
 # carries data on the "RADIOMETER_TIME" dimension from creation onward: the radiometer-timescale scene-ID
-# products (CAM, IMAGER, FLASH) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
+# products (CAM, IMAGER) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
 # mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
 # the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
 # so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
 # libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
-# Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
+# Product name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
 # (scene_id_cam.yml).
-QUALITY_FLAG_VARIABLE = "Quality_Flag"
+QUALITY_FLAG_VARIABLE = product_variable_name("q_flags")
 
 # Standard scene definitions shipped with libera_utils, keyed by scene "type". The type is the lowercased stem of
-# the CSV filename and also becomes the output column name (scene_id_{type}). The value is the config.json key that
-# resolves to the CSV path. Consumers can select a subset by type (e.g. the SCENE-ID-CAM product runs "erbe" and
-# "unfiltering" but not "trmm").
+# the CSV filename and also becomes the output column name (scene_id_{type}, written to the product under its
+# product name, e.g. Scene_ID_ERBE). The value is the config.json key that resolves to the CSV path. Consumers can
+# select a subset by type (e.g. the SCENE-ID-CAM product runs "erbe" and "unfiltering" but not "trmm").
 STANDARD_SCENE_DEFINITION_CONFIG_KEYS: dict[str, str] = {
     "trmm": "TRMM_SCENE_DEFINITION",
     "erbe": "ERBE_SCENE_DEFINITION",
@@ -820,7 +821,7 @@ class FootprintData:
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: one ``CAMERA_TIME`` entry per 2048x2048 image and one ``PSEUDOFOOTPRINT`` entry
         per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
         both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
-        ``camera_pixel_x_min``/``camera_pixel_x_max``/``camera_pixel_y_min``/``camera_pixel_y_max``, PSF bounding
+        ``Camera_Pixel_X_Min``/``Camera_Pixel_X_Max``/``Camera_Pixel_Y_Min``/``Camera_Pixel_Y_Max``, PSF bounding
         box, boresight geolocation) that the camera-timescale product passes straight through.
 
         When implemented, the reader must also merge the CF-CAM-CAMTIME cloud-fraction input, which is defined on the
@@ -844,7 +845,7 @@ class FootprintData:
             Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
         """
         # TODO[LIBSDC-794]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
-        # read the pixel-block bounds as the four separate camera_pixel_{x,y}_{min,max} variables and carry through
+        # read the pixel-block bounds as the four separate Camera_Pixel_{X,Y}_{Min,Max} variables and carry through
         # the identifier variables declared in scene_id_cam_camtime.yml on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
         raise NotImplementedError(
             "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
@@ -1233,7 +1234,7 @@ class FootprintData:
     def to_time_product(self, time_variable: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
         """Return the footprint data ready to write on its record grid.
 
-        The radiometer-timescale scene-ID products (CAM/IMAGER/FLASH) contain exactly one footprint per observation
+        The radiometer-timescale scene-ID products (CAM/IMAGER) contain exactly one footprint per observation
         time and are written on the same 1-D time dimension as their upstream product, so downstream consumers can
         align scene IDs to the upstream records positionally. The camera-timescale product (CAM-CAMTIME) is instead
         written on a 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: one entry per image subsection. :class:`FootprintData`
@@ -1251,7 +1252,9 @@ class FootprintData:
         -------
         xr.Dataset
             A copy of the internal dataset with the time variable promoted to a coordinate and a placeholder
-            ``Quality_Flag`` added over the record grid.
+            ``Quality_Flag`` added over the record grid. Every other variable keeps its internal (snake_case) name;
+            :func:`~libera_utils.scene_identification.scene_id_algorithm.create_and_write_data_product` renames the
+            declared ones to their product names when it writes the product.
 
         Raises
         ------

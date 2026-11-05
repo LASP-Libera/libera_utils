@@ -7,9 +7,11 @@ is the guard that the SCENE-ID product definitions can be written under ``strict
 """
 
 import numpy as np
+import pytest
 import xarray as xr
 
 from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
@@ -75,9 +77,28 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-        # And the intermediate scene-property inputs specifically must be gone.
+        # And the intermediate scene-property inputs specifically must be gone, under either spelling.
         for leaked in ("surface_wind_u", "surface_wind_v", "optical_depth_lower", "cloud_phase_lower"):
             assert leaked not in reopened.variables
+            assert product_variable_name(leaked) not in reopened.variables
+
+    def test_written_product_uses_product_names(self, scene_id_test_data_path, tmp_path):
+        """Declared variables are written under their product names, never under FootprintData's internal names.
+
+        FootprintData names its columns in snake_case (``scene_id_erbe``, ``surface_type``); the writer renames each
+        declared one to its product name (``Scene_ID_ERBE``, ``Surface_Type``).
+        """
+        input_path = scene_id_test_data_path / SSF_INPUT_NAME
+        footprint_data = run_scene_identification_cam(input_path)
+        output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
+
+        definition = LiberaDataProductDefinition.from_yaml(PRODUCT_DEFINITION_PATH)
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert set(definition.variables) <= set(reopened.variables)
+        for name in definition.variables:
+            internal = internal_variable_name(name)
+            if internal != name:
+                assert internal not in reopened.variables
 
 
 class TestToTimeProduct:
@@ -170,12 +191,24 @@ class TestSceneIdCamCamtimeWrite:
         assert reopened["PSEUDOFOOTPRINT"].dims == ("PSEUDOFOOTPRINT",)
         assert reopened["PSEUDOFOOTPRINT"].dtype == np.int32
         assert list(reopened["PSEUDOFOOTPRINT"].values) == list(range(reopened.sizes["PSEUDOFOOTPRINT"]))
-        for name in ("cloud_fraction", "scene_id_erbe", "Quality_Flag"):
+        for name in ("Cloud_Fraction", "Scene_ID_ERBE", "Quality_Flag"):
             assert reopened[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
-        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+        for name in ("Camera_Pixel_X_Min", "Camera_Pixel_X_Max", "Camera_Pixel_Y_Min", "Camera_Pixel_Y_Max"):
             assert name in reopened.variables
             assert reopened[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
             assert reopened[name].dtype == np.int32
         # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
-        assert bool(np.all(reopened["camera_pixel_x_max"].values >= reopened["camera_pixel_x_min"].values))
-        assert bool(np.all(reopened["camera_pixel_y_max"].values >= reopened["camera_pixel_y_min"].values))
+        assert bool(np.all(reopened["Camera_Pixel_X_Max"].values >= reopened["Camera_Pixel_X_Min"].values))
+        assert bool(np.all(reopened["Camera_Pixel_Y_Max"].values >= reopened["Camera_Pixel_Y_Min"].values))
+
+    def test_variable_under_both_names_raises(self, tmp_path):
+        """A declared variable held under both its internal and its product name is refused, not overwritten.
+
+        Renaming ``cloud_fraction`` onto an existing ``Cloud_Fraction`` would silently pick one of two arrays.
+        """
+        footprint_data = _synthetic_camtime_footprint_data()
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+        footprint_data._data["Cloud_Fraction"] = footprint_data._data["cloud_fraction"]
+
+        with pytest.raises(ValueError, match="holds both 'cloud_fraction' and its product name 'Cloud_Fraction'"):
+            create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
