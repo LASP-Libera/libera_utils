@@ -654,6 +654,14 @@ This varies by packet but there is some consistent behavior:
   positions. Consumers must use it as an element-wise mapping and must not assume that each
   packet's samples form one contiguous block.
 
+### Packet axis order
+
+The `PACKET` axis is in **`SRC_SEQ_CTR` order**, not packet-time order, so packet time can step backward
+along it. [The Packet Ordering page](packet_ordering.md) describes how the order is found, what raises
+and warns, the losses the counter cannot size, and what consumers must do before using packet time as an
+independent variable. The granule filename's start and end are the minimum and maximum of its time
+variable.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing
@@ -688,7 +696,7 @@ truncated at all.
 WFOV science packets carry two independent time sources:
 
 - **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every
-  packet. This coordinate is used for packet ordering and deduplication.
+  packet. It is not monotonic along `PACKET`; see [Packet axis order](#packet-axis-order).
 - **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
   valid offsets). One row is added per successfully stitched image in **packet stream order**.
 
@@ -770,8 +778,7 @@ Decoded metadata on the `CAMERA_TIME` dimension:
 - FPGA status fields: `WFOV_FPGA_STATUS_*` (7 single-bit error flags from the FPGA status word)
 
 When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
-`write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
-packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+`write_libera_data_product()` so the filename reflects the earliest and latest complete image FSW times.
 
 #### Dual exposure and VIDEO timing
 
