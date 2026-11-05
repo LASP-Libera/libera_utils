@@ -177,6 +177,8 @@ nitpick_ignore_regex = [
         r"(libera_utils\.footprint_matching\.readers\.(base|igbp|nsidc|_hdf4_io)\.)?"
         r"(_BoxNative|_PointIndex|_SinusoidalTiles|_SinusoidalGeometry|_HemisphereGrid)",
     ),
+    # The scene-ID reader's private column spec, named in the signature of a documented private method.
+    (r"py:class", r"(libera_utils\.scene_identification\.scene_id\.)?_FmatchColumn"),
     # Third party exceptions whose projects publish no inventory (or none we subscribe to).
     (r"py:exc", r"(requests\.exceptions|docker\.errors|boto3\.exceptions|pyhdf\.error)\..*"),
     # Artifact, not a real reference: Sphinx splits a pydantic model's generated __signature__ on

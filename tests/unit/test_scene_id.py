@@ -8,9 +8,15 @@ import pytest
 import xarray as xr
 
 from libera_utils.config import config
+from libera_utils.footprint_matching.product import load_fmatch_definition
+from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
+    _FMATCH_CAM_COLUMN_MAP,
+    _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+    _FMATCH_IMAGER_COLUMN_MAP,
     RADIOMETER_TIME_DIMENSION,
     CalculationSpec,
     CLDPIXCloudPhase,
@@ -1137,16 +1143,20 @@ class TestFmatchCamCloudFractionPassthrough:
 
     @staticmethod
     def _write_minimal_fmatch_cam(path, cloud_fraction_camera):
-        """Write a minimal FMATCH-CAM-shaped NetCDF carrying just the CAM classification source variables."""
+        """Write a minimal FMATCH-CAM-shaped NetCDF carrying just the CAM classification source variables.
+
+        The variables are written under their product names, as FMATCH writes them.
+        """
         n = len(cloud_fraction_camera)
+        columns = {
+            "igbp_surface_type": np.arange(1, n + 1, dtype=np.int16),
+            "cloud_fraction_camera": np.asarray(cloud_fraction_camera, np.float32),
+            "solar_zenith_angle": np.zeros(n, np.float32),
+            "viewing_zenith_angle": np.zeros(n, np.float32),
+            "relative_azimuth_angle": np.zeros(n, np.float32),
+        }
         dataset = xr.Dataset(
-            {
-                "igbp_surface_type": (RADIOMETER_TIME_DIMENSION, np.arange(1, n + 1, dtype=np.int16)),
-                "cloud_fraction_camera": (RADIOMETER_TIME_DIMENSION, np.asarray(cloud_fraction_camera, np.float32)),
-                "solar_zenith_angle": (RADIOMETER_TIME_DIMENSION, np.zeros(n, np.float32)),
-                "viewing_zenith_angle": (RADIOMETER_TIME_DIMENSION, np.zeros(n, np.float32)),
-                "relative_azimuth_angle": (RADIOMETER_TIME_DIMENSION, np.zeros(n, np.float32)),
-            },
+            {product_variable_name(name): (RADIOMETER_TIME_DIMENSION, values) for name, values in columns.items()},
             coords={RADIOMETER_TIME_DIMENSION: np.arange(n).astype("datetime64[ns]")},
         )
         dataset.to_netcdf(path)
@@ -1194,12 +1204,12 @@ class TestSceneIdImagerProductDtypes:
         ["scene_id_imager.yml", "scene_id_imager_camtime.yml"],
     )
     def test_scene_id_trmm_is_uint16(self, definition_filename):
-        """scene_id_trmm is uint16 (not uint8): the TRMM definition assigns IDs up to 650, which overflows a byte."""
+        """Scene_ID_TRMM is uint16 (not uint8): the TRMM definition assigns IDs up to 650, which overflows a byte."""
         definition = self._load(definition_filename)
-        assert definition.variables["scene_id_trmm"].dtype == "uint16"
+        assert definition.variables["Scene_ID_TRMM"].dtype == "uint16"
         # ERBE/unfiltering IDs stay within a byte.
-        assert definition.variables["scene_id_erbe"].dtype == "uint8"
-        assert definition.variables["scene_id_unfiltering"].dtype == "uint8"
+        assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
+        assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
 
     @pytest.mark.parametrize(
         "definition_filename",
@@ -1208,7 +1218,46 @@ class TestSceneIdImagerProductDtypes:
     def test_trmm_input_and_bin_variables_present(self, definition_filename):
         """The extra TRMM inputs and their bin bounds are declared."""
         definition = self._load(definition_filename)
-        for name in ("surface_wind", "cloud_phase", "optical_depth"):
+        for name in ("Surface_Wind", "Cloud_Phase", "Optical_Depth"):
             assert name in definition.variables
-        assert definition.variables["scene_bin_trmm_surface_type_min"].dtype == "uint8"
-        assert definition.variables["scene_bin_trmm_cloud_phase_max"].dtype == "float32"
+        assert definition.variables["Scene_Bin_TRMM_Surface_Type_Min"].dtype == "uint8"
+        assert definition.variables["Scene_Bin_TRMM_Cloud_Phase_Max"].dtype == "float32"
+
+
+def _fmatch_internal_names(mode: OperationalMode) -> set[str]:
+    """The internal names of every variable and non-dimension coordinate an FMATCH product declares."""
+    definition = load_fmatch_definition(mode)
+    coordinates = [name for name, coordinate in definition.coordinates.items() if coordinate.dimensions != [name]]
+    return {internal_variable_name(name) for name in (*definition.variables, *coordinates)}
+
+
+class TestFmatchSourceNames:
+    """Every FMATCH variable a SCENE-ID reader reads is one the FMATCH products feeding it declare.
+
+    The readers name their sources by FMATCH's internal names; a name FMATCH does not declare would make every read
+    of a real FMATCH file fail with a missing-variable error.
+    """
+
+    @pytest.mark.parametrize(
+        ("source_names", "modes"),
+        [
+            pytest.param(
+                [column.source_name for column in _FMATCH_CAM_COLUMN_MAP.values()],
+                (OperationalMode.CAM, OperationalMode.CAM_CAMTIME),
+                id="cam-columns",
+            ),
+            pytest.param(
+                [column.source_name for column in _FMATCH_IMAGER_COLUMN_MAP.values()],
+                (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME),
+                id="imager-columns",
+            ),
+            pytest.param(
+                list(_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES),
+                (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME),
+                id="camtime-passthrough",
+            ),
+        ],
+    )
+    def test_source_names_are_declared_by_fmatch(self, source_names, modes):
+        for mode in modes:
+            assert set(source_names) - _fmatch_internal_names(mode) == set(), mode.value
