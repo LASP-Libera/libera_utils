@@ -19,7 +19,7 @@ from libera_utils.scene_identification.scene_id_algorithm import (
     resolve_runner_config_from_env,
 )
 
-# A CERES SSF filename: not a Libera product name, so it stands in for the placeholder-mode input.
+# A CERES SSF filename: not a Libera product name, so it is skipped.
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
 
@@ -43,15 +43,25 @@ class TestCollectInputFiles:
         # collect_input_files selects purely by filename, so the listed files need not exist
         return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
 
-    def test_product_mode_keeps_only_matching_product(self):
-        """In Libera-product mode only files with the configured product id are kept."""
-        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
-        other = _libera_product_name(DataProductIdentifier.l1b_rad)
-        manifest = self._manifest(wanted, other, SSF_INPUT_NAME)
+    # Built once: a Libera filename carries its creation time as the revision, so a second call names another file.
+    _WANTED = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
+    _OTHER = _libera_product_name(DataProductIdentifier.l1b_rad)
+
+    @pytest.mark.parametrize(
+        ("filenames", "expected"),
+        [
+            pytest.param([_WANTED, _OTHER, SSF_INPUT_NAME], [_WANTED], id="mixed"),
+            pytest.param([_OTHER], [], id="another-libera-product-only"),
+            pytest.param([SSF_INPUT_NAME, "not_a_libera_file.txt"], [], id="unparsable-names-only"),
+        ],
+    )
+    def test_keeps_only_matching_product(self, filenames, expected):
+        """Only files with the configured product id are kept, and unparsable names are skipped."""
+        manifest = self._manifest(*filenames)
 
         selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
 
-        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
+        assert selected == [f"{self._INPUT_DIR}/{name}" for name in expected]
 
 
 class TestRunnerDispatch:

@@ -52,11 +52,7 @@ class TestIGBPSurfaceType:
 
 
 class TestMapCldpixPhaseToTrmm:
-    """Tests for the placeholder CLDPIX cloud-particle-phase -> TRMM cloud_phase remap.
-
-    TODO[LIBSDC-817]: these assertions track the PLACEHOLDER mapping (liquid=1, ice=2, everything else -> NaN).
-    Update them when the CLDPIX phase code meanings are confirmed against the data dictionary.
-    """
+    """CLDPIX water_cloud/ice_cloud map to 1/2; no_cloud_retrieval, clear and fill map to NaN."""
 
     def test_recognized_codes_map_to_one_and_two(self):
         """The recognized liquid/ice codes map to the classifier's 1/2; unknown codes and NaN map to NaN."""

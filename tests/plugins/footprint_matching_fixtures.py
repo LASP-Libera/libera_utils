@@ -1773,8 +1773,8 @@ def make_fmatch_product_fixture(
 
     * ``IGBP_Surface_Type`` cycles through the IGBP codes 1..17;
     * for the IMAGER modes, ``FLASHFlux_Clear_Coverage`` spans 0..100 percent, ``CLDPIX_Cloud_Particle_Phase``
-      alternates liquid (1) and ice (2), and ``ERA5_Surface_Wind_U10`` / ``ERA5_Surface_Wind_V10`` and
-      ``CLDPIX_Cloud_Optical_Depth`` are 3.0;
+      alternates liquid (1) and ice (2), ``ERA5_Surface_Wind_U10`` is 3.0, ``ERA5_Surface_Wind_V10`` is 4.0 and
+      ``CLDPIX_Cloud_Optical_Depth`` is 7.0;
     * for ``CAM``, ``Cloud_Fraction_Camera`` spans 0..100 percent (the camera-timescale CAM mode takes the
       CF-CAM-CAMTIME file's own cloud fraction).
 
@@ -1837,8 +1837,10 @@ def make_fmatch_product_fixture(
     if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
         _set("flashflux_clear_coverage", np.linspace(0.0, 100.0, n_cells))
         _set("cldpix_cloud_particle_phase", np.arange(n_cells) % 2 + 1)
-        for name in ("era5_surface_wind_u10", "era5_surface_wind_v10", "cldpix_cloud_optical_depth"):
-            _set(name, np.full(n_cells, 3.0))
+        # A distinct constant per source, so a reader that reads the wrong source variable is caught.
+        _set("era5_surface_wind_u10", np.full(n_cells, 3.0))
+        _set("era5_surface_wind_v10", np.full(n_cells, 4.0))
+        _set("cldpix_cloud_optical_depth", np.full(n_cells, 7.0))
 
     written = write_libera_data_product(
         data_product_definition=definition,
