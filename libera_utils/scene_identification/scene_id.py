@@ -456,7 +456,9 @@ def calculate_trmm_surface_type(igbp_surface_type: float | NDArray[np.number]) -
     invalid = ~missing & ~valid
     if np.any(invalid):
         failed_values = np.atleast_1d(igbp)[np.atleast_1d(invalid)]
-        failed_values = [int(value) if value == np.round(value) else float(value) for value in failed_values]
+        failed_values = [
+            int(value) if np.isfinite(value) and value == np.round(value) else float(value) for value in failed_values
+        ]
         raise ValueError(f"Cannot convert IGBP surface type value to TRMM surface type: {failed_values}")
 
     result = np.where(valid, lookup[np.where(valid, igbp, 0).astype(int)], np.nan)
