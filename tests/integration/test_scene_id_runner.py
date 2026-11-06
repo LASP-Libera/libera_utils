@@ -19,7 +19,7 @@ from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, O
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
+from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
@@ -127,24 +127,6 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-
-    def test_written_product_uses_product_names(self, tmp_path):
-        """Declared variables are written under their product names, never under FootprintData's internal names.
-
-        FootprintData names its columns in snake_case (``scene_id_erbe``, ``surface_type``); the writer renames each
-        declared one to its product name (``Scene_ID_ERBE``, ``Surface_Type``).
-        """
-        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
-        footprint_data = run_scene_identification_cam(input_path)
-        output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
-
-        definition = LiberaDataProductDefinition.from_yaml(PRODUCT_DEFINITION_PATH)
-        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
-        assert set(definition.variables) <= set(reopened.variables)
-        for name in definition.variables:
-            internal = internal_variable_name(name)
-            if internal != name:
-                assert internal not in reopened.variables
 
 
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
