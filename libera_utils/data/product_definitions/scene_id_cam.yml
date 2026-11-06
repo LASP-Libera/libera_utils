@@ -29,7 +29,8 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      _FillValue: 255
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   Solar_Zenith_Surface:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -58,6 +59,7 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: 255
       # Surface-type category used as a scene-classification input, collapsed from the finer IGBP land-cover code.
       # The category values follow the TRMM 6-category scheme, though it is used in all scene classification types.
       long_name: >-
@@ -67,7 +69,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      long_name: Total cloud fraction over the footprint (from the L2-CF-CAM data product, in percent)
       units: percent
 
   ############

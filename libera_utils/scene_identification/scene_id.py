@@ -18,6 +18,7 @@ from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
@@ -32,6 +33,35 @@ logger = logging.getLogger(__name__)
 # so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
 # libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
+
+# The camera-timescale counterpart of the constant above. The camera-timescale scene-ID product (CAM-CAMTIME) is
+# written on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
+# sorted image-acquisition axis (one 2048x2048 image = one entry) and PSEUDOFOOTPRINT is the 0-based subsection index within
+# each image (subsections may overlap and do not tile the image). Both are dimension coordinates and every data
+# variable hangs on both.
+CAMERA_TIME_VARIABLE = "CAMERA_TIME"
+
+# Internal names of the identifier variables that the camera-timescale FMATCH products carry and the camera-timescale
+# SCENE-ID products (SCENE-ID-CAM-CAMTIME, SCENE-ID-IMAGER-CAMTIME) pass straight through -- the four inclusive camera
+# pixel-block bounds (camera_pixel_{x,y}_{min,max}), the PSF bounding box, and the boresight geolocation -- each read
+# from the FMATCH file and written to SCENE-ID under its product name, so a scene can be traced back
+# to the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
+# (CAMERA_TIME, PSEUDOFOOTPRINT) grid dimensions) by from_fmatch_cam_camtime / from_fmatch_imager_camtime and are not
+# consumed by the classification; they simply ride along to the written product. The FMATCH-only center_pixel_x/y
+# (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
+_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
+    "latitude",
+    "longitude",
+    "altitude",
+    "psf_bbox_lat_min",
+    "psf_bbox_lat_max",
+    "psf_bbox_lon_min",
+    "psf_bbox_lon_max",
+    "camera_pixel_x_min",
+    "camera_pixel_x_max",
+    "camera_pixel_y_min",
+    "camera_pixel_y_max",
+)
 
 # Product name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
 # (scene_id_cam.yml).
@@ -247,6 +277,68 @@ class IGBPSurfaceType(enum.IntEnum):
         return igbp_to_trmm_map[self.value]
 
 
+class CLDPIXCloudPhase(enum.IntEnum):
+    """CLDPIX cloud particle phase codes.
+
+    FMATCH's ``CLDPIX_Cloud_Particle_Phase`` is the PSF-weighted mode of the CER_CLDPIX ``Cloud_Particle_Phase``
+    code. The CER_CLDPIX_NOAA20-VIIRS files declare the codes in that variable's own CF ``flag_values`` and
+    ``flag_meanings`` (as in the test granule
+    ``tests/test_data/footprint_matching/CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc``):
+
+    - 1 ``water_cloud``
+    - 2 ``ice_cloud``
+    - 3 ``no_cloud_retrieval``
+    - 4 ``clear``
+    - 5 ``bad_data``, which the CLDPIX reader drops
+
+    Only the two codes that carry a cloud phase are named here. Codes 3 and 4 carry none (no retrieval, or no
+    cloud), so :func:`map_cldpix_phase_to_trmm` maps them to NaN and those footprints stay unmatched for
+    phase-gated scenes.
+
+    Attributes
+    ----------
+    LIQUID : int
+        ``water_cloud`` (code 1), mapped to the classifier's cloud_phase value 1.
+    ICE : int
+        ``ice_cloud`` (code 2), mapped to the classifier's cloud_phase value 2.
+    """
+
+    LIQUID = 1
+    ICE = 2
+
+
+def map_cldpix_phase_to_trmm(cldpix_phase: NDArray) -> NDArray[np.floating]:
+    """Map CLDPIX cloud-particle-phase codes to the classifier's ``cloud_phase`` (1 = liquid, 2 = ice).
+
+    The TRMM scene classifier bins ``cloud_phase`` as 1 (liquid) or 2 (ice) -- see the ``cloud_phase_min/max``
+    columns of ``trmm.csv`` and :func:`calculate_cloud_phase`, which likewise emits 1 or 2. FMATCH's
+    ``CLDPIX_Cloud_Particle_Phase`` instead carries the CER_CLDPIX ``Cloud_Particle_Phase`` integer code, of which the
+    CLDPIX reader keeps 1-4 (it drops 5, which the file labels ``bad_data``). This is a *code remap*, deliberately
+    unlike the continuous cloud-fraction-weighted :func:`calculate_cloud_phase`: each CLDPIX code is looked up and
+    collapsed onto {1, 2}.
+
+    Any code that is not a liquid/ice value (fill/NaN, or CLDPIX codes 3 ``no_cloud_retrieval`` and 4 ``clear``;
+    see :class:`CLDPIXCloudPhase`) is mapped to ``NaN``. A ``NaN`` classification value leaves the footprint unmatched
+    (scene ID 0) for any scene that bounds ``cloud_phase`` -- exactly the desired behavior when the phase is unknown.
+
+    Parameters
+    ----------
+    cldpix_phase : ndarray
+        CLDPIX cloud particle phase codes (any numeric dtype; NaN allowed for missing).
+
+    Returns
+    -------
+    ndarray of float
+        ``cloud_phase`` values (1.0 = liquid, 2.0 = ice, NaN = unknown), as ``float32`` so NaN is representable.
+    """
+    # Compare against the liquid and ice codes and build a float result so every other code can be NaN.
+    phase = np.asarray(cldpix_phase, dtype=np.float32)
+    result = np.full(phase.shape, np.nan, dtype=np.float32)
+    result[phase == CLDPIXCloudPhase.LIQUID] = 1.0
+    result[phase == CLDPIXCloudPhase.ICE] = 2.0
+    return result
+
+
 # Scene Property Calculations
 
 
@@ -318,70 +410,60 @@ def calculate_surface_wind(
     return surface_wind
 
 
-def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) -> int | NDArray[np.integer]:
+def calculate_trmm_surface_type(igbp_surface_type: float | NDArray[np.number]) -> float | NDArray[np.floating]:
     """Convert an IGBP surface type code to its TRMM surface type classification.
 
     This maps IGBP -> TRMM (the direction used by scene identification): each IGBP land-cover code (1-20) is
     collapsed onto one of the six coarser TRMM surface types via :meth:`IGBPSurfaceType.trmm_surface_type`.
+    A missing code (``NaN``, e.g. a footprint FMATCH found no IGBP pixels for) gives a missing surface type, which
+    leaves that footprint unmatched (scene ID 0) for every scene that bounds the surface type.
 
     Parameters
     ----------
-    igbp_surface_type : int or ndarray of int
-        IGBP surface type codes (valid range 1-20)
+    igbp_surface_type : float or numpy.ndarray
+        IGBP surface type codes (valid range 1-20), with ``NaN`` where the code is missing.
 
     Returns
     -------
-    int or ndarray of int
-        TRMM surface type codes (0=ocean ... 5=snow), emitted as uint8
+    float or ndarray of float
+        TRMM surface type codes (0=ocean ... 5=snow), with ``NaN`` where the input is missing.
 
     Raises
     ------
     ValueError
-        If any input value is not a valid IGBP surface type (outside 1-20)
+        If any non-missing input value is not a valid IGBP surface type (outside 1-20, or not a whole number).
 
     Notes
     -----
     The conversion uses a lookup table derived from the IGBP->TRMM map on :class:`IGBPSurfaceType`.
-    Values that don't correspond to a valid IGBP surface type will raise a ValueError.
 
     Examples
     --------
     >>> calculate_trmm_surface_type(1)  # IGBP EVERGREEN_NEEDLELEAF_FOREST -> TRMM HI_SHRUB (1)
-    1
-    >>> calculate_trmm_surface_type(np.array([1, 17]))  # 17 = WATER_BODIES -> OCEAN (0)
-    array([1, 0])
+    1.0
+    >>> calculate_trmm_surface_type(np.array([1, 17, np.nan]))  # 17 = WATER_BODIES -> OCEAN (0)
+    array([ 1.,  0., nan])
     >>> calculate_trmm_surface_type(999)
     ValueError: Cannot convert IGBP surface type value to TRMM surface type: [999]
     """
-    all_surfaces = list()
-    for igbp_surface_enum in IGBPSurfaceType:
-        all_surfaces.append(igbp_surface_enum)
-    max_igbp = max(surface.value for surface in all_surfaces) if all_surfaces else 0
-    lookup = np.full(max_igbp + 1, -1, dtype=int)
-
-    for surface_type in all_surfaces:
+    max_igbp = max(surface.value for surface in IGBPSurfaceType)
+    lookup = np.full(max_igbp + 1, np.nan)
+    for surface_type in IGBPSurfaceType:
         lookup[surface_type.value] = surface_type.trmm_surface_type
 
-    # Vectorized lookup with bounds checking
-    result = np.where(
-        (igbp_surface_type > 0) & (igbp_surface_type <= max_igbp),
-        lookup[np.clip(igbp_surface_type, 0, max_igbp)],
-        -1,
-    )
-
-    # Check for failed conversions and raise ValueError
-    failed_mask = result == -1
-    if np.any(failed_mask):
-        # Extract the specific failed values
-        if np.isscalar(igbp_surface_type):
-            failed_values = [igbp_surface_type]
-        else:
-            failed_values = igbp_surface_type[failed_mask].tolist()
+    igbp = np.asarray(igbp_surface_type, dtype=np.float64)
+    missing = np.isnan(igbp)
+    valid = ~missing & (igbp >= 1) & (igbp <= max_igbp) & (igbp == np.round(igbp))
+    invalid = ~missing & ~valid
+    if np.any(invalid):
+        failed_values = np.atleast_1d(igbp)[np.atleast_1d(invalid)]
+        failed_values = [
+            int(value) if np.isfinite(value) and value == np.round(value) else float(value) for value in failed_values
+        ]
         raise ValueError(f"Cannot convert IGBP surface type value to TRMM surface type: {failed_values}")
 
-    # Emit the declared uint8 dtype directly (the six TRMM categories, 0-5, are naturally uint8). The -1 "invalid"
-    # sentinel is validated above in signed-int space, so it can never survive into this narrowing cast.
-    return result.astype(np.uint8)
+    result = np.where(valid, lookup[np.where(valid, igbp, 0).astype(int)], np.nan)
+    return float(result) if np.ndim(result) == 0 else result
 
 
 def calculate_cloud_fraction_weighted_optical_depth(
@@ -641,7 +723,7 @@ _CALCULATED_VARIABLE_MAP = {
         output_var=FootprintVariables.SURFACE_TYPE,
         function=calculate_trmm_surface_type,
         input_vars=[FootprintVariables.IGBP_SURFACE_TYPE],
-        output_datatype=np.uint8,
+        output_datatype=float,
     ),
     FootprintVariables.OPTICAL_DEPTH: CalculationSpec(
         output_var=FootprintVariables.OPTICAL_DEPTH,
@@ -674,6 +756,95 @@ _CALCULATED_VARIABLE_MAP = {
 }
 
 # Scene Identification Data Processing
+
+
+@dataclass(frozen=True)
+class _FmatchColumn:
+    """How one FMATCH source variable becomes one standardized :class:`FootprintVariables` classification column.
+
+    The radiometer- and camera-timescale FMATCH products all share a flat, one-value-per-footprint layout but draw
+    their classification inputs from *different* source variables (the CAM camera cloud fraction, the imager FLASHFlux
+    clear coverage / CLDPIX fields, and so on). Rather than a bespoke ``_extract_data_from_fmatch`` per
+    product, each reader passes a declarative ``{target FootprintVariables: _FmatchColumn}`` map and the shared
+    helper applies it uniformly.
+
+    Attributes
+    ----------
+    source_name : str
+        FMATCH's internal name of the source variable (its reader's ``<source_key>_<spec_name>``); the FMATCH file
+        holds it under its :func:`~libera_utils.io.product_variable_names.product_variable_name`.
+    dtype : type
+        NumPy dtype the emitted column is cast to (also what the SCENE-ID product definition declares).
+    transform : Callable or None, optional
+        Elementwise transform applied to the source array (e.g. a code remap). Defaults to None.
+    """
+
+    source_name: str
+    dtype: type
+    transform: Callable | None = None
+
+
+# CAM / CAM-CAMTIME classification inputs. The Libera WFOV camera cloud fraction is stored in percent [0, 100] in
+# the FMATCH product (fmatch_cam.yml: units "percent", matching the CF-CAM input), which is the same scale as the
+# scene-definition bins and the SCENE-ID "cloud_fraction" variable, so it is ingested as-is (no rescale).
+# cloud_fraction is injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
+_FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.float32),
+    FootprintVariables.CLOUD_FRACTION: _FmatchColumn("cloud_fraction_camera", np.float32),
+    FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
+    FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
+    FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
+}
+
+# FMATCH-IMAGER / FMATCH-IMAGER-CAMTIME classification inputs. Note two of these are *raw inputs* to existing
+# derived-variable calculators rather than final classification columns, chosen so the imager path reuses the
+# validated calculators instead of duplicating them:
+#   * clear_area (from the FLASHFlux clear coverage, already in percent) -> cloud_fraction is derived by
+#     identify_scenes as 100 - clear_area (calculate_cloud_fraction); and
+#   * surface_wind_u / surface_wind_v (from the ERA5 10 m wind components) -> surface_wind is derived as
+#     sqrt(u^2 + v^2) (calculate_surface_wind).
+# surface_type is likewise derived from igbp_surface_type via calculate_trmm_surface_type. The IGBP reader
+# masks LC_Type1 to its valid 1..17 domain (17 = Water Bodies), which aligns 1:1 with the low IGBPSurfaceType
+# members, so a valid modal class maps straight through. A footprint with no usable IGBP pixels (and every padded
+# cell of a camera-timescale grid) carries FMATCH's declared integer _FillValue, which xarray decodes to NaN on read,
+# leaving that footprint unmatched for the surface-bounded scenes. The three viewing angles are read straight
+# through. The CLDPIX cloud particle phase code is remapped to the classifier's 1 = liquid / 2 = ice convention via
+# map_cldpix_phase_to_trmm (see CLDPIXCloudPhase for the CER_CLDPIX code meanings).
+_FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.float32),
+    FootprintVariables.CLEAR_AREA: _FmatchColumn("flashflux_clear_coverage", np.float32),
+    FootprintVariables.SURFACE_WIND_U: _FmatchColumn("era5_surface_wind_u10", np.float32),
+    FootprintVariables.SURFACE_WIND_V: _FmatchColumn("era5_surface_wind_v10", np.float32),
+    FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
+    FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
+    FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
+    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("cldpix_cloud_optical_depth", np.float32),
+    FootprintVariables.CLOUD_PHASE: _FmatchColumn(
+        "cldpix_cloud_particle_phase", np.float32, transform=map_cldpix_phase_to_trmm
+    ),
+}
+
+
+def _warn_if_no_camera_cloud_fraction(footprint_data: xr.Dataset, fmatch_path: str | pathlib.Path | S3Path) -> None:
+    """Log a warning when an FMATCH-CAM product's camera cloud fraction has no finite value.
+
+    Every scene SCENE-ID-CAM classifies bounds cloud fraction, so such a product classifies no footprint: every
+    scene ID is 0. FMATCH-CAM writes ``Cloud_Fraction_Camera`` as fill until it reads the radiometer-timescale CF-CAM
+    product (LIBSDC-785), so the product is still written, and the warning says why it is empty.
+
+    Parameters
+    ----------
+    footprint_data : xarray.Dataset
+        The footprint data a CAM reader extracted, holding the ``cloud_fraction`` column.
+    fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+        The FMATCH product the data was read from, named in the warning.
+    """
+    if not np.isfinite(footprint_data[FootprintVariables.CLOUD_FRACTION].to_numpy()).any():
+        logger.warning(
+            "%s: Cloud_Fraction_Camera has no finite value, so every footprint is left unmatched (scene ID 0). "
+            "FMATCH-CAM writes it as fill until the radiometer-timescale CF-CAM is read (LIBSDC-785).",
+            fmatch_path,
+        )
 
 
 class FootprintData:
@@ -784,17 +955,18 @@ class FootprintData:
         return footprint_data
 
     @classmethod
-    def from_fmatch_cam(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_cam(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
 
         FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
-        Libera-camera-derived cloud fraction and the scene properties needed for classification. This reader will
-        replace the placeholder CERES SSF path (:meth:`from_ceres_ssf`) once the FMATCH step is producing files.
+        Libera-camera-derived cloud fraction and the scene properties needed for classification. A product whose
+        camera cloud fraction has no finite value is read with a logged warning, since every footprint is then left
+        unmatched.
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-CAM NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-CAM NetCDF product file.
 
         Returns
         -------
@@ -803,18 +975,23 @@ class FootprintData:
 
         Raises
         ------
-        NotImplementedError
-            Always, until the FMATCH-CAM product format is finalized and this reader is implemented.
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file.
         """
-        # TODO[LIBSDC-794]: implement once the FMATCH-CAM product definition/format is available (tracked with the
-        # FMATCH reader milestone). The SceneIdRunnerConfig for cam_camtime already wires this in as its reader.
-        raise NotImplementedError(
-            "FootprintData.from_fmatch_cam is not implemented yet: the FMATCH-CAM input product format is not "
-            "available. SCENE-ID-CAM currently reads placeholder CERES SSF input via from_ceres_ssf()."
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_variable=RADIOMETER_TIME_DIMENSION,
+            column_map=_FMATCH_CAM_COLUMN_MAP,
+            expected_product=DataProductIdentifier.aux_fmatch_cam,
+            variant="cam",
         )
+        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
+        return cls(extracted_data)
 
     @classmethod
-    def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+    def from_fmatch_cam_camtime(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
         """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
 
         FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME. It is defined on a 2-D
@@ -822,16 +999,13 @@ class FootprintData:
         per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
         both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
         ``Camera_Pixel_X_Min``/``Camera_Pixel_X_Max``/``Camera_Pixel_Y_Min``/``Camera_Pixel_Y_Max``, PSF bounding
-        box, boresight geolocation) that the camera-timescale product passes straight through.
-
-        When implemented, the reader must also merge the CF-CAM-CAMTIME cloud-fraction input, which is defined on the
-        *same* ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid so it aligns 1:1 with FMATCH; the two inputs must share identical
-        ``CAMERA_TIME`` and ``PSEUDOFOOTPRINT`` extents.
+        box, boresight geolocation) that the camera-timescale product passes straight through. A product whose camera
+        cloud fraction has no finite value is read with a logged warning, since every footprint is then left unmatched.
 
         Parameters
         ----------
-        fmatch_path : pathlib.Path
-            Path to a Libera FMATCH-CAM-CAMTIME NetCDF product file.
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-CAM-CAMTIME NetCDF product file.
 
         Returns
         -------
@@ -841,16 +1015,223 @@ class FootprintData:
 
         Raises
         ------
-        NotImplementedError
-            Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file.
         """
-        # TODO[LIBSDC-794]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
-        # read the pixel-block bounds as the four separate Camera_Pixel_{X,Y}_{Min,Max} variables and carry through
-        # the identifier variables declared in scene_id_cam_camtime.yml on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
-        raise NotImplementedError(
-            "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
-            "format is not available."
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_variable=CAMERA_TIME_VARIABLE,
+            column_map=_FMATCH_CAM_COLUMN_MAP,
+            passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+            expected_product=DataProductIdentifier.aux_fmatch_cam_camtime,
+            variant="cam-camtime",
         )
+        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
+        return cls(extracted_data)
+
+    @classmethod
+    def from_fmatch_imager(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
+        """Read a FMATCH-IMAGER product into a FootprintData (radiometer timescale).
+
+        The FMATCH-IMAGER product is the operational input to SCENE-ID-IMAGER: one footprint per
+        ``RADIOMETER_TIME``, carrying the FLASHFlux clear coverage (for cloud fraction), the CLDPIX cloud
+        optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface wind), and
+        the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
+
+        Parameters
+        ----------
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-IMAGER NetCDF product file.
+
+        Returns
+        -------
+        FootprintData
+            Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-CAM file, which has no
+            FLASHFlux or CLDPIX variables.
+        """
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_variable=RADIOMETER_TIME_DIMENSION,
+            column_map=_FMATCH_IMAGER_COLUMN_MAP,
+            expected_product=DataProductIdentifier.aux_fmatch_imager,
+            variant="imager",
+        )
+        return cls(extracted_data)
+
+    @classmethod
+    def from_fmatch_imager_camtime(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
+        """Read a FMATCH-IMAGER-CAMTIME product into a FootprintData (camera timescale).
+
+        FMATCH-IMAGER-CAMTIME is the operational input to SCENE-ID-IMAGER-CAMTIME. It is the camera-timescale
+        counterpart of FMATCH-IMAGER: it carries the *same* classification inputs -- the FLASHFlux clear coverage
+        (for cloud fraction), the CLDPIX cloud optical depth and particle phase (for the full TRMM
+        classification), the ERA5 winds (for surface wind), and the IGBP surface type -- but laid out on the 2-D
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one ``CAMERA_TIME`` entry per 2048x2048 image and one
+        ``PSEUDOFOOTPRINT`` entry per image subsection). Like SCENE-ID-IMAGER, this supports ERBE, unfiltering, and
+        the full TRMM classification.
+
+        This reader is the union of :meth:`from_fmatch_imager` and :meth:`from_fmatch_cam_camtime`: it uses the
+        IMAGER column map (so the FLASHFlux/CLDPIX inputs and the mapped cloud phase are read) on the camera-timescale
+        record grid, and additionally carries the footprint *identifier* variables (the inclusive camera pixel-block
+        bounds ``Camera_Pixel_{X,Y}_{Min,Max}``, the PSF bounding box, and the boresight geolocation) straight
+        through so a classified scene can be traced back to the exact camera pixels and ground footprint.
+
+        Parameters
+        ----------
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH-IMAGER-CAMTIME NetCDF product file.
+
+        Returns
+        -------
+        FootprintData
+            Footprint data on the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one entry per image subsection), ready for
+            :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable this reader reads, for example a FMATCH-CAM-CAMTIME file, which has no
+            FLASHFlux or CLDPIX variables.
+        """
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_variable=CAMERA_TIME_VARIABLE,
+            column_map=_FMATCH_IMAGER_COLUMN_MAP,
+            passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+            expected_product=DataProductIdentifier.aux_fmatch_imager_camtime,
+            variant="imager-camtime",
+        )
+        return cls(extracted_data)
+
+    @staticmethod
+    def _extract_data_from_fmatch(
+        fmatch_path: str | pathlib.Path | S3Path,
+        *,
+        time_variable: str,
+        column_map: dict[FootprintVariables, "_FmatchColumn"],
+        expected_product: DataProductIdentifier,
+        variant: str,
+        passthrough_variables: tuple[str, ...] = (),
+    ) -> xr.Dataset:
+        """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
+
+        The radiometer-timescale FMATCH products (CAM, IMAGER) carry a flat one-value-per-footprint
+        (1-D ``RADIOMETER_TIME``) layout; the camera-timescale product (CAM-CAMTIME) carries a 2-D
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
+        dimensions, so both layouts flow through unchanged. This helper is driven by a declarative ``column_map``
+        supplied by each concrete reader:
+        it reads each mapped source variable, applies its dtype/transform, and emits it under the standardized
+        :class:`FootprintVariables` name the scene classifier consumes. Some emitted columns are *raw inputs* to the
+        derived-variable calculators (e.g. ``clear_area`` -> ``cloud_fraction``, ``surface_wind_u``/``_v`` ->
+        ``surface_wind``, ``igbp_surface_type`` -> ``surface_type``) rather than final classification columns; those
+        are derived later by :meth:`identify_scenes`.
+
+        The time coordinate is carried as a plain ``time_variable`` data variable so it rides along through scene
+        identification; the runner promotes it to a coordinate via :meth:`to_time_product` before writing.
+
+        Parameters
+        ----------
+        fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to a Libera FMATCH NetCDF product file, read through ``smart_open``.
+        time_variable : str
+            Name of the datetime time coordinate, read from the FMATCH file and emitted under the same name (it is
+            the SCENE-ID product's declared time-coordinate name): ``RADIOMETER_TIME`` for SCENE-ID-CAM and
+            SCENE-ID-IMAGER, or ``CAMERA_TIME`` for SCENE-ID-CAM-CAMTIME. Carried as a plain data variable so
+            it rides through scene identification; the runner promotes it to a coordinate via
+            :meth:`to_time_product` before writing.
+        column_map : dict[FootprintVariables, _FmatchColumn]
+            Mapping of standardized output column -> FMATCH source column spec (internal name, dtype, transform).
+            Each source is read from the file under its product variable name.
+        expected_product : DataProductIdentifier
+            The FMATCH product this reader reads, named in the missing-variable error.
+        variant : str
+            The ``LIBERA_SCENE_ID_VARIANT`` that selects this reader, named in the missing-variable error.
+        passthrough_variables : tuple of str, optional
+            Internal names of FMATCH variables to copy verbatim onto the output (e.g. the camera-timescale identifier
+            variables), each read under its product variable name and emitted under its internal name. Empty for the
+            radiometer-timescale products.
+
+        Returns
+        -------
+        xr.Dataset
+            Footprint data on the product's record dimensions, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``fmatch_path`` does not exist.
+        ValueError
+            If the file lacks a variable the reader reads, most often a FMATCH file of another product.
+        """
+        logger.info("Reading FMATCH product %s", fmatch_path)
+        # netCDF4 opens only a filesystem path or an in-memory buffer, so the bytes are read through smart_open (local,
+        # S3 or gzip) and handed to xarray as an in-memory netCDF4 dataset, which xarray closes with the store.
+        try:
+            with smart_open(fmatch_path) as file_handle:
+                fmatch_bytes = file_handle.read()
+        except FileNotFoundError as err:
+            raise FileNotFoundError(f"Unable to open input file: {fmatch_path}") from err
+        store = xr.backends.NetCDF4DataStore(nc.Dataset(pathlib.Path(str(fmatch_path)).name, memory=fmatch_bytes))
+        with xr.open_dataset(store) as opened_dataset:
+            fmatch_dataset = opened_dataset.load()
+
+        # The file holds every variable under its product name; FootprintData keeps the internal names.
+        source_names = {target: product_variable_name(column.source_name) for target, column in column_map.items()}
+        passthrough_names = {name: product_variable_name(name) for name in passthrough_variables}
+        missing = [
+            name
+            for name in (*source_names.values(), *passthrough_names.values())
+            if name not in fmatch_dataset.variables
+        ]
+        if missing:
+            raise ValueError(
+                f"{fmatch_path} is missing required variable(s) {missing}; check that the manifest's input is a "
+                f"{expected_product.value} file for LIBERA_SCENE_ID_VARIANT={variant}"
+            )
+
+        data_variables: dict[str, tuple[list[str], NDArray]] = {}
+        for target, column in column_map.items():
+            source_variable = fmatch_dataset[source_names[target]]
+            values = source_variable.to_numpy()
+            # A transform (a code remap such as CLDPIX phase -> {liquid, ice}) is applied on the raw source values.
+            if column.transform is not None:
+                values = column.transform(values)
+            # Emit on the source variable's own dimensions so radiometer inputs stay 1-D (RADIOMETER_TIME) while
+            # camera-timescale inputs keep their 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. Cast last so the emitted column
+            # always matches the dtype the SCENE-ID product definition declares (np.where in a transform can widen to
+            # float64).
+            data_variables[target] = (list(source_variable.dims), np.asarray(values).astype(column.dtype, copy=False))
+
+        # The FMATCH time coordinate is decoded to datetime64[ns] by xarray; carry it on its own dimension(s) -- the
+        # 1-D RADIOMETER_TIME axis, or the 1-D CAMERA_TIME axis of the camera-timescale grid -- under the SCENE-ID
+        # product's declared name (``time_variable``), so to_time_product can promote it to the product's time
+        # coordinate.
+        data_variables[time_variable] = (
+            list(fmatch_dataset[time_variable].dims),
+            fmatch_dataset[time_variable].to_numpy(),
+        )
+
+        # Copy each identifier variable verbatim, preserving its own dimensions so a multi-dimensional passthrough
+        # (the 2-D Camera_Pixel_{X,Y}_{Min,Max} provenance coordinates on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid) rides
+        # through unchanged, not just the 1-D per-record identifiers.
+        for variable_name, file_name in passthrough_names.items():
+            source_variable = fmatch_dataset[file_name]
+            data_variables[variable_name] = (list(source_variable.dims), source_variable.to_numpy())
+
+        parsed_dataset = xr.Dataset(data_variables)
+        logger.info("FMATCH product read successfully with sizes %s", dict(parsed_dataset.sizes))
+        return parsed_dataset
 
     def identify_scenes(
         self,
@@ -1265,7 +1646,7 @@ class FootprintData:
         if time_variable not in self._data.variables:
             raise ValueError(
                 f"Cannot build a time product: '{time_variable}' is not present in the footprint data. It is "
-                "populated by the FootprintData reader (e.g. from_ceres_ssf()); datasets constructed directly "
+                "populated by the FootprintData reader (e.g. from_fmatch_cam()); datasets constructed directly "
                 "must add it themselves."
             )
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal

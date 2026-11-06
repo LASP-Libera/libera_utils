@@ -321,7 +321,7 @@ class DataProductIdentifier(StrEnum):
     aux_scene_id_imager = (
         "SCENE-ID-IMAGER",
         DataLevel.AUX,
-    )  # Scene IDs using RBSP + VIIRS imager data for cloud properties
+    )  # Scene IDs (incl. TRMM) from the FMATCH-IMAGER (RBSP + VIIRS imager cloud properties)
     aux_scene_id_imager_camtime = (
         "SCENE-ID-IMAGER-CAMTIME",
         DataLevel.AUX,
