@@ -230,6 +230,12 @@ class TestFootprintDataCalculations:
         with pytest.raises(ValueError, match="Cannot convert IGBP surface type value to TRMM surface type"):
             calculate_trmm_surface_type(np.array([1, 25, 17]))  # Contains invalid value 25
 
+        with pytest.raises(ValueError, match="Cannot convert IGBP surface type value to TRMM surface type"):
+            calculate_trmm_surface_type(np.array([1.0, np.inf]))  # Infinite code
+
+        with pytest.raises(ValueError, match=r"TRMM surface type: \[1\.5\]"):
+            calculate_trmm_surface_type(1.5)  # Not a whole number
+
     def test_calculate_cloud_fraction_weighted_optical_depth_calculation(self):
         """Test optical depth calculation."""
         result = calculate_cloud_fraction_weighted_optical_depth(10.0, 8.0, 25.0, 15.0, 40.0)
