@@ -644,8 +644,8 @@ class TestMissingIgbpCode:
         assert dataset["scene_id_erbe"].values[2, -1] == 0
         assert (dataset["scene_id_erbe"].values[0] > 0).all()
 
-    def test_written_product_carries_zero_for_the_unmatched_footprint(self, tmp_path):
-        """SCENE-ID products declare no _FillValue: scene_id 0 flags the footprint, and its integer columns hold 0."""
+    def test_written_product_carries_the_fill_for_the_unmatched_footprint(self, tmp_path):
+        """The surface-type columns carry their declared _FillValue 255 for the footprint, and scene_id 0 flags it."""
         input_path = _with_missing_igbp(
             make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, n_footprints=4), tmp_path, 1
         )
@@ -658,6 +658,7 @@ class TestMissingIgbpCode:
         with xr.open_dataset(written.path, mask_and_scale=False) as product:
             for name in ("IGBP_Surface_Type", "Surface_Type"):
                 assert product[name].dtype == np.uint8
-                assert product[name].values[1] == 0
+                assert product[name].attrs["_FillValue"] == 255
+                assert product[name].values[1] == 255
             assert product["Scene_ID_TRMM"].values[1] == 0
             assert (product["IGBP_Surface_Type"].values[[0, 2, 3]] > 0).all()
