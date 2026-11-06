@@ -39,6 +39,7 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: 255
       long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   Solar_Zenith_Surface:
     dtype: float32
@@ -66,6 +67,7 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      _FillValue: 255
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
   Cloud_Fraction:
     dtype: float32

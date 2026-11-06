@@ -344,11 +344,13 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 
 
 def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: LiberaDataProductDefinition) -> xr.Dataset:
-    """Cast float-held integer variables to their declared dtype, writing 0 where they are NaN.
+    """Cast float-held integer variables to their declared dtype, writing the declared fill where they are NaN.
 
     Classification carries integer categories such as ``surface_type`` as float so a footprint with a missing input
-    can hold NaN, and such a footprint is unmatched. SCENE-ID products declare no ``_FillValue``: ``scene_id == 0``
-    flags an unmatched footprint, and its integer columns carry 0, as its ``uint8`` bin bounds already do.
+    can hold NaN, and such a footprint is unmatched. A variable that declares a ``_FillValue`` takes it where it is
+    NaN: ``Surface_Type`` and ``IGBP_Surface_Type`` declare 255, outside their codes, so a missing code is not read
+    as ocean. A variable that declares none, such as a ``uint8`` bin bound, takes 0, and ``scene_id == 0`` flags the
+    unmatched footprint.
 
     Parameters
     ----------
@@ -365,7 +367,8 @@ def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: Libera
     for name, variable_definition in definition.variables.items():
         dtype = np.dtype(variable_definition.dtype)
         if dtype.kind in "iu" and name in product_dataset and product_dataset[name].dtype.kind == "f":
-            product_dataset[name] = product_dataset[name].fillna(0).astype(dtype)
+            fill_value = variable_definition.attributes.get("_FillValue", 0)
+            product_dataset[name] = product_dataset[name].fillna(fill_value).astype(dtype)
     return product_dataset
 
 

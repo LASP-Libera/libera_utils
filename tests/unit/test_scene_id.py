@@ -850,13 +850,18 @@ class TestSceneIdCamProductDtypes:
         surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
         (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
         """
-        # What: categorical surface_type bin bounds are declared uint8, and no variable declares a _FillValue.
-        # How: assert the surface_type bin dtypes equal "uint8" and no variable's encoding contains "_FillValue".
+        # What: categorical surface_type bin bounds are declared uint8, and only the two surface-type columns declare a
+        # _FillValue, 255, outside their codes.
+        # How: assert the surface_type bin dtypes equal "uint8" and collect every variable whose attributes declare one.
         definition = self._scene_id_cam_definition()
         assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "uint8"
         assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "uint8"
-        # And no variable in the definition declares a _FillValue.
-        assert not any("_FillValue" in var.encoding for var in definition.variables.values())
+        declared_fills = {
+            name: var.attributes["_FillValue"]
+            for name, var in definition.variables.items()
+            if "_FillValue" in var.attributes
+        }
+        assert declared_fills == {"IGBP_Surface_Type": 255, "Surface_Type": 255}
 
 
 def _absent_bin_mask(array):
