@@ -33,6 +33,10 @@ ECR_TAG_EXISTS_ERRORS = [
     "overwritten because the tag is immutable.",
 ]
 ECR_REPOSITORY = "123456789012.dkr.ecr.us-west-2.amazonaws.com/l1b-rad-docker-repo"
+ECR_CONSOLE_URL = (
+    "https://us-west-2.console.aws.amazon.com/ecr/repositories/private/123456789012/l1b-rad-docker-repo"
+    "?region=us-west-2"
+)
 
 
 def test_docker_config_manager():
@@ -362,6 +366,7 @@ def test_ecr_upload_cli_handler_existing_version_tag(
         ecr_upload.ecr_upload_cli_handler(args)
 
     assert ECR_REPOSITORY in str(excinfo.value)
+    assert ECR_CONSOLE_URL in str(excinfo.value)
     # Only the refused version tag was attempted: "latest" was not moved and nothing was retried.
     mock_docker_client.api.push.assert_called_once()
     assert mock_docker_client.api.push.call_args.args[0] == f"{ECR_REPOSITORY}:1.2.3"
@@ -509,6 +514,7 @@ class TestPushSingleTag:
             docker_client=mock_docker_client,
             local_image=mock_local_image,
             full_ecr_tag="repo:latest",
+            console_url=ECR_CONSOLE_URL,
             region_name="us-west-2",
             max_retries=3,
             boto_session=mock_session,
@@ -533,6 +539,7 @@ class TestPushSingleTag:
                 docker_client=mock_docker_client,
                 local_image=mock_local_image,
                 full_ecr_tag="123456789.dkr.ecr.us-west-2.amazonaws.com/test-repo:latest",
+                console_url=ECR_CONSOLE_URL,
                 region_name="us-west-2",
                 max_retries=1,
             )
@@ -552,6 +559,7 @@ class TestPushSingleTag:
             docker_client=mock_docker_client,
             local_image=mock_local_image,
             full_ecr_tag="123456789.dkr.ecr.us-west-2.amazonaws.com/test-repo:latest",
+            console_url=ECR_CONSOLE_URL,
             region_name="us-west-2",
             max_retries=2,
         )
@@ -573,6 +581,7 @@ class TestPushSingleTag:
                 docker_client=mock_docker_client,
                 local_image=MagicMock(),
                 full_ecr_tag=f"{ECR_REPOSITORY}:1.2.3",
+                console_url=ECR_CONSOLE_URL,
                 region_name="us-west-2",
                 max_retries=2,
             )
@@ -600,7 +609,7 @@ class TestProcessPushLogs:
         ]
 
         with caplog.at_level("DEBUG", logger="libera_utils.aws.ecr_upload"):
-            digest = _process_push_logs(iter(push_logs), "repo:1.2.3")
+            digest = _process_push_logs(iter(push_logs), "repo:1.2.3", ECR_CONSOLE_URL)
 
         assert digest == "sha256:deadbeef"
 
@@ -616,19 +625,19 @@ class TestProcessPushLogs:
     def test_returns_none_when_no_aux_digest(self):
         """When the stream carries no aux event, the digest is None (but processing still succeeds)."""
         push_logs = [{"status": "Pushed", "progressDetail": {}, "id": "layer1"}]
-        assert _process_push_logs(iter(push_logs), "repo:latest") is None
+        assert _process_push_logs(iter(push_logs), "repo:latest", ECR_CONSOLE_URL) is None
 
     def test_raises_on_error_field(self):
         """An ``error`` field in the stream raises ValueError."""
         push_logs = [{"status": "Pushing"}, {"error": "Authentication failed"}]
         with pytest.raises(ValueError, match="Push errors"):
-            _process_push_logs(iter(push_logs), "repo:latest")
+            _process_push_logs(iter(push_logs), "repo:latest", ECR_CONSOLE_URL)
 
     def test_raises_on_error_detail_field(self):
         """An ``errorDetail`` field (without a top-level ``error``) also raises ValueError."""
         push_logs = [{"errorDetail": {"message": "denied: not authorized"}}]
         with pytest.raises(ValueError, match="denied: not authorized") as excinfo:
-            _process_push_logs(iter(push_logs), "repo:latest")
+            _process_push_logs(iter(push_logs), "repo:latest", ECR_CONSOLE_URL)
         assert not isinstance(excinfo.value, ImageTagAlreadyExistsError)
 
     @pytest.mark.parametrize("ecr_error", ECR_TAG_EXISTS_ERRORS)
@@ -642,10 +651,12 @@ class TestProcessPushLogs:
         push_logs = [{"status": "Layer already exists", "progressDetail": {}, "id": "layer1"}, make_event(ecr_error)]
 
         with pytest.raises(ImageTagAlreadyExistsError) as excinfo:
-            _process_push_logs(iter(push_logs), f"{ECR_REPOSITORY}:1.2.3")
+            _process_push_logs(iter(push_logs), f"{ECR_REPOSITORY}:1.2.3", ECR_CONSOLE_URL)
 
         message = str(excinfo.value)
         assert f"Tag '1.2.3' is already in use in ECR repository '{ECR_REPOSITORY}'" in message
+        assert ECR_CONSOLE_URL in message
+        assert "new version tag" in message
         assert ecr_error in message
 
 

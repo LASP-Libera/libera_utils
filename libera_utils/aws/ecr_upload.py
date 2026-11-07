@@ -71,7 +71,7 @@ _LATEST_TAG = "latest"
 _TAG_ALREADY_EXISTS_MARKER = "cannot be overwritten"
 
 
-def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
+def _process_push_logs(push_logs, full_ecr_tag: str, console_url: str) -> str | None:
     """Consume a decoded Docker push stream, log a concise summary, and return the pushed image digest.
 
     The raw Docker push stream is extremely chatty: it emits many per-layer ``"Pushing"`` progress events
@@ -85,6 +85,8 @@ def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
         The decoded events yielded by ``docker_client.api.push(..., stream=True, decode=True)``.
     full_ecr_tag : str
         Complete ECR tag (registry/repository:tag) being pushed, used for log context.
+    console_url : str
+        AWS console page of the ECR repository being pushed to, linked when ECR refuses an existing tag.
 
     Returns
     -------
@@ -139,8 +141,8 @@ def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
             repository, _, tag = full_ecr_tag.rpartition(":")
             raise ImageTagAlreadyExistsError(
                 f"Tag {tag!r} is already in use in ECR repository {repository!r}. Version tags other than "
-                f"{_LATEST_TAG!r} are immutable: an existing version tag can be pushed again only after the image it "
-                f"tags is deleted from the repository by hand. Push under a new version tag instead. "
+                f"{_LATEST_TAG!r} are immutable. Push the image under a new version tag, or, to reuse {tag!r}, delete "
+                f"the image it tags by hand, for example in the AWS console at {console_url}, and push again. "
                 f"ECR reported: {error_message}"
             )
     if error_messages:
@@ -160,6 +162,7 @@ def _push_single_tag(
     docker_client: docker.DockerClient,
     local_image: docker.models.images.Image,
     full_ecr_tag: str,
+    console_url: str,
     region_name: str,
     max_retries: int = 3,
     boto_session: boto3.Session | None = None,
@@ -174,6 +177,8 @@ def _push_single_tag(
         Local Docker image to push
     full_ecr_tag : str
         Complete ECR tag (registry/repository:tag)
+    console_url : str
+        AWS console page of the ECR repository, linked when ECR refuses an existing tag
     region_name : str
         AWS region name
     max_retries : int
@@ -210,7 +215,7 @@ def _push_single_tag(
             push_logs = docker_client.api.push(full_ecr_tag, stream=True, decode=True, auth_config=auth_config)
 
             # Success - return the digest reported by the stream
-            return _process_push_logs(push_logs, full_ecr_tag)
+            return _process_push_logs(push_logs, full_ecr_tag, console_url)
 
         except ImageTagAlreadyExistsError:
             # ECR refuses an existing tag every time, so a retry would only re-upload the layers.
@@ -579,6 +584,10 @@ def push_image_to_ecr(
             )
 
         ecr_registry = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
+        console_url = (
+            f"https://{region_name}.console.aws.amazon.com/ecr/repositories/private/{account_id}/{ecr_name}"
+            f"?region={region_name}"
+        )
         logger.info(f"Target ECR registry: {ecr_registry}/{ecr_name}")
 
         # Verify local image exists before attempting pushes
@@ -598,6 +607,7 @@ def push_image_to_ecr(
                     docker_client=docker_client,
                     local_image=local_image,
                     full_ecr_tag=full_ecr_tag,
+                    console_url=console_url,
                     region_name=region_name,
                     max_retries=max_retries,
                     boto_session=boto_session,

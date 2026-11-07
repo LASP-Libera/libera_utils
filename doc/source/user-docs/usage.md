@@ -53,7 +53,8 @@ An algorithm repository whose version tags are immutable refuses a push under a 
 tag, and registers nothing. A refused push is not retried. Tags other than `latest` are pushed first, so when a
 version tag is refused, `latest` still points at the image it pointed at before.
 
-An existing version tag can be pushed again only after the image it tags is deleted from the repository by hand.
+An existing version tag can be pushed again only after the image it tags is deleted from the repository by hand, for
+example in the AWS console; the error message links the repository's console page.
 Otherwise, push the image under a new version tag. If the image already under the tag is the one you meant and its
 version was never registered, register it with
 {ref}`register-algorithm-image <sub-command-register-algorithm-image>` instead of pushing again.

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when ECR refuses a tag because it already exists in an immutable repository. The message names the repository and the tag and says that an existing version tag can be pushed again only after its image is deleted by hand. The refused push is not retried, and `ecr-upload` registers nothing.
+- Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when ECR refuses a tag because it already exists in an immutable repository. The message names the repository and the tag, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. The refused push is not retried, and `ecr-upload` registers nothing.
 
 ### Changed
 
