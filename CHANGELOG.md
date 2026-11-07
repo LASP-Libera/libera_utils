@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when ECR refuses a tag because it already exists in an immutable repository. The message names the repository and the tag, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. The refused push is not retried, and `ecr-upload` registers nothing.
+- Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when a requested tag other than `latest` already exists in the ECR repository, whatever image it holds: found by a check before anything is pushed, or refused by ECR during the push when another push took the tag after that check. The message names every such tag and the repository, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. A refused push is not retried, and `ecr-upload` registers nothing.
 
 ### Changed
 
-- `push_image_to_ecr` and `ecr-upload` push tags other than `latest` before `latest`, so a refused version tag leaves `latest` where it was.
+- **BREAKING:** Before pushing, `push_image_to_ecr` and `ecr-upload` check ECR for every requested tag other than `latest` and push nothing if any of them already exists, even in a repository that would accept the push, which used to replace the image under the tag. A session that pushes a version tag now needs `ecr:DescribeImages` on the repository, and a missing repository fails the check before any push. Tags other than `latest` are then pushed before `latest`, so a tag taken by another push since the check leaves `latest` where it was.
 
 ## [5.23.0] - 2026-11-05
 

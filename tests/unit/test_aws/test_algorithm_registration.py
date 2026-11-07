@@ -125,27 +125,13 @@ class TestVerifyAlgorithmRegistration:
             containerProperties={"image": image, "vcpus": 1, "memory": 128},
         )
 
-    @staticmethod
-    def _put_ecr_image(session: boto3.Session, repository_name: str, tag: str) -> None:
-        """Create the ECR repository (if needed) and push a minimal tagged image manifest into it."""
-        ecr_client = session.client("ecr", region_name=session.region_name)
-        try:
-            ecr_client.create_repository(repositoryName=repository_name)
-        except ecr_client.exceptions.RepositoryAlreadyExistsException:
-            pass
-        manifest = {
-            "schemaVersion": 2,
-            "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-            "config": {"mediaType": "application/vnd.docker.container.image.v1+json", "size": 7, "digest": "sha256:c"},
-            "layers": [],
-        }
-        ecr_client.put_image(repositoryName=repository_name, imageManifest=json.dumps(manifest), imageTag=tag)
-
-    def test_passes_when_image_and_matching_job_definition_exist(self, mock_s3_context_with_profile):
+    def test_passes_when_image_and_matching_job_definition_exist(
+        self, mock_s3_context_with_profile, make_ecr_repository
+    ):
         """Verification returns cleanly once the ECR image exists and an ACTIVE job definition references it."""
         session = boto3.Session(profile_name="test-profile")
         uri = _expected_uri("l1b-rad")
-        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        make_ecr_repository(self.ECR_REPO, session.region_name, ("1.2.3",))
         self._register_job_definition(session, "l1b-rad-1-2-3", f"{uri}:1.2.3")
 
         # Should not raise.
@@ -153,7 +139,7 @@ class TestVerifyAlgorithmRegistration:
             self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=5.0
         )
 
-    def test_preexisting_job_definition_counts_as_registered(self, mock_s3_context_with_profile):
+    def test_preexisting_job_definition_counts_as_registered(self, mock_s3_context_with_profile, make_ecr_repository):
         """A pre-existing ACTIVE job definition for the image counts as registered.
 
         Documents the intended "already registered" semantics (reviewer question on PR #46): when an ACTIVE Batch
@@ -163,7 +149,7 @@ class TestVerifyAlgorithmRegistration:
         """
         session = boto3.Session(profile_name="test-profile")
         uri = _expected_uri("l1b-rad")
-        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        make_ecr_repository(self.ECR_REPO, session.region_name, ("1.2.3",))
         self._register_job_definition(session, "l1b-rad-preexisting", f"{uri}:1.2.3")
 
         # Returns immediately (no raise) even with a zero timeout, because a matching job definition already exists.
@@ -171,11 +157,11 @@ class TestVerifyAlgorithmRegistration:
             self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=0.0, poll_interval=0.0
         )
 
-    def test_times_out_when_no_matching_job_definition(self, mock_s3_context_with_profile):
+    def test_times_out_when_no_matching_job_definition(self, mock_s3_context_with_profile, make_ecr_repository):
         """Verification raises TimeoutError when the image exists but no job definition references it."""
         session = boto3.Session(profile_name="test-profile")
         uri = _expected_uri("l1b-rad")
-        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        make_ecr_repository(self.ECR_REPO, session.region_name, ("1.2.3",))
         # A job definition exists, but for a different version.
         self._register_job_definition(session, "l1b-rad-9-9-9", f"{uri}:9.9.9")
 
@@ -184,12 +170,14 @@ class TestVerifyAlgorithmRegistration:
                 self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=0.0, poll_interval=0.0
             )
 
-    def test_raises_when_ecr_image_missing_even_if_job_definition_exists(self, mock_s3_context_with_profile):
+    def test_raises_when_ecr_image_missing_even_if_job_definition_exists(
+        self, mock_s3_context_with_profile, make_ecr_repository
+    ):
         """The ECR image check runs unconditionally: a matching job definition does not excuse a missing image."""
         session = boto3.Session(profile_name="test-profile")
         uri = _expected_uri("l1b-rad")
         # The repository exists and a matching job definition exists, but the image tag was never pushed.
-        self._put_ecr_image(session, self.ECR_REPO, "9.9.9")
+        make_ecr_repository(self.ECR_REPO, session.region_name, ("9.9.9",))
         self._register_job_definition(session, "l1b-rad-1-2-3", f"{uri}:1.2.3")
 
         with pytest.raises(ValueError, match="was not found in ECR"):
@@ -207,12 +195,14 @@ class TestVerifyAlgorithmRegistration:
                 self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=5.0
             )
 
-    def test_warns_when_uri_region_differs_from_session_region(self, mock_s3_context_with_profile, caplog):
+    def test_warns_when_uri_region_differs_from_session_region(
+        self, mock_s3_context_with_profile, make_ecr_repository, caplog
+    ):
         """If the image URI encodes a different region than the session, verify warns (and still proceeds)."""
         session = boto3.Session(profile_name="test-profile")  # test-profile region is us-east-1
         # Build a URI in a different region than the session so the mismatch check fires.
         uri = _expected_uri("l1b-rad", region_name="us-west-2")
-        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        make_ecr_repository(self.ECR_REPO, session.region_name, ("1.2.3",))
         self._register_job_definition(session, "l1b-rad-1-2-3", f"{uri}:1.2.3")
 
         with caplog.at_level("WARNING", logger="libera_utils.aws.algorithm_registration"):

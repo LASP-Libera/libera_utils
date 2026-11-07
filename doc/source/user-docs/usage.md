@@ -48,10 +48,12 @@ resulting image digest). Pass `-v`/`--verbose` for DEBUG-level output including 
 
 #### Pushing a version tag that already exists
 
-An algorithm repository whose version tags are immutable refuses a push under a version tag it already holds; only
-`latest` can be pushed again. `ecr-upload` then fails with `ImageTagAlreadyExistsError`, naming the repository and the
-tag, and registers nothing. A refused push is not retried. Tags other than `latest` are pushed first, so when a
-version tag is refused, `latest` still points at the image it pointed at before.
+Before pushing, `ecr-upload` checks the repository for every requested tag other than `latest`. If any of them
+already exists, whatever image it holds, `ecr-upload` fails with `ImageTagAlreadyExistsError` naming each such tag and
+the repository, and pushes and registers nothing. `latest` is never checked and can always be pushed again. The check
+needs `ecr:DescribeImages` on the repository, the same call `--verify` makes. If another push takes a requested tag
+between the check and the push, ECR refuses it and `ecr-upload` fails with the same error, without retrying; version
+tags pushed before it stay pushed, and `latest`, pushed last, does not move.
 
 An existing version tag can be pushed again only after the image it tags is deleted from the repository by hand, for
 example in the AWS console; the error message links the repository's console page.

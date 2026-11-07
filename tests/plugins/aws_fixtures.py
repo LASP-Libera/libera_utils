@@ -373,3 +373,28 @@ def make_file_metadata_table(mock_s3_context_with_profile):
         BillingMode="PAY_PER_REQUEST",
     )
     return table_name
+
+
+@pytest.fixture
+def make_ecr_repository():
+    """Factory that creates a mocked ECR repository, if needed, holding a minimal image under each given tag.
+
+    Call it from the test body inside a ``mock_aws`` context; the fixture itself makes no AWS call.
+    """
+
+    def _make_ecr_repository(repository_name: str, region_name: str, tags: tuple[str, ...] = ()) -> None:
+        ecr_client = boto3.client("ecr", region_name=region_name)
+        try:
+            ecr_client.create_repository(repositoryName=repository_name)
+        except ecr_client.exceptions.RepositoryAlreadyExistsException:
+            pass
+        manifest = {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+            "config": {"mediaType": "application/vnd.docker.container.image.v1+json", "size": 7, "digest": "sha256:c"},
+            "layers": [],
+        }
+        for tag in tags:
+            ecr_client.put_image(repositoryName=repository_name, imageManifest=json.dumps(manifest), imageTag=tag)
+
+    return _make_ecr_repository
