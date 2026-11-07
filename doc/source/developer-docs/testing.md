@@ -11,12 +11,16 @@ Pytest configuration is stored in `pyproject.toml` under `[tools.pytest.ini_opti
 
 ## Test lanes
 
-Tests are stored in the `tests` directory and divided into three lanes. Which lane a test belongs
-in is decided by what it _depends on_, not by how important it is.
+Tests are stored in the `tests` directory and divided into three lanes, which are the unit,
+integration and end-to-end repository test kinds of the SDC's "SDC Software Testing" Confluence page.
+That page sets where test effort goes: as much as possible in unit tests, integration tests as
+rarely as possible, and integrated systems checked by end-to-end tests that confirm the output is
+sound without fine-grained assertions on its values. Which lane a test belongs in is decided by what
+it _depends on_, not by how important it is.
 
 | Lane        | Directory           | Marker                    | Runs     | Admission rule                                                                                                 |
 | ----------- | ------------------- | ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| unit        | `tests/unit`        | none                      | every PR | Exercises one function or class. No network, no external process.                                              |
+| unit        | `tests/unit`        | none                      | every PR | Runs code in isolation and reads only checked-in data. No network, no external process.                        |
 | integration | `tests/integration` | `pytest.mark.integration` | every PR | Several components together, or a real subprocess such as `mkspk`/`msopck`. Everything it reads is checked in. |
 | e2e         | `tests/e2e`         | `pytest.mark.e2e`         | daily    | Needs a live external service, or is too slow to sit in front of a PR.                                         |
 
@@ -33,21 +37,27 @@ The PR and daily GitHub workflows both call `_run-tests.yml`, passing `lane: pr`
 Nothing else distinguishes them: the daily build exists so that an outage at NAIF, or a dependency
 that drifted over a quiet week, does not block a pull request.
 
+The e2e lane is where this repository's end-to-end repository tests go: production functionality
+run in a production-like way, checked for sound output rather than for its values. A person designs
+each one before it is written. It also holds the tests that need a live external service, such as
+the NAIF kernel download and cache check.
+
 ### The network guard
 
 Every test outside the `e2e` lane runs under `block_outbound_network` (an autouse fixture in
 `tests/conftest.py`), which raises if the test opens a socket to a remote host. Mocking layers such
 as `responses` and `moto` sit above the socket and are unaffected.
 
-This is enforced structurally because vigilance was not enough. A unit test that patched the method
-it was written about still reached the NAIF server through its _setup_ path -- `load_static_kernels`
-calls `load_naif_kernels` first -- and spent up to 34 seconds a run doing it, unnoticed for months.
-If the guard fires, either mock the transport or move the test into `tests/e2e` and mark it.
+A test can mock the call it is about and still reach the network through its setup path:
+`load_static_kernels` calls `load_naif_kernels` first, so patching only the method under test still
+downloads from NAIF. The guard makes that a failure rather than a slow test. If it fires, either mock
+the transport or move the test into `tests/e2e` and mark it. Only TCP connections are blocked; a UDP
+connect sends nothing, and `dask.distributed` uses one to find the local address.
 
 ## Writing a test here
 
-These are the conventions the kernel and geolocation tests were reorganised around
-(LIBSDC-703). They generalise to the rest of the package.
+These conventions apply to every test in the package. Each test also has a docstring saying why it
+exists, so a reviewer can judge whether it still earns its place.
 
 ### Test the step, not the aggregate
 
@@ -65,10 +75,11 @@ A step-level test should assert to the precision the step is actually capable of
 through an encoder correction closes to machine precision, so assert that, not `atol=1e-3`.
 Loose bounds belong only at the end-to-end level, where many small errors legitimately accumulate.
 
-This is not a style preference. The frozen kernel fixtures went stale for eight months while the
-end-to-end geolocation assertion kept passing, because a 1.28 km median footprint shift fits
-comfortably inside a tolerance wide enough to survive limb geometry. The three step-level
-assertions added alongside it fail immediately against the same stale kernels.
+A loose end-to-end bound cannot see a step that is wrong by less than the bound. A frozen kernel
+fixture built about the ideal axes of rotation shifts the median geolocated footprint by about
+1.3 km, which passes a geolocation bound wide enough to survive limb geometry, and fails the
+step-level checks of the mechanism CKs at once. Step-level checks of the frozen kernels are unit
+tests, in `tests/unit/test_libera_spice/test_frozen_kernels.py`.
 
 ### Golden values are scoped to the step they validate
 
@@ -100,9 +111,8 @@ code produces.
 
 [Parametrization](https://docs.pytest.org/en/stable/example/parametrize.html) is the right way to run
 one test body over several kernel types or input shapes, rather than duplicating the body. Confirm
-the parameter actually changes the input: four AWS tests were parametrized over three path wrapper
-types that each stringified identically before use, costing 34 seconds a run for one test's worth of
-coverage.
+the parameter actually changes the input: parametrizing over path wrapper types that are each
+converted to the same string before use runs one test's worth of coverage several times.
 
 ### Test order is randomized
 
