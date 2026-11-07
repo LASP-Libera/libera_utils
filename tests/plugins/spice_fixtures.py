@@ -2,6 +2,7 @@
 
 import re
 import tempfile
+import types
 from pathlib import Path
 
 import numpy as np
@@ -275,8 +276,8 @@ def recorded_retry_backoff(monkeypatch):
     """Record the retry backoff in :mod:`libera_utils.libera_spice.spice_utils` instead of sleeping.
 
     Both NAIF retry loops wait a second between attempts. That delay is politeness toward the NAIF
-    server, not behaviour a test needs to sit through. Recording the calls keeps the loop's control flow intact -- the same number of
-    attempts against the same mocked responses -- and turns the backoff into something a test can
+    server, not behaviour a test needs to sit through. Recording the calls keeps the loop's control
+    flow intact -- the same number of attempts against the same mocked responses -- and turns the backoff into something a test can
     assert on rather than merely endure.
 
     Returns
@@ -286,5 +287,7 @@ def recorded_retry_backoff(monkeypatch):
         ``n`` attempts before succeeding or giving up records ``n - 1`` entries.
     """
     slept: list[float] = []
-    monkeypatch.setattr(spice_utils.time, "sleep", slept.append)
+    # Replace the module's ``time`` name rather than ``time.sleep`` itself, which is the stdlib
+    # function every other caller in the process shares.
+    monkeypatch.setattr(spice_utils, "time", types.SimpleNamespace(sleep=slept.append))
     return slept

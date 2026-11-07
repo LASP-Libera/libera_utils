@@ -121,6 +121,14 @@ def test_frozen_kernels_match_a_fresh_regeneration(
     expected = _sample_geometry(committed)
     actual = _sample_geometry(regenerated)
 
+    for key, values in (*expected.items(), *actual.items()):
+        assert np.isfinite(values).all(), f"{key} has non-finite samples; the kernels do not cover SAMPLE_TIMES"
+    # Each mechanism CK must rotate its frame, so two identity CKs cannot pass as a match.
+    for from_frame, to_frame in SAMPLED_FRAMES[1:]:
+        traces = np.trace(expected[f"{from_frame}->{to_frame}"], axis1=1, axis2=2)
+        largest_deg = np.degrees(np.arccos(np.clip((traces - 1.0) / 2.0, -1.0, 1.0))).max()
+        assert largest_deg > 1.0, f"{from_frame} turns at most {largest_deg:.3g} deg over SAMPLE_TIMES"
+
     for key, expected_values in expected.items():
         # rtol=0 on purpose. assert_allclose defaults to rtol=1e-7, which for a ~7000 km
         # spacecraft state is ~0.7 m -- far looser than this guard claims and enough to hide a
@@ -131,6 +139,7 @@ def test_frozen_kernels_match_a_fresh_regeneration(
             expected_values,
             rtol=0,
             atol=1e-9,
+            equal_nan=False,
             err_msg=(
                 f"The committed fixture and a fresh regeneration disagree on {key}. The fixture in "
                 "tests/test_data/dynamic_kernels no longer reflects what the production kernel path "
