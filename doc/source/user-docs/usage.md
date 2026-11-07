@@ -46,6 +46,21 @@ applied.
 By default the console shows a concise summary of each push (start, a per-tag summary of layers pushed, and the
 resulting image digest). Pass `-v`/`--verbose` for DEBUG-level output including per-layer Docker push detail.
 
+#### Pushing a version tag that already exists
+
+Before pushing, `ecr-upload` checks the repository for every requested tag other than `latest`. If any of them
+already exists, whatever image it holds, `ecr-upload` fails with `ImageTagAlreadyExistsError` naming each such tag and
+the repository, and pushes and registers nothing. `latest` is never checked and can always be pushed again. The check
+needs `ecr:DescribeImages` on the repository, the same call `--verify` makes. If another push takes a requested tag
+between the check and the push, ECR refuses it and `ecr-upload` fails with the same error, without retrying; version
+tags pushed before it stay pushed, and `latest`, pushed last, does not move.
+
+An existing version tag can be pushed again only after the image it tags is deleted from the repository by hand, for
+example in the AWS console; the error message links the repository's console page.
+Otherwise, push the image under a new version tag. If the image already under the tag is the one you meant and its
+version was never registered, register it with
+{ref}`register-algorithm-image <sub-command-register-algorithm-image>` instead of pushing again.
+
 #### Registering the uploaded image
 
 Uploading an image to the ECR does not, by itself, make a specific algorithm version runnable in the SDC: the

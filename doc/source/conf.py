@@ -142,6 +142,7 @@ nitpicky = True
 nitpick_ignore_regex = [
     (r"py:.*", r".*libera_utils\.backports.*"),  # Since we're not documenting this module, others can't link to it
     (r"py:.*", r".*bitstring.*"),  # Bitstring library doesn't appear to support intersphinx
+    (r"py:exc", r"botocore\.exceptions\..*"),  # botocore's API reference is not mapped in intersphinx_mapping
     # pydantic Field constraint metadata leaking out of Annotated[...] (sphinx-doc/sphinx#12601).
     # Sphinx stringifies each Annotated metadata item and cross-references the callee of the
     # resulting ast.Call, so these render as dangling references by design.
