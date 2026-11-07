@@ -213,7 +213,7 @@ def _push_single_tag(
             return _process_push_logs(push_logs, full_ecr_tag)
 
         except ImageTagAlreadyExistsError:
-            # ECR refuses the same tag every time, so a retry would only re-upload the layers.
+            # ECR refuses an existing tag every time, so a retry would only re-upload the layers.
             raise
         except (docker_errors.APIError, ValueError) as e:
             if attempt < max_retries:
