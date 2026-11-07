@@ -37,3 +37,9 @@ def test_a_loopback_connection_is_allowed(host):
         client.connect((host, server.getsockname()[1]))
         connection, _ = server.accept()
         connection.close()
+
+
+def test_a_udp_connect_to_a_remote_address_is_allowed():
+    """A UDP connect sends nothing, so it passes; ``dask.distributed`` uses one to find its local address."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect(("192.0.2.1", 9))

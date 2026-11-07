@@ -57,6 +57,10 @@ def block_outbound_network(request):
     is made from Python -- ``requests``, ``botocore``, ``urllib`` all end up here. Mocking layers
     such as ``responses`` and ``moto`` intercept above the socket and are unaffected.
 
+    Only TCP connections are blocked. Connecting a UDP socket sends nothing; it only selects the
+    route, and ``dask.distributed`` connects one to a public address to find the local interface
+    address when it starts a cluster.
+
     It is process-local, and deliberately not more than that: patching ``socket.socket`` cannot see
     what a child process does. Kernel generation shells out to ``mkspk`` and ``msopck``, so a
     subprocess that reached the network would pass unnoticed. Those two read local files and are
@@ -77,7 +81,9 @@ def block_outbound_network(request):
         return address[0] if isinstance(address, tuple) else address
 
     def _is_local(sock, address):
-        return sock.family not in (socket.AF_INET, socket.AF_INET6) or _host_of(address) in _ALLOWED_HOSTS
+        if sock.family not in (socket.AF_INET, socket.AF_INET6) or sock.type != socket.SOCK_STREAM:
+            return True
+        return _host_of(address) in _ALLOWED_HOSTS
 
     def _guard(real):
         def wrapper(self, address, *args, **kwargs):
