@@ -58,6 +58,7 @@ def write_libera_data_product(
     data_product_definition: str | PathType | LiberaDataProductDefinition,
     data: dict[str, NDArray] | xr.Dataset,
     output_path: str | PathType,
+    *,
     time_variable: str | None = None,
     dynamic_product_attributes: dict[str, Any] | None = None,
     strict: bool = True,
@@ -177,7 +178,7 @@ def write_libera_data_product(
     logger.info("Checking final Dataset conformance against the product definition")
     definition.check_dataset_conformance(dataset, strict=strict)
 
-    data_product_filename = definition.generate_data_product_filename(dataset, time_variable)
+    data_product_filename = definition.generate_data_product_filename(dataset, time_variable=time_variable)
 
     if add_archive_path_prefix:
         prefixed_path = AnyPath(output_path) / data_product_filename.archive_prefix

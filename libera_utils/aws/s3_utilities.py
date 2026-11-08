@@ -59,6 +59,14 @@ ManualIngestFilename = (
 )
 
 
+class IngestionNotVerifiedError(RuntimeError):
+    """Files were staged for ingest, but ``s3-utils put --verify`` could not verify their ingestion.
+
+    Raised after staging, so every file named in the message has been staged and its ``NewFilesAvailable`` event
+    emitted.
+    """
+
+
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
     """Validate a path as a Libera L0, ground CCSDS, daily or non-daily data product filename eligible for manual ingest.
 
@@ -95,26 +103,6 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
     )
 
 
-def _is_dynamic_data_product_file(path: PathType) -> bool:
-    """Whether a path is validly named as a non-daily data product file.
-
-    Parameters
-    ----------
-    path : Path or S3Path
-        Path to check.
-
-    Returns
-    -------
-    bool
-        True when the path's name is a valid LiberaDynamicDataProductFilename, False otherwise.
-    """
-    try:
-        LiberaDynamicDataProductFilename(path)
-    except ValueError:
-        return False
-    return True
-
-
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for the ``s3-utils put`` subcommand.
 
@@ -123,11 +111,16 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
 
+    With ``--verify``, every file is staged and the ingestion of each daily data product, L0, and ground CCSDS file is
+    verified. Non-daily data product files are staged but not verified, and the handler then raises naming them.
+
     Raises
     ------
-    ValueError
-        If ``--verify`` is given for a non-daily data product file, which ingestion verification does not yet
-        support. Nothing is staged in that case.
+    IngestionNotVerifiedError
+        If ``--verify`` is given and any of the files is a non-daily data product file, which ingestion verification
+        does not yet support. Every file has still been staged.
+    TimeoutError
+        If ``--verify`` is given and the verifiable files are not fully ingested within ``--timeout`` seconds.
     """
     now = datetime.now(UTC)
     configure_task_logging(f"aws_s3_put_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
@@ -137,15 +130,6 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     # The put workflow uploads from the local filesystem, so resolve inputs to plain local Paths.
     local_file_paths: list[Path] = [Path(file_path) for file_path in parsed_args.file_paths]
 
-    # TODO[LIBSDC-880]: verify ingestion of non-daily data products, then remove this refusal.
-    if parsed_args.verify:
-        unverifiable = [path for path in local_file_paths if _is_dynamic_data_product_file(path)]
-        if unverifiable:
-            raise ValueError(
-                f"--verify does not yet support non-daily data product files: {[str(p) for p in unverifiable]}. "
-                "Nothing was staged. Run s3-utils put again without --verify to ingest them."
-            )
-
     # The boto session originates here and is passed to every function that needs it. It assumes the LiberaUtils
     # role so the CLI has the permissions it needs. Keeping session creation in a single place lets integration
     # tests inject a custom session (e.g. with a specific test role) and call the workflow functions directly.
@@ -154,11 +138,27 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 
     if parsed_args.verify:
-        logger.info(
-            "Verifying full ingestion of %d file(s) (timeout %.0fs)...", len(libera_filenames), parsed_args.timeout
-        )
-        verify_ingestion(libera_filenames, boto_session=boto_session, timeout=parsed_args.timeout)
-        logger.info("Verified full ingestion of %d file(s).", len(libera_filenames))
+        # TODO[LIBSDC-880]: verify ingestion of non-daily data products, then verify every staged file.
+        unverified = [f for f in libera_filenames if isinstance(f, LiberaDynamicDataProductFilename)]
+        verifiable = [f for f in libera_filenames if not isinstance(f, LiberaDynamicDataProductFilename)]
+        if unverified:
+            logger.warning(
+                "Staged %d non-daily data product file(s) that --verify cannot yet verify: %s",
+                len(unverified),
+                [f.path.name for f in unverified],
+            )
+        if verifiable:
+            logger.info(
+                "Verifying full ingestion of %d file(s) (timeout %.0fs)...", len(verifiable), parsed_args.timeout
+            )
+            verify_ingestion(verifiable, boto_session=boto_session, timeout=parsed_args.timeout)
+            logger.info("Verified full ingestion of %d file(s).", len(verifiable))
+        if unverified:
+            raise IngestionNotVerifiedError(
+                f"Staged {len(unverified)} non-daily data product file(s) whose ingestion --verify cannot yet confirm: "
+                f"{[f.path.name for f in unverified]}. Their NewFilesAvailable events were emitted. Confirm each one "
+                "is archived under its <ProductID>/<Version> prefix in the archive bucket."
+            )
     else:
         logger.info(
             "Staged %d file(s) to the Ingest Dropbox and emitted the NewFilesAvailable event(s). The SDC Data "

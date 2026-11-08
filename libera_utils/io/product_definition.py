@@ -761,7 +761,7 @@ class LiberaDataProductDefinition(BaseModel):
         return {k: v for k, v in self.attributes.items() if v is None}
 
     def generate_data_product_filename(
-        self, dataset: Dataset, time_variable: str | None = None
+        self, dataset: Dataset, *, time_variable: str | None = None
     ) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
         """Generate a standardized Libera data product filename.
 
@@ -821,8 +821,12 @@ class LiberaDataProductDefinition(BaseModel):
                 f"{product_id} is a daily product, and its filename needs the time range of its data, but no "
                 "time_variable was given. Pass time_variable, the name of the datetime64 variable spanning the data."
             )
+
         if "datetime64" not in str(dataset[time_variable].dtype):
-            raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")
+            raise ValueError(
+                f"time_variable {time_variable!r} has dtype {dataset[time_variable].dtype}, not datetime64. Pass the "
+                'name of a datetime64 variable, or convert this one with .astype("datetime64[ns]") before writing.'
+            )
 
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():

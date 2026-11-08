@@ -54,12 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME) products. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, carried by IMAGER alone through their `VariableSpec.modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `ERA5_Pressure_Temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `Cloud_Fraction_Camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input. FMATCH-CAM(-CAMTIME) carry no ERA5 10 m winds or VIIRS BRDF kernel weights, since no consumer of the CAM products reads them. Every integer category, pixel-index and camera pixel-bound variable declares `_FillValue: -1`, since 0 is a real value in each; the `Quality_Flag` bitmask and the `PSEUDOFOOTPRINT` index declare none. Dimensionless variables carry no `units` attribute (CF §3.1), and `VIIRS_CLDPROP_D3_Cloud_Optical_Thickness` carries the CLDPROP_D3 source's combined-phase long_name and its `valid_min`/`valid_max` `[0, 150]`.
 - `libera_utils.footprint_matching.aggregation.stack_product_values` collects a reader's stacked specs into one array per stacked product variable and raises `ValueError` when a member's scalar is missing.
 - `LiberaDynamicDataProductFilename` names a non-daily data product, such as an ADM, as
-  `LIBERA_<ProductID>_V<Version>_R<Revision>.nc`, with no data level, time range or applicable date, and archives it
-  once under `<ProductID>/<Version>`. `AbstractValidFilename.from_file_path` recognizes it.
+  `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
+  under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
+  `AbstractValidFilename.from_file_path` recognizes it.
 - `DataProductIdentifier.is_dynamic` says whether a product is non-daily. A member sets it with `True` as a third tuple
   element.
-- `s3-utils put` accepts non-daily data product files. `put --verify` refuses them before staging anything, until
-  ingestion verification supports them (LIBSDC-880).
+- `s3-utils put` accepts non-daily data product files. `put --verify` stages them with the other files but does not
+  verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it raises
+  the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the non-daily files it could not verify.
 - `processing_step_id` is defined on `AbstractDataProductFilename`, so `LiberaDynamicDataProductFilename`,
   `L0Filename` and `LiberaGroundCcsdsFilename` have it as `LiberaDataProductFilename` does: the step that produces the
   file's product, or `None` when no step does.
@@ -84,6 +86,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `write_libera_data_product` and `LiberaDataProductDefinition.generate_data_product_filename` take `time_variable` as
   an optional argument, default `None`, and return `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A
   daily product without `time_variable` raises `ValueError`; a non-daily product given one ignores it and warns.
+- **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are non-daily products: `write_libera_data_product` now names them with
+  `LiberaDynamicDataProductFilename`, with no time range, and archives them under `<ProductID>/<Version>`. The
+  filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or `ummg_metadata_filename`. ADM files
+  named in the daily form still parse as `LiberaDataProductFilename`.
+- **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
+  `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
+  `time_variable` as an optional argument, default `None`, and return
+  `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A daily product without `time_variable` raises
+  `ValueError`, and a non-daily product given one ignores it and warns.
 
 ## [5.23.0] - 2026-11-05
 

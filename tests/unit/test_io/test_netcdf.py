@@ -605,7 +605,7 @@ class TestWriteLiberaDataProduct:
         assert isinstance(result, LiberaDynamicDataProductFilename)
         assert list(tmp_path.iterdir()) == [result.path]
         assert LIBERA_DYNAMIC_DATA_PRODUCT_REGEX.match(result.path.name)
-        assert result.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+        assert result.path.name.startswith("LIBERA_AUX_ADM-CAM_V0-0-1_R")
         with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
             date_created = datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE])
         assert date_created == result.filename_parts.revision
@@ -944,7 +944,9 @@ class TestNetcdfEngineConfig:
         monkeypatch.setattr(tempfile, "tempdir", str(local_tmp))
         output_path = S3Path(f"s3://{create_mock_bucket().name}/test-prefix")
 
-        result = write_libera_data_product(test_product_definition, test_data_dict, output_path, "radiometer_time")
+        result = write_libera_data_product(
+            test_product_definition, test_data_dict, output_path, time_variable="radiometer_time"
+        )
 
         assert result.path.exists()
         assert list(local_tmp.iterdir()) == []
@@ -1055,7 +1057,10 @@ class TestWorkerCompression:
         (tmp_path / "reference").mkdir()
         (tmp_path / "direct").mkdir()
         reference = write_libera_data_product(
-            test_worker_compression_product_definition, self._camera_dataset(), tmp_path / "reference", "CAMERA_TIME"
+            test_worker_compression_product_definition,
+            self._camera_dataset(),
+            tmp_path / "reference",
+            time_variable="CAMERA_TIME",
         )
         if to_s3:
             bucket = create_mock_bucket()
@@ -1063,7 +1068,7 @@ class TestWorkerCompression:
                 test_worker_compression_product_definition,
                 self._camera_dataset(),
                 S3Path(f"s3://{bucket.name}/prefix"),
-                "CAMERA_TIME",
+                time_variable="CAMERA_TIME",
                 worker_compressed_variables=names,
             )
             direct_path = tmp_path / written.path.name
@@ -1073,7 +1078,7 @@ class TestWorkerCompression:
                 test_worker_compression_product_definition,
                 self._camera_dataset(),
                 tmp_path / "direct",
-                "CAMERA_TIME",
+                time_variable="CAMERA_TIME",
                 worker_compressed_variables=names,
             ).path
 
@@ -1132,7 +1137,7 @@ class TestWorkerCompression:
                 test_worker_compression_product_definition,
                 self._camera_dataset(),
                 tmp_path,
-                "CAMERA_TIME",
+                time_variable="CAMERA_TIME",
                 worker_compressed_variables=("counts",),
             )
         assert not list(tmp_path.iterdir())

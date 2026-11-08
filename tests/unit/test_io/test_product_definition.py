@@ -140,7 +140,7 @@ class TestLiberaDataProductDefinition:
         dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
         fn = dynamic_product_definition.generate_data_product_filename(dataset)
         assert isinstance(fn, LiberaDynamicDataProductFilename)
-        assert fn.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+        assert fn.path.name.startswith("LIBERA_AUX_ADM-CAM_V0-0-1_R")
         assert fn.filename_parts.revision == datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
     def test_generate_filename_dynamic_warns_on_unused_time_variable(self, dynamic_product_definition, test_dataset):
@@ -159,7 +159,7 @@ class TestLiberaDataProductDefinition:
     def test_generate_filename_daily_rejects_non_datetime_time_variable(self, test_product_definition, test_dataset):
         """A daily product's time variable must be datetime64"""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        with pytest.raises(ValueError, match="Specified time variable lat does not have dtype datetime64"):
+        with pytest.raises(ValueError, match=r"time_variable 'lat' has dtype \w+, not datetime64"):
             definition.generate_data_product_filename(test_dataset, time_variable="lat")
 
 
