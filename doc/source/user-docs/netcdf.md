@@ -165,10 +165,10 @@ The function automatically:
 
 - Validates data against the product definition
 - Sets the `date_created` attribute to the creation time, overwriting (with a warning) any value already set
-- Generates a standardized filename whose revision is that `date_created`: for a non-daily product (one whose
-  `DataProductIdentifier` has `is_dynamic` set, such as an ADM), this only includes the product ID, version, and
-  revision. Daily products include the data time range from `time_variable` and the data level in addition to
-  product ID, version, and revision.
+- Generates a standardized filename whose revision is that `date_created`. Every product's filename includes its data
+  level, product ID, version, and revision. A daily product's filename also includes the data time range from
+  `time_variable`, and a non-daily product's (one whose `DataProductIdentifier` has `is_dynamic` set, such as an ADM)
+  has no time range.
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 

@@ -60,8 +60,8 @@ range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revisi
 date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date` property gives.
 
 A non-daily data product, such as an ADM, is valid over more than one day (indefinitely until the next version
-update). It is named by `LiberaDynamicDataProductFilename` with no data level and no time range,
-`LIBERA_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
+update). It is named by `LiberaDynamicDataProductFilename` with its data level and no time range,
+`LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
 `applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
 non-daily when its `DataProductIdentifier` has `is_dynamic` set, and `LiberaDynamicDataProductFilename` does not
 accept products without this flag.
@@ -70,7 +70,7 @@ accept products without this flag.
 from libera_utils.io import filenaming
 
 adm = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(product_name="ADM-CAM", version="1.2.3")
-print(adm.path.name)  # LIBERA_ADM-CAM_V1-2-3_R<revision>.nc
+print(adm.path.name)  # LIBERA_AUX_ADM-CAM_V1-2-3_R<revision>.nc
 print(adm.archive_prefix)  # ADM-CAM/V1-2-3
 ```
 
