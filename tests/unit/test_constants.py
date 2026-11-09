@@ -10,6 +10,7 @@ from libera_utils.constants import (
     DataProductIdentifier,
     LiberaApid,
     ManifestType,
+    PartitionScheme,
     ProcessingStepIdentifier,
 )
 from libera_utils.obsids import get_family_specs
@@ -265,12 +266,16 @@ class TestDataProductIdentifier:
             assert isinstance(level, DataLevel)
             assert level in DataLevel
 
-    def test_is_dynamic_property(self):
-        """The ADMs are non-daily products, and a product defaults to daily"""
-        assert DataProductIdentifier.aux_adm_cam.is_dynamic is True
-        assert DataProductIdentifier.aux_adm_imager.is_dynamic is True
-        assert DataProductIdentifier.l1b_rad.is_dynamic is False
-        assert DataProductIdentifier.aux_adm_stats_cam.is_dynamic is False
+    def test_partition_scheme_property(self):
+        """The ADMs are partitioned by version, and every other product defaults to daily"""
+        assert DataProductIdentifier.aux_adm_cam.partition_scheme is PartitionScheme.VERSION
+        assert DataProductIdentifier.aux_adm_imager.partition_scheme is PartitionScheme.VERSION
+        assert DataProductIdentifier.l1b_rad.partition_scheme is PartitionScheme.DAILY
+        assert DataProductIdentifier.aux_adm_stats_cam.partition_scheme is PartitionScheme.DAILY
+        version_products = {p for p in DataProductIdentifier if p.partition_scheme is PartitionScheme.VERSION}
+        assert version_products == {DataProductIdentifier.aux_adm_cam, DataProductIdentifier.aux_adm_imager}
+        for product in DataProductIdentifier:
+            assert isinstance(product.partition_scheme, PartitionScheme)
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""

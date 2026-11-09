@@ -10,7 +10,13 @@ import pytest
 from cloudpathlib import S3Path
 from ulid import ULID
 
-from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType, ProcessingStepIdentifier
+from libera_utils.constants import (
+    DataLevel,
+    DataProductIdentifier,
+    ManifestType,
+    PartitionScheme,
+    ProcessingStepIdentifier,
+)
 from libera_utils.io import filenaming
 
 
@@ -1041,7 +1047,7 @@ def test_hash_changes_when_path_is_reassigned():
 def test_LiberaDynamicDataProductFilename(filename):
     """A non-daily product filename parses, with no applicable date and its product's data level"""
     fn = filenaming.LiberaDynamicDataProductFilename(filename)
-    assert fn.data_product_id.is_dynamic
+    assert fn.data_product_id.partition_scheme is PartitionScheme.VERSION
     assert not hasattr(fn, "applicable_date")
     assert fn.filename_parts.data_level == "AUX"
     assert fn.filename_parts.revision == dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
@@ -1073,9 +1079,9 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
 )
 def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
     """A daily product named in the non-daily form is rejected where it is constructed"""
-    with pytest.raises(ValueError, match="is a daily data product"):
+    with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
         filenaming.LiberaDynamicDataProductFilename(filename)
-    with pytest.raises(ValueError, match="is a daily data product"):
+    with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
         filenaming.LiberaDynamicDataProductFilename.from_filename_parts(
             product_name=filename.split("_")[2], version="V1-2-3"
         )
@@ -1176,3 +1182,13 @@ def test_LiberaDynamicDataProductFilename_impossible_date_leaves_path_unchanged(
 def test_LiberaDynamicDataProductFilename_processing_step_id(filename, expected):
     """A non-daily file names the processing step that produces its product"""
     assert filenaming.LiberaDynamicDataProductFilename(filename).processing_step_id == expected
+
+
+def test_partition_scheme_filename_classes_cover_every_scheme():
+    """Every partition scheme maps to the filename class that names its products"""
+    assert set(filenaming.PARTITION_SCHEME_FILENAME_CLASSES) == set(PartitionScheme)
+    assert filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.DAILY] is filenaming.LiberaDataProductFilename
+    assert (
+        filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.VERSION]
+        is filenaming.LiberaDynamicDataProductFilename
+    )

@@ -63,8 +63,9 @@ A non-daily data product, such as an ADM, is valid over more than one day (indef
 update). It is named by `LiberaDynamicDataProductFilename` with its data level and no time range,
 `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
 `applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
-non-daily when its `DataProductIdentifier` has `is_dynamic` set, and `LiberaDynamicDataProductFilename` does not
-accept products without this flag.
+non-daily when its `DataProductIdentifier` has partition scheme `PartitionScheme.VERSION`, and
+`LiberaDynamicDataProductFilename` does not accept products with any other scheme.
+`filenaming.PARTITION_SCHEME_FILENAME_CLASSES` gives the filename class for each partition scheme.
 
 ```python
 from libera_utils.io import filenaming

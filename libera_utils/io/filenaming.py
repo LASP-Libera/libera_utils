@@ -18,6 +18,7 @@ from libera_utils.constants import (
     DataProductIdentifier,
     LiberaApid,
     ManifestType,
+    PartitionScheme,
     ProcessingStepIdentifier,
 )
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
@@ -949,8 +950,9 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
 
     A non-daily product, such as an ADM, is valid over more than one day (indefinitely until the next version
     update). Its filename carries no time range, so it has no applicable date. The period it covers is recorded in
-    the file's variables and metadata. Only a DataProductIdentifier whose ``is_dynamic`` is True is
-    accepted; a daily product is named by :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
+    the file's variables and metadata. Only a DataProductIdentifier whose ``partition_scheme`` is
+    ``PartitionScheme.VERSION`` is accepted. A daily product is named by
+    :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
 
     Non-daily data product filenames follow the convention::
 
@@ -961,7 +963,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
     - ``data_level`` is the string value of the product's :class:`~libera_utils.constants.DataLevel`, which must be
       the ``data_level`` of its DataProductIdentifier.
     - ``product_name`` is the string value of a :class:`~libera_utils.constants.DataProductIdentifier` whose
-      ``is_dynamic`` is True.
+      ``partition_scheme`` is ``PartitionScheme.VERSION``.
     - ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
     - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
     """
@@ -971,8 +973,8 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
 
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
-        """Set the path, rejecting a revision that is not a real UTC time, a product that is not dynamic, or a data
-        level that is not the product's.
+        """Set the path, rejecting a revision that is not a real UTC time, a product whose partition scheme is not
+        VERSION, or a data level that is not the product's.
 
         The regex admits any digits in the revision, every product name, and every data level, so the name is parsed
         and its product and level checked before it is assigned.
@@ -985,8 +987,8 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         Raises
         ------
         ValueError
-            If the path does not match the filename regex, its revision is not a real UTC time, it names a daily
-            data product, or its data level is not the data level of its product.
+            If the path does not match the filename regex, its revision is not a real UTC time, it names a product
+            whose partition scheme is not VERSION, or its data level is not the data level of its product.
         """
         if isinstance(new_path, str):
             _new_path: PathType = cast(PathType, AnyPath(new_path))
@@ -1000,10 +1002,11 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
                 f"Proposed path {_new_path} has a revision that is not a real UTC time: {err}. Correct that field."
             ) from err
         product_id = DataProductIdentifier(parsed.product_name)
-        if not product_id.is_dynamic:
+        expected_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
+        if expected_class is not LiberaDynamicDataProductFilename:
             raise ValueError(
-                f"{product_id} is a daily data product, so {_new_path.name} is not a valid non-daily "
-                "filename. Name a daily product with LiberaDataProductFilename, which includes its time range."
+                f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a "
+                f"valid non-daily filename. Name it with {expected_class.__name__}."
             )
         if DataLevel(parsed.data_level) != product_id.data_level:
             raise ValueError(
@@ -1055,8 +1058,8 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         Raises
         ------
         ValueError
-            If `product_name` is not a DataProductIdentifier, if it names a daily data product, or if `version` is
-            not a valid version string.
+            If `product_name` is not a DataProductIdentifier, if it names a product whose partition scheme is not
+            VERSION, or if `version` is not a valid version string.
         """
         if revision is None:
             revision = datetime.now(tz=UTC)
@@ -1137,6 +1140,13 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         """
         d["revision"] = _parse_revision(d["revision"])
         return SimpleNamespace(**d)
+
+
+# The filename class that names the products of each partition scheme.
+PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
+    PartitionScheme.DAILY: LiberaDataProductFilename,
+    PartitionScheme.VERSION: LiberaDynamicDataProductFilename,
+}
 
 
 class ManifestFilename(AbstractValidFilename):

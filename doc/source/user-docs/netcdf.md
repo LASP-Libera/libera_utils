@@ -167,7 +167,7 @@ The function automatically:
 - Sets the `date_created` attribute to the creation time, overwriting (with a warning) any value already set
 - Generates a standardized filename whose revision is that `date_created`. Every product's filename includes its data
   level, product ID, version, and revision. A daily product's filename also includes the data time range from
-  `time_variable`, and a non-daily product's (one whose `DataProductIdentifier` has `is_dynamic` set, such as an ADM)
+  `time_variable`, and a non-daily product's (one whose `DataProductIdentifier` has partition scheme `PartitionScheme.VERSION`, such as an ADM)
   has no time range.
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
