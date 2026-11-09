@@ -106,7 +106,7 @@ class TestLiberaDataProductDefinition:
     def test_generate_filename(self, test_product_definition, test_dataset):
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
         fn = definition.generate_data_product_filename(test_dataset, time_variable="radiometer_time")
-        assert isinstance(fn, LiberaDataProductFilename)
+        assert type(fn) is LiberaDataProductFilename
         print(fn.path.name)
         assert fn.filename_parts.product_name == "RAD-4CH"
         assert fn.filename_parts.version == "V0-0-1"
@@ -139,7 +139,7 @@ class TestLiberaDataProductDefinition:
         """A non-daily product is named without a time range and needs no time variable"""
         dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
         fn = dynamic_product_definition.generate_data_product_filename(dataset)
-        assert isinstance(fn, LiberaDynamicDataProductFilename)
+        assert type(fn) is LiberaDynamicDataProductFilename
         assert fn.path.name.startswith("LIBERA_AUX_ADM-CAM_V0-0-1_R")
         assert fn.filename_parts.revision == datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
@@ -148,7 +148,7 @@ class TestLiberaDataProductDefinition:
         dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
         with pytest.warns(UserWarning, match="time_variable 'radiometer_time' is not used"):
             fn = dynamic_product_definition.generate_data_product_filename(dataset, time_variable="radiometer_time")
-        assert isinstance(fn, LiberaDynamicDataProductFilename)
+        assert type(fn) is LiberaDynamicDataProductFilename
 
     def test_generate_filename_daily_requires_time_variable(self, test_product_definition, test_dataset):
         """A daily product without a time variable raises, naming the missing argument"""

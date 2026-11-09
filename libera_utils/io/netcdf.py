@@ -92,7 +92,7 @@ def write_libera_data_product(
     time_variable : str | None
         Name of the datetime64 variable that indicates time. Required for a daily product, whose filename carries
         the start and end time of this variable. Not used for a non-daily product, one whose DataProductIdentifier
-        has ``is_dynamic`` set, and a ``UserWarning`` is issued if it is given.
+        has partition scheme ``PartitionScheme.VERSION``, and a ``UserWarning`` is issued if it is given.
     dynamic_product_attributes : dict[str, Any] | None
         Optional dictionary of additional global attributes to add to the data product file. Must conform to the data
         product definition.

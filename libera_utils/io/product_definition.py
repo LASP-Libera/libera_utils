@@ -16,7 +16,12 @@ from xarray import DataArray, Dataset
 
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename, PathType
+from libera_utils.io.filenaming import (
+    PARTITION_SCHEME_FILENAME_CLASSES,
+    LiberaDataProductFilename,
+    LiberaDynamicDataProductFilename,
+    PathType,
+)
 from libera_utils.version import ALGORITHM_VERSION_REGEX
 
 logger = logging.getLogger(__name__)
@@ -765,9 +770,10 @@ class LiberaDataProductDefinition(BaseModel):
     ) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
         """Generate a standardized Libera data product filename.
 
-        A daily product is named with its data level and the time range of its data, taken from `time_variable`. A
-        non-daily product, one whose DataProductIdentifier has ``is_dynamic`` set (such as an ADM), is named with only
-        its product ID, version and revision, so it needs no time variable.
+        The product's partition scheme selects its filename class through ``PARTITION_SCHEME_FILENAME_CLASSES``. A
+        daily product is named with its data level and the time range of its data, taken from `time_variable`. A
+        non-daily product, one whose DataProductIdentifier has partition scheme ``PartitionScheme.VERSION`` (such as an
+        ADM), is named with its data level, product ID, version, and revision, so it needs no time variable.
 
         Parameters
         ----------
@@ -803,7 +809,8 @@ class LiberaDataProductDefinition(BaseModel):
         version = dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE]
         revision = datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
-        if product_id.is_dynamic:
+        filename_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
+        if filename_class is LiberaDynamicDataProductFilename:
             if time_variable is not None:
                 # stacklevel 3 points the warning at the caller of write_libera_data_product.
                 warnings.warn(
