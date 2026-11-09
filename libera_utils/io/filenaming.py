@@ -18,6 +18,7 @@ from libera_utils.constants import (
     DataProductIdentifier,
     LiberaApid,
     ManifestType,
+    PartitionScheme,
     ProcessingStepIdentifier,
 )
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
@@ -44,6 +45,27 @@ def _ensure_utc_timezone(dt_obj: datetime) -> datetime:
     if dt_obj.tzinfo is None:
         return dt_obj.replace(tzinfo=UTC)
     return dt_obj.astimezone(UTC)
+
+
+def _parse_revision(revision: str) -> datetime:
+    """Parse a filename revision string into a UTC datetime.
+
+    Parameters
+    ----------
+    revision : str
+        Revision field of a filename, formatted as REVISION_TS_FORMAT.
+
+    Returns
+    -------
+    : datetime
+        Timezone-aware datetime in UTC
+
+    Raises
+    ------
+    ValueError
+        If `revision` is not a real UTC time in REVISION_TS_FORMAT.
+    """
+    return datetime.strptime(revision, REVISION_TS_FORMAT).replace(tzinfo=UTC)
 
 
 # Type alias for paths returned by AnyPath() constructor
@@ -84,19 +106,22 @@ DATA_LEVELS = "|".join([level.value for level in DataLevel])
 # Get all data product names
 DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 
+# A filename revision is REVISION_TS_FORMAT: R + 8-digit date, T, 6-digit time, 6-digit microseconds.
+_REVISION_REGEX = r"R[0-9]{8}T[0-9]{12}"
+
 # Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
-# The revision is REVISION_TS_FORMAT: R + 8-digit date, T, 6-digit time, 6-digit microseconds.
 _LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
     r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R[0-9]{8}T[0-9]{12})"
+    rf"_(?P<revision>{_REVISION_REGEX})"
 )
 
 LIBERA_DATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>nc|bsp|bc)$")
 
+# TODO[LIBSDC-776]: UMM-G metadata filenames for non-daily data products (LiberaDynamicDataProductFilename).
 LIBERA_METADATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>cmr\.json)$")
 
 MANIFEST_FILE_REGEX = re.compile(
@@ -108,6 +133,17 @@ MANIFEST_FILE_REGEX = re.compile(
 )
 
 LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
+
+# A non-daily data product filename carries no time range. The product name group admits every DataProductIdentifier,
+# daily ones included, so that a daily product named in this form matches and LiberaDynamicDataProductFilename rejects
+# it with an error that says to use LiberaDataProductFilename instead.
+LIBERA_DYNAMIC_DATA_PRODUCT_REGEX = re.compile(
+    rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
+    rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
+    rf"_(?P<version>{LIBERA_SEM_VER_REGEX.pattern})"
+    rf"_(?P<revision>{_REVISION_REGEX})"
+    r"\.(?P<extension>nc)$"
+)
 
 
 class AbstractValidFilename(ABC):
@@ -141,11 +177,33 @@ class AbstractValidFilename(ABC):
 
     @classmethod
     def from_file_path(cls, *args, **kwargs):
-        """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)"""
+        """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)
+
+        Parameters
+        ----------
+        *args
+            Positional arguments passed unchanged to each candidate class, normally the single file path as a
+            ``str``, ``pathlib.Path``, or ``cloudpathlib.S3Path``.
+        **kwargs
+            Keyword arguments passed unchanged to each candidate class.
+
+        Returns
+        -------
+        AbstractValidFilename
+            An instance of the first class that accepts the path, trying in order L0Filename,
+            LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaDynamicDataProductFilename, and
+            ManifestFilename.
+
+        Raises
+        ------
+        ValueError
+            If none of the candidate classes accepts the path.
+        """
         for CandidateClass in (
             L0Filename,
             LiberaGroundCcsdsFilename,
             LiberaDataProductFilename,
+            LiberaDynamicDataProductFilename,
             ManifestFilename,
         ):
             try:
@@ -298,6 +356,11 @@ class AbstractDataProductFilename(AbstractValidFilename):
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier for this file type"""
         raise NotImplementedError()
+
+    @property
+    def processing_step_id(self) -> ProcessingStepIdentifier | None:
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        return ProcessingStepIdentifier.from_data_product(self.data_product_id)
 
 
 class L0Filename(AbstractDataProductFilename):
@@ -657,11 +720,6 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         self._path = _new_path
 
     @property
-    def processing_step_id(self) -> ProcessingStepIdentifier | None:
-        """Property that contains the ProcessingStepIdentifier that generates this file"""
-        return ProcessingStepIdentifier.from_data_product(self.data_product_id)
-
-    @property
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier for this file type"""
         return DataProductIdentifier(self.filename_parts.product_name)
@@ -883,8 +941,212 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         """
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
-        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)
+        d["revision"] = _parse_revision(d["revision"])
         return SimpleNamespace(**d)
+
+
+class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
+    """Filename validation class for non-daily Libera SDC data products.
+
+    A non-daily product, such as an ADM, is valid over more than one day (indefinitely until the next version
+    update). Its filename carries no time range, so it has no applicable date. The period it covers is recorded in
+    the file's variables and metadata. Only a DataProductIdentifier whose ``partition_scheme`` is
+    ``PartitionScheme.VERSION`` is accepted. A daily product is named by
+    :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
+
+    Non-daily data product filenames follow the convention::
+
+        LIBERA_{data_level}_{product_name}_{version}_{revision}.nc
+
+    e.g. ``LIBERA_AUX_ADM-CAM_V1-2-3_R20270103T080910123456.nc``
+
+    - ``data_level`` is the string value of the product's :class:`~libera_utils.constants.DataLevel`, which must be
+      the ``data_level`` of its DataProductIdentifier.
+    - ``product_name`` is the string value of a :class:`~libera_utils.constants.DataProductIdentifier` whose
+      ``partition_scheme`` is ``PartitionScheme.VERSION``.
+    - ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
+    - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
+    """
+
+    _regex = LIBERA_DYNAMIC_DATA_PRODUCT_REGEX
+    _fmt = "LIBERA_{data_level}_{product_name}_{version}_{revision}.nc"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a revision that is not a real UTC time, a product whose partition scheme is not
+        VERSION, or a data level that is not the product's.
+
+        The regex admits any digits in the revision, every product name, and every data level, so the name is parsed
+        and its product and level checked before it is assigned.
+
+        Parameters
+        ----------
+        new_path : str | PathType
+            Path to the non-daily data product file.
+
+        Raises
+        ------
+        ValueError
+            If the path does not match the filename regex, its revision is not a real UTC time, it names a product
+            whose partition scheme is not VERSION, or its data level is not the data level of its product.
+        """
+        if isinstance(new_path, str):
+            _new_path: PathType = cast(PathType, AnyPath(new_path))
+        else:
+            _new_path = new_path
+        parts = self.regex_match(_new_path)
+        try:
+            parsed = self._parse_match(parts)
+        except ValueError as err:
+            raise ValueError(
+                f"Proposed path {_new_path} has a revision that is not a real UTC time: {err}. Correct that field."
+            ) from err
+        product_id = DataProductIdentifier(parsed.product_name)
+        expected_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
+        if expected_class is not LiberaDynamicDataProductFilename:
+            raise ValueError(
+                f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a "
+                f"valid non-daily filename. Name it with {expected_class.__name__}."
+            )
+        if DataLevel(parsed.data_level) != product_id.data_level:
+            raise ValueError(
+                f"{_new_path.name} has data level {parsed.data_level}, but the data level of {product_id} is "
+                f"{product_id.data_level}. Rename the file with data level {product_id.data_level}."
+            )
+        self._path = _new_path
+
+    @property
+    def data_product_id(self) -> DataProductIdentifier:
+        """Property that contains the DataProductIdentifier for this file type"""
+        return DataProductIdentifier(self.filename_parts.product_name)
+
+    @property
+    def archive_prefix(self) -> str:
+        """Property that contains the generated prefix for archiving, ``<product_name>/<version>``
+
+        Each file is archived once under this prefix, whatever period it covers.
+        """
+        return f"{self.filename_parts.product_name}/{self.filename_parts.version}"
+
+    @classmethod
+    def from_filename_parts(
+        cls,
+        *,  # No positional arguments
+        product_name: str | DataProductIdentifier,
+        version: str,
+        revision: datetime | None = None,
+        basepath: str | Path | S3Path | None = None,
+    ):
+        """Create instance from filename parts.
+
+        Parameters
+        ----------
+        product_name : str | DataProductIdentifier
+            Non-daily product type, e.g. ADM-CAM.
+        version : str
+            Software version that the file was created with, as VM-m-p or a semantic version M.m.p. Corresponds to
+            the algorithm version as determined by the algorithm software.
+        revision : datetime.datetime | None
+            Time when the file was created. Default None uses the current UTC time.
+        basepath : str | Path | S3Path | None
+            Allows prepending a basepath or prefix.
+
+        Returns
+        -------
+        : LiberaDynamicDataProductFilename
+
+        Raises
+        ------
+        ValueError
+            If `product_name` is not a DataProductIdentifier, if it names a product whose partition scheme is not
+            VERSION, or if `version` is not a valid version string.
+        """
+        if revision is None:
+            revision = datetime.now(tz=UTC)
+        product_id = DataProductIdentifier(product_name)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            data_level=product_id.data_level,
+            product_name=product_id,
+            version=version,
+            revision=_ensure_utc_timezone(revision),
+        )
+
+    @classmethod
+    def _format_filename_parts(
+        cls,
+        *,  # No positional arguments
+        data_level: str,
+        product_name: str,
+        version: str,
+        revision: datetime,
+    ):
+        """Construct a filename from filename parts
+
+        Parameters
+        ----------
+        data_level : str
+            Data level of the product, e.g. AUX.
+        product_name : str
+            Non-daily product type, e.g. ADM-CAM.
+        version : str
+            Software version that the file was created with, as VM-m-p or a semantic version M.m.p.
+        revision : datetime.datetime
+            Time when the file was created.
+
+        Returns
+        -------
+        : str
+            Formatted filename
+        """
+        if not check_version_number_format(version):
+            version = format_from_semantic_version(version)
+
+        return cls._fmt.format(
+            data_level=data_level.upper(),
+            product_name=product_name.upper(),
+            version=version,
+            revision=_ensure_utc_timezone(revision).strftime(REVISION_TS_FORMAT),
+        )
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+        """
+        return self._parse_match(self.regex_match(self.path))
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If revision is not a real UTC time.
+        """
+        d["revision"] = _parse_revision(d["revision"])
+        return SimpleNamespace(**d)
+
+
+# The filename class that names the products of each partition scheme.
+PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
+    PartitionScheme.DAILY: LiberaDataProductFilename,
+    PartitionScheme.VERSION: LiberaDynamicDataProductFilename,
+}
 
 
 class ManifestFilename(AbstractValidFilename):

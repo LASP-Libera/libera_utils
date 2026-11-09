@@ -10,10 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when a requested tag other than `latest` already exists in the ECR repository, whatever image it holds: found by a check before anything is pushed, or refused by ECR during the push when another push took the tag after that check. The message names every such tag and the repository, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. A refused push is not retried, and `ecr-upload` registers nothing.
+- `LiberaDynamicDataProductFilename` names a non-daily data product, such as an ADM, as
+  `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
+  under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
+  `AbstractValidFilename.from_file_path` recognizes it.
+- `PartitionScheme` (`DAILY`, `VERSION`) says how a product's files are partitioned, and
+  `DataProductIdentifier.partition_scheme` gives each product's scheme. A member sets it as a third tuple element,
+  and it defaults to `DAILY`. `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` maps each scheme to the filename class
+  that names its products.
+- `s3-utils put` accepts non-daily data product files. `put --verify` stages them with the other files but does not
+  verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it raises
+  the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the non-daily files it could not verify.
+- `processing_step_id` is defined on `AbstractDataProductFilename`, so `LiberaDynamicDataProductFilename`,
+  `L0Filename` and `LiberaGroundCcsdsFilename` have it as `LiberaDataProductFilename` does: the step that produces the
+  file's product, or `None` when no step does.
 
 ### Changed
 
 - **BREAKING:** Before pushing, `push_image_to_ecr` and `ecr-upload` check ECR for every requested tag other than `latest` and push nothing if any of them already exists, even in a repository that would accept the push, which used to replace the image under the tag. A session that pushes a version tag now needs `ecr:DescribeImages` on the repository, and a missing repository fails the check before any push. Tags other than `latest` are then pushed before `latest`, so a tag taken by another push since the check leaves `latest` where it was.
+- **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are non-daily products: `write_libera_data_product` now names them with
+  `LiberaDynamicDataProductFilename`, with no time range, and archives them under `<ProductID>/<Version>`. The
+  filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or `ummg_metadata_filename`. ADM files
+  named in the daily form still parse as `LiberaDataProductFilename`.
+- **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
+  `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
+  `time_variable` as an optional argument, default `None`, and return
+  `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A daily product without `time_variable` raises
+  `ValueError`, and a non-daily product given one ignores it and warns.
 
 ## [5.23.0] - 2026-11-05
 

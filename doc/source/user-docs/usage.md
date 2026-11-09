@@ -337,13 +337,21 @@ its SCID, first APID, created time and numeric ID, which share one event whateve
 CR ahead of the PDS files that read it only within a single event. PDS files whose construction record is not in the
 batch are split at the same limit.
 
-Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
+Each path must be a properly named Libera L0, daily, or non-daily data product file (manifests and other filename types
+are rejected).
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
 record and (for non-L0 data products) a Data Availability record. Verification needs only read permissions. Use
 `--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command
 logs a per-file summary and exits with an error.
+
+% TODO[LIBSDC-880]: once --verify verifies non-daily data product files, remove the paragraph below and the note in
+% the --verify help.
+
+`--verify` does not yet verify non-daily data product files (such as ADMs). They are staged and their events emitted
+with the other files, and once the other files are verified the command exits with an error naming the non-daily
+files it could not verify.
 
 ```shell
 usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]
@@ -354,6 +362,8 @@ positional arguments:
 options:
   -h, --help         show this help message and exit
   --verify           After triggering ingest, block until each file is confirmed fully ingested, then report the result.
+                     Non-daily data product files are staged but not yet verified, and the command then exits with
+                     an error naming them.
   --timeout TIMEOUT  Seconds to wait for ingestion verification when --verify is set. Default is 300 (5 minutes).
 ```
 
