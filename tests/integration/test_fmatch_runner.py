@@ -27,13 +27,14 @@ from libera_utils.footprint_matching.footprint_match_algorithm import (
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS,
 )
+from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import product_variable_name
+from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS as SCENE_ID_RUNNER_CONFIGS,
 )
@@ -178,8 +179,8 @@ class TestImagerProduct:
 
         with xr.open_dataset(output_manifest.files[0]) as product:
             names = set(product.variables)
-            assert any(name.startswith(product_variable_name("cldpix") + "_") for name in names)
-            assert any(name.startswith(product_variable_name("era5_pressure") + "_") for name in names)
+            assert any(name.startswith(CLDPIXReader.READER_KEY + "_") for name in names)
+            assert any(name.startswith(ERA5PressureLevelReader.READER_KEY + "_") for name in names)
 
     def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, monkeypatch):
         output_manifest = self._run(tmp_path, monkeypatch)
@@ -299,6 +300,6 @@ class TestRunnerOutputThroughSceneId:
         definition = LiberaDataProductDefinition.from_yaml(scene_id_config.product_definition_path)
         with xr.open_dataset(written.path, mask_and_scale=False) as product:
             assert set(definition.variables) <= set(product.variables)
-            for scene_type in scene_id_config.scene_types:
-                scene_ids = product[product_variable_name(f"scene_id_{scene_type}")].values
-                assert np.count_nonzero(scene_ids) == 0, scene_type
+            for scene_definition in standard_scene_definitions(scene_id_config.scene_types):
+                scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
+                assert np.count_nonzero(scene_ids) == 0, scene_definition.type

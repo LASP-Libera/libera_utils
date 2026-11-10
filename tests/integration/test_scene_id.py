@@ -15,7 +15,7 @@ from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
+from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
     SCENE_ID_VARIANT_ENV,
@@ -96,17 +96,15 @@ class TestSceneIdRunnerEndToEnd:
             assert product.attrs["algorithm_version"] == version()
             assert runner_config.time_variable in product.coords
 
-            # Every declared variable is written under its product name, never its internal name.
+            # Every declared variable is written.
             assert set(definition.variables) <= set(product.variables)
-            for name in definition.variables:
-                internal = internal_variable_name(name)
-                if internal != name:
-                    assert internal not in product.variables
 
             # Each scene type the variant runs classifies at least one footprint (scene ID 0 is unmatched).
-            for scene_type in runner_config.scene_types:
-                scene_ids = product[product_variable_name(f"scene_id_{scene_type}")].values
-                assert np.count_nonzero(scene_ids) > 0, f"{variant}: no footprint matched a {scene_type} scene"
+            for scene_definition in standard_scene_definitions(runner_config.scene_types):
+                scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
+                assert np.count_nonzero(scene_ids) > 0, (
+                    f"{variant}: no footprint matched a {scene_definition.type} scene"
+                )
 
             # A camera-timescale product carries its FMATCH input's identifiers unchanged.
             if "camtime" in variant:

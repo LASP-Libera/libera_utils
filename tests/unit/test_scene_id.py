@@ -10,7 +10,6 @@ import xarray as xr
 from libera_utils.config import config
 from libera_utils.footprint_matching.product import load_fmatch_definition
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
@@ -1156,14 +1155,14 @@ class TestFmatchCamCloudFractionPassthrough:
         """
         n = len(cloud_fraction_camera)
         columns = {
-            "igbp_surface_type": np.arange(1, n + 1, dtype=np.int16),
-            "cloud_fraction_camera": np.asarray(cloud_fraction_camera, np.float32),
-            "solar_zenith_angle": np.zeros(n, np.float32),
-            "viewing_zenith_angle": np.zeros(n, np.float32),
-            "relative_azimuth_angle": np.zeros(n, np.float32),
+            "IGBP_Surface_Type": np.arange(1, n + 1, dtype=np.int16),
+            "Cloud_Fraction_Camera": np.asarray(cloud_fraction_camera, np.float32),
+            "Solar_Zenith_Surface": np.zeros(n, np.float32),
+            "Viewing_Zenith_Surface": np.zeros(n, np.float32),
+            "Relative_Azimuth_Surface": np.zeros(n, np.float32),
         }
         dataset = xr.Dataset(
-            {product_variable_name(name): (RADIOMETER_TIME_DIMENSION, values) for name, values in columns.items()},
+            {name: (RADIOMETER_TIME_DIMENSION, values) for name, values in columns.items()},
             coords={RADIOMETER_TIME_DIMENSION: np.arange(n).astype("datetime64[ns]")},
         )
         dataset.to_netcdf(path)
@@ -1173,7 +1172,7 @@ class TestFmatchCamCloudFractionPassthrough:
         path = tmp_path / "fmatch_cam.nc"
         self._write_minimal_fmatch_cam(path, [0.0, 50.0, 100.0])
 
-        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["cloud_fraction"]
+        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["Cloud_Fraction"]
 
         assert cloud_fraction.dtype == np.float32
         np.testing.assert_array_almost_equal(cloud_fraction.values, [0.0, 50.0, 100.0])
@@ -1183,7 +1182,7 @@ class TestFmatchCamCloudFractionPassthrough:
         path = tmp_path / "fmatch_cam_nan.nc"
         self._write_minimal_fmatch_cam(path, [np.nan, 25.0])
 
-        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["cloud_fraction"].values
+        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["Cloud_Fraction"].values
 
         assert np.isnan(cloud_fraction[0])
         np.testing.assert_array_almost_equal(cloud_fraction[1:], [25.0])
@@ -1231,17 +1230,17 @@ class TestSceneIdImagerProductDtypes:
         assert definition.variables["Scene_Bin_TRMM_Cloud_Phase_Max"].dtype == "float32"
 
 
-def _fmatch_internal_names(mode: OperationalMode) -> set[str]:
-    """The internal names of every variable and non-dimension coordinate an FMATCH product declares."""
+def _fmatch_variable_names(mode: OperationalMode) -> set[str]:
+    """The names of every variable and non-dimension coordinate an FMATCH product declares."""
     definition = load_fmatch_definition(mode)
     coordinates = [name for name, coordinate in definition.coordinates.items() if coordinate.dimensions != [name]]
-    return {internal_variable_name(name) for name in (*definition.variables, *coordinates)}
+    return {*definition.variables, *coordinates}
 
 
 class TestFmatchSourceNames:
     """Every FMATCH variable a SCENE-ID reader reads is one the FMATCH products feeding it declare.
 
-    The readers name their sources by FMATCH's internal names; a name FMATCH does not declare would make every read
+    The readers name their sources by FMATCH's product variable names; a name FMATCH does not declare would make every read
     of a real FMATCH file fail with a missing-variable error.
     """
 
@@ -1267,4 +1266,4 @@ class TestFmatchSourceNames:
     )
     def test_source_names_are_declared_by_fmatch(self, source_names, modes):
         for mode in modes:
-            assert set(source_names) - _fmatch_internal_names(mode) == set(), mode.value
+            assert set(source_names) - _fmatch_variable_names(mode) == set(), mode.value
