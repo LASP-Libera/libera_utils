@@ -166,7 +166,7 @@ class ReaderRegistry:
         >>> from libera_utils.footprint_matching.types import OperationalMode
         >>> import libera_utils.footprint_matching.readers  # triggers registration
         >>> sorted(ReaderRegistry.get_readers_for_mode(OperationalMode.CAM))
-        ['ERA5_Surface', 'IGBP', 'NISE', 'VIIRS_BRDF', 'VIIRS_CLDPROP_D3']
+        ['IGBP', 'NISE', 'VIIRS_CLDPROP_D3']
         >>> imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
         >>> 'CLDPIX' in imager and 'ERA5_Pressure' in imager  # RBSP alongside ERA5
         True

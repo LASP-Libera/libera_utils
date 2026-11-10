@@ -107,8 +107,8 @@ _DECLARED = [
         None,
         _HOUR,
         (
-            _mean("Wind_U10", _ALL),
-            _mean("Wind_V10", _ALL),
+            _mean("Wind_U10", _IMAGER_PAIR),
+            _mean("Wind_V10", _IMAGER_PAIR),
             _mean("Temperature_2m", _IMAGER_PAIR),
             _mean("Dew_Point_Temperature_2m", _IMAGER_PAIR),
             _mean("Surface_Pressure", _IMAGER_PAIR),
@@ -166,7 +166,9 @@ _DECLARED = [
         None,
         None,
         tuple(
-            _mean(f"{band}_{param}", _ALL) for band in ("Shortwave", "VIS", "NIR") for param in ("Fiso", "Fvol", "Fgeo")
+            _mean(f"{band}_{param}", _IMAGER_PAIR)
+            for band in ("Shortwave", "VIS", "NIR")
+            for param in ("Fiso", "Fvol", "Fgeo")
         ),
         (),
     ),
@@ -227,17 +229,18 @@ _DECLARED = [
 _BUILT_IN = {row[0]: row[1] for row in _DECLARED}
 
 # The readers each product draws on, written out independently of the readers' specs.
-_CAM_READERS = frozenset({"ERA5_Surface", "IGBP", "NISE", "VIIRS_BRDF", "VIIRS_CLDPROP_D3"})
+_CAM_READERS = frozenset({"IGBP", "NISE", "VIIRS_CLDPROP_D3"})
+_IMAGER_CAMTIME_READERS = _CAM_READERS | {"ERA5_Surface", "VIIRS_BRDF", "VIIRS_AOD", "CLDPIX", "FLASHFlux"}
 _EXPECTED_MODE_READERS = {
     OperationalMode.CAM: _CAM_READERS,
     OperationalMode.CAM_CAMTIME: _CAM_READERS,
-    OperationalMode.IMAGER: _CAM_READERS | {"VIIRS_AOD", "ERA5_Pressure", "CLDPIX", "FLASHFlux"},
-    OperationalMode.IMAGER_CAMTIME: _CAM_READERS | {"VIIRS_AOD", "CLDPIX", "FLASHFlux"},
+    OperationalMode.IMAGER: _IMAGER_CAMTIME_READERS | {"ERA5_Pressure"},
+    OperationalMode.IMAGER_CAMTIME: _IMAGER_CAMTIME_READERS,
 }
 # Each product's variable count, standard-deviation companions and additional variables included.
 _EXPECTED_PRODUCT_VARIABLE_COUNTS = {
-    OperationalMode.CAM: 40,
-    OperationalMode.CAM_CAMTIME: 40,
+    OperationalMode.CAM: 18,
+    OperationalMode.CAM_CAMTIME: 18,
     OperationalMode.IMAGER: 505,
     OperationalMode.IMAGER_CAMTIME: 85,
 }

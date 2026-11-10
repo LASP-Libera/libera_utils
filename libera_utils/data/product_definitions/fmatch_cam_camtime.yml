@@ -146,31 +146,6 @@ variables:
   #     Variable names are <READER_KEY>_<spec name>; the source instrument is
   #     recorded in each variable's long_name as "... (INSTRUMENT)".
   # ---------------------------------------------------------------------------
-  # --- source reader: ERA5_Surface (resolution 28.0 km) ---
-  ERA5_Surface_Wind_U10:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Eastward wind component at 10 m (ECMWF)
-      units: "m/s"
-  ERA5_Surface_Wind_U10_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of eastward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
-      units: "m/s"
-  ERA5_Surface_Wind_V10:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Northward wind component at 10 m (ECMWF)
-      units: "m/s"
-  ERA5_Surface_Wind_V10_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of northward wind component at 10 m, PSF-weighted over within-footprint values (ECMWF)
-      units: "m/s"
   # --- source reader: IGBP (resolution 0.463 km) ---
   IGBP_Surface_Type:
     dtype: int16
@@ -247,103 +222,6 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
-  # --- source reader: VIIRS_BRDF (resolution 5.6 km) ---
-  # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
-  # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
-  # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
-  # isotropic (fiso), volumetric (fvol) and geometric (fgeo), per broadband
-  # (shortwave/vis/nir), named VIIRS_BRDF_<Band>_<Param>. Source: VIIRS BRDF/Albedo
-  # (VNP43) User Guide.
-  VIIRS_BRDF_Shortwave_Fiso:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
-  VIIRS_BRDF_Shortwave_Fiso_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of shortwave BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_Shortwave_Fvol:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
-  VIIRS_BRDF_Shortwave_Fvol_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of shortwave BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_Shortwave_Fgeo:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Shortwave BRDF geometric kernel weight (NOAA20)
-  VIIRS_BRDF_Shortwave_Fgeo_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of shortwave BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_VIS_Fiso:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Visible BRDF isotropic kernel weight (NOAA20)
-  VIIRS_BRDF_VIS_Fiso_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of visible BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_VIS_Fvol:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Visible BRDF volumetric kernel weight (NOAA20)
-  VIIRS_BRDF_VIS_Fvol_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of visible BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_VIS_Fgeo:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Visible BRDF geometric kernel weight (NOAA20)
-  VIIRS_BRDF_VIS_Fgeo_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of visible BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_NIR_Fiso:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
-  VIIRS_BRDF_NIR_Fiso_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of near-infrared BRDF isotropic kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_NIR_Fvol:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
-  VIIRS_BRDF_NIR_Fvol_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of near-infrared BRDF volumetric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  VIIRS_BRDF_NIR_Fgeo:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
-  VIIRS_BRDF_NIR_Fgeo_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
   # --- source reader: VIIRS_CLDPROP_D3 (resolution 111.0 km) ---
   # valid_min/valid_max are the CLDPROP_D3_VIIRS_NOAA20 Cloud_Optical_Thickness_Combined group's
   #     valid_min/valid_max. A PSF-weighted mean of in-range cells stays in that range; the reader

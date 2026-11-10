@@ -114,8 +114,9 @@ def _cell_centers(edges: np.ndarray, first_edge: float, last_edge: float, axis_n
     return edges + direction * 0.5 * cell
 
 
-# The products that carry the VIIRS BRDF variables: every FMATCH product.
-_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+# The products that carry the VIIRS BRDF variables: the imager products. The CAM products carry
+# none, since no consumer of FMATCH-CAM or FMATCH-CAM-CAMTIME reads BRDF.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
 
 class VIIRSBRDFReader(StaticReader):
@@ -134,7 +135,8 @@ class VIIRSBRDFReader(StaticReader):
         5.6 km (0.05° CMG grid spacing at equator).
     VARIABLES : tuple[VariableSpec, ...]
         Nine BRDF kernel parameter variables (3 bands × 3 kernel weights),
-        all float32 with ``weighted_mean`` aggregation.
+        all float32 with ``weighted_mean`` aggregation, carried by FMATCH-IMAGER
+        and FMATCH-IMAGER-CAMTIME.
 
     Parameters
     ----------

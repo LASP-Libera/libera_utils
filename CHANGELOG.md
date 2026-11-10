@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** FMATCH-CAM and FMATCH-CAM-CAMTIME no longer carry the ERA5 10 m winds (`ERA5_Surface_Wind_U10`, `ERA5_Surface_Wind_V10`) or the nine VIIRS BRDF kernel weights (`VIIRS_BRDF_<Band>_<Param>`), or their standard deviations, since no consumer of the CAM products reads them. The `ERA5_Surface` and `VIIRS_BRDF` readers feed FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME only, so they leave the CAM entries of `FMATCH_MODE_READERS`, and `build_sources` for a CAM mode rejects their `source_file_paths` keys.
+
 ## [5.24.0] - 2026-11-10
 
 ### Added
