@@ -11,7 +11,7 @@ Import the readers subpackage to trigger registration of all built-in readers::
     import libera_utils.footprint_matching.readers  # registers all built-in readers
     from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 
-    cls = ReaderRegistry.get("igbp")
+    cls = ReaderRegistry.get("IGBP")
     reader = cls([Path("MCD12Q1.A2023001.h09v05.061.hdf")])
 
 See Also
@@ -95,8 +95,8 @@ class ReaderRegistry:
     --------
     >>> import libera_utils.footprint_matching.readers  # triggers registration
     >>> ReaderRegistry.list_readers()
-    ['cldpix', 'era5_pressure', 'era5_surface', 'flashflux', 'igbp', 'nise', 'viirs_aod', 'viirs_brdf', 'viirs_cldprop_d3']
-    >>> ReaderRegistry.get("igbp").__name__
+    ['CLDPIX', 'ERA5_Pressure', 'ERA5_Surface', 'FLASHFlux', 'IGBP', 'NISE', 'VIIRS_AOD', 'VIIRS_BRDF', 'VIIRS_CLDPROP_D3']
+    >>> ReaderRegistry.get("IGBP").__name__
     'IGBPReader'
     """
 
@@ -112,7 +112,7 @@ class ReaderRegistry:
         Parameters
         ----------
         name : str
-            Registry key (e.g., ``"igbp"``).
+            Registry key (e.g., ``"IGBP"``).
 
         Returns
         -------
@@ -166,12 +166,12 @@ class ReaderRegistry:
         >>> from libera_utils.footprint_matching.types import OperationalMode
         >>> import libera_utils.footprint_matching.readers  # triggers registration
         >>> sorted(ReaderRegistry.get_readers_for_mode(OperationalMode.CAM))
-        ['era5_surface', 'igbp', 'nise', 'viirs_brdf', 'viirs_cldprop_d3']
+        ['ERA5_Surface', 'IGBP', 'NISE', 'VIIRS_BRDF', 'VIIRS_CLDPROP_D3']
         >>> imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
-        >>> 'cldpix' in imager and 'era5_pressure' in imager  # RBSP alongside ERA5
+        >>> 'CLDPIX' in imager and 'ERA5_Pressure' in imager  # RBSP alongside ERA5
         True
         >>> camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME)
-        >>> 'era5_pressure' in camtime  # pressure-level ERA5 is radiometer-timescale only
+        >>> 'ERA5_Pressure' in camtime  # pressure-level ERA5 is radiometer-timescale only
         False
         """
         return {key: ReaderRegistry._registry[key] for key in FMATCH_MODE_READERS[mode]}

@@ -7,11 +7,9 @@ is the guard that the SCENE-ID product definitions can be written under ``strict
 """
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import internal_variable_name, product_variable_name
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
@@ -77,16 +75,16 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-        # And the intermediate scene-property inputs specifically must be gone, under either spelling.
+        # And the intermediate scene-property inputs specifically must be gone.
         for leaked in ("surface_wind_u", "surface_wind_v", "optical_depth_lower", "cloud_phase_lower"):
             assert leaked not in reopened.variables
-            assert product_variable_name(leaked) not in reopened.variables
 
-    def test_written_product_uses_product_names(self, scene_id_test_data_path, tmp_path):
-        """Declared variables are written under their product names, never under FootprintData's internal names.
+    def test_written_product_has_every_declared_variable(self, scene_id_test_data_path, tmp_path):
+        """Every variable the definition declares is written, under its declared name.
 
-        FootprintData names its columns in snake_case (``scene_id_erbe``, ``surface_type``); the writer renames each
-        declared one to its product name (``Scene_ID_ERBE``, ``Surface_Type``).
+        FootprintData names the variables the product carries as the definition does (``Scene_ID_ERBE``,
+        ``Surface_Type``, ``Scene_Bin_ERBE_Cloud_Fraction_Min``), so a declared name the pipeline spells differently
+        would be dropped from the product rather than written.
         """
         input_path = scene_id_test_data_path / SSF_INPUT_NAME
         footprint_data = run_scene_identification_cam(input_path)
@@ -95,10 +93,6 @@ class TestSceneIdCamWrite:
         definition = LiberaDataProductDefinition.from_yaml(PRODUCT_DEFINITION_PATH)
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         assert set(definition.variables) <= set(reopened.variables)
-        for name in definition.variables:
-            internal = internal_variable_name(name)
-            if internal != name:
-                assert internal not in reopened.variables
 
 
 class TestToTimeProduct:
@@ -130,8 +124,8 @@ def _synthetic_camtime_footprint_data() -> FootprintData:
     product-out end-to-end run) once the ``FootprintData.from_fmatch_cam_camtime`` reader is implemented.
 
     Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
-    pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF
-    bbox passthroughs, and the four inclusive ``camera_pixel_{x,y}_{min,max}`` pixel-block bounds.
+    pipeline derives ``Surface_Type``/``Cloud_Fraction`` from, the viewing angles, the boresight geolocation + PSF
+    bbox passthroughs, and the four inclusive ``Camera_Pixel_{X,Y}_{Min,Max}`` pixel-block bounds.
 
     The grid is two images (two distinct ``CAMERA_TIME`` values) each segmented into two subsections (``PSEUDOFOOTPRINT``
     of size 2). The pixel blocks deliberately OVERLAP within an image (e.g. x = 0..2000 and 1000..2047) -- exactly
@@ -144,24 +138,24 @@ def _synthetic_camtime_footprint_data() -> FootprintData:
     longitude = np.array([[100.0, -50.0], [170.0, -179.0]], dtype=np.float32)
     dataset = xr.Dataset(
         {
-            "igbp_surface_type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
-            # clear_area is an intermediate the pipeline inverts into cloud_fraction; it is dropped before writing.
+            "IGBP_Surface_Type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
+            # clear_area is an intermediate the pipeline inverts into Cloud_Fraction; it is dropped before writing.
             "clear_area": (grid_dims, np.array([[100.0, 40.0], [0.0, 75.0]], dtype=np.float32)),
-            "solar_zenith_angle": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
-            "viewing_zenith_angle": (grid_dims, np.array([[5.0, 20.0], [60.0, 15.0]], dtype=np.float32)),
-            "relative_azimuth_angle": (grid_dims, np.array([[30.0, 120.0], [200.0, 300.0]], dtype=np.float32)),
-            "latitude": (grid_dims, latitude),
-            "longitude": (grid_dims, longitude),
-            "altitude": (grid_dims, np.array([[0.0, 100.0], [500.0, 1200.0]], dtype=np.float32)),
-            "psf_bbox_lat_min": (grid_dims, (latitude - 1.0).astype(np.float32)),
-            "psf_bbox_lat_max": (grid_dims, (latitude + 1.0).astype(np.float32)),
-            "psf_bbox_lon_min": (grid_dims, (longitude - 1.0).astype(np.float32)),
-            "psf_bbox_lon_max": (grid_dims, (longitude + 1.0).astype(np.float32)),
+            "Solar_Zenith_Surface": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
+            "Viewing_Zenith_Surface": (grid_dims, np.array([[5.0, 20.0], [60.0, 15.0]], dtype=np.float32)),
+            "Relative_Azimuth_Surface": (grid_dims, np.array([[30.0, 120.0], [200.0, 300.0]], dtype=np.float32)),
+            "Latitude": (grid_dims, latitude),
+            "Longitude": (grid_dims, longitude),
+            "Altitude": (grid_dims, np.array([[0.0, 100.0], [500.0, 1200.0]], dtype=np.float32)),
+            "PSF_Bbox_Lat_Min": (grid_dims, (latitude - 1.0).astype(np.float32)),
+            "PSF_Bbox_Lat_Max": (grid_dims, (latitude + 1.0).astype(np.float32)),
+            "PSF_Bbox_Lon_Min": (grid_dims, (longitude - 1.0).astype(np.float32)),
+            "PSF_Bbox_Lon_Max": (grid_dims, (longitude + 1.0).astype(np.float32)),
             # Inclusive pixel-block bounds; blocks overlap within each image (x = 0..2000 overlaps 1000..2047).
-            "camera_pixel_x_min": (grid_dims, np.array([[0, 1000], [0, 1000]], dtype=np.int32)),
-            "camera_pixel_x_max": (grid_dims, np.array([[2000, 2047], [1024, 2047]], dtype=np.int32)),
-            "camera_pixel_y_min": (grid_dims, np.array([[0, 0], [0, 1000]], dtype=np.int32)),
-            "camera_pixel_y_max": (grid_dims, np.array([[2047, 2047], [1024, 2047]], dtype=np.int32)),
+            "Camera_Pixel_X_Min": (grid_dims, np.array([[0, 1000], [0, 1000]], dtype=np.int32)),
+            "Camera_Pixel_X_Max": (grid_dims, np.array([[2000, 2047], [1024, 2047]], dtype=np.int32)),
+            "Camera_Pixel_Y_Min": (grid_dims, np.array([[0, 0], [0, 1000]], dtype=np.int32)),
+            "Camera_Pixel_Y_Max": (grid_dims, np.array([[2047, 2047], [1024, 2047]], dtype=np.int32)),
             "CAMERA_TIME": ("CAMERA_TIME", camera_time),
         }
     )
@@ -200,15 +194,3 @@ class TestSceneIdCamCamtimeWrite:
         # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
         assert bool(np.all(reopened["Camera_Pixel_X_Max"].values >= reopened["Camera_Pixel_X_Min"].values))
         assert bool(np.all(reopened["Camera_Pixel_Y_Max"].values >= reopened["Camera_Pixel_Y_Min"].values))
-
-    def test_variable_under_both_names_raises(self, tmp_path):
-        """A declared variable held under both its internal and its product name is refused, not overwritten.
-
-        Renaming ``cloud_fraction`` onto an existing ``Cloud_Fraction`` would silently pick one of two arrays.
-        """
-        footprint_data = _synthetic_camtime_footprint_data()
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
-        footprint_data._data["Cloud_Fraction"] = footprint_data._data["cloud_fraction"]
-
-        with pytest.raises(ValueError, match="holds both 'cloud_fraction' and its product name 'Cloud_Fraction'"):
-            create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)

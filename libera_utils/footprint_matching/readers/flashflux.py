@@ -162,7 +162,7 @@ _FLASHFLUX_BASE_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.I
 # The base FLASHFlux fields (see module docstring).
 _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
     _FlashFluxField(
-        "aerosol_optical_depth",
+        "Aerosol_Optical_Depth",
         "Auxillary_Properties",
         "aerosol_optical_depth",
         "weighted_mean",
@@ -172,7 +172,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "clear_coverage",
+        "Clear_Coverage",
         "Clear_Footprint_Area",
         "clear_coverage",
         "weighted_mean",
@@ -182,7 +182,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "cloud_optical_depth_lower",
+        "Cloud_Optical_Depth_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_mean",
@@ -194,10 +194,10 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
     # Effective cloud particle radius separated by thermodynamic phase (μm).
     # FLASHFlux stores water and ice radii in separate 2-D (Footprints, LowerUpper)
     # variables; both read the lower cloud layer (_CLOUD_LAYER_LOWER_INDEX),
-    # consistent with cloud_optical_depth_lower. The combined (blended) radius is
-    # not available in FLASHFlux — use cldpix.cloud_particle_radius for that.
+    # consistent with Cloud_Optical_Depth_Lower. The combined (blended) radius is
+    # not available in FLASHFlux — use CLDPIX_Cloud_Particle_Radius for that.
     _FlashFluxField(
-        "cloud_water_particle_radius_lower",
+        "Cloud_Water_Particle_Radius_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
@@ -207,7 +207,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "cloud_ice_particle_radius_lower",
+        "Cloud_Ice_Particle_Radius_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
@@ -217,7 +217,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "cloud_classification",
+        "Cloud_Classification",
         "Scene_Type",
         "cloud_classification",
         "weighted_mode",
@@ -227,7 +227,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "shortwave_adm_type",
+        "Shortwave_ADM_Type",
         "Scene_Type",
         "shortwave_adm_type",
         "weighted_mode",
@@ -237,7 +237,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FLASHFLUX_BASE_MODES,
     ),
     _FlashFluxField(
-        "longwave_adm_type",
+        "Longwave_ADM_Type",
         "Scene_Type",
         "longwave_adm_type",
         "weighted_mode",
@@ -256,8 +256,8 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
 # *only* -- not IMAGER-CAMTIME, which carries the base FLASHFlux fields.
 #
 # Multi-valued source fields are flattened into one 1-D product variable per member:
-# LowerUpper (2) -> _lower/_upper, AeroTypePct (7) -> _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
-# spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _standard_deviation
+# LowerUpper (2) -> _Lower/_Upper, AeroTypePct (7) -> _TypeN. Genuinely 1-D fields (Surface_Albedo, TOA_Incoming_Solar_Radiation) stay a single
+# spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _Standard_Deviation
 # companion in product_variable_specs().
 _FLASHFLUX_IMAGER_ONLY_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
 
@@ -266,10 +266,10 @@ _SCALAR_MEMBER: tuple[tuple[str, int | None], ...] = (("", None),)
 # Both cloud layers, and the upper layer alone (for fields whose lower layer is already
 # carried by a base spec above).
 _BOTH_LAYERS: tuple[tuple[str, int | None], ...] = (
-    ("lower", _CLOUD_LAYER_LOWER_INDEX),
-    ("upper", _CLOUD_LAYER_UPPER_INDEX),
+    ("Lower", _CLOUD_LAYER_LOWER_INDEX),
+    ("Upper", _CLOUD_LAYER_UPPER_INDEX),
 )
-_UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("upper", _CLOUD_LAYER_UPPER_INDEX),)
+_UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("Upper", _CLOUD_LAYER_UPPER_INDEX),)
 
 # (out_base, group, var, aggregation, dimensions, members). ``members`` is a tuple of
 # (name_suffix, second_axis_index) pairs; the flattener emits one _FlashFluxField per member.
@@ -279,7 +279,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
     # --- Cloud layer fields (Cloudy_Imager_Footprint_Layer), (Footprints, LowerUpper) ---
     # Five layered fields no base spec carries: both lower and upper layers.
     (
-        "layer_coverage",
+        "Layer_Coverage",
         "Cloudy_Imager_Footprint_Layer",
         "layers_coverages",
         "weighted_mean",
@@ -287,7 +287,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     (
-        "cloud_coverage_multilayer",
+        "Cloud_Coverage_Multilayer",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_coverage_multilayer",
         "weighted_mean",
@@ -295,7 +295,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     (
-        "cloud_top_pressure",
+        "Cloud_Top_Pressure",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_top_pressure_mean",
         "weighted_mean",
@@ -303,7 +303,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     (
-        "cloud_base_pressure",
+        "Cloud_Base_Pressure",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_base_pressure_mean",
         "weighted_mean",
@@ -311,7 +311,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     (
-        "cloud_particle_phase_37um",
+        "Cloud_Particle_Phase_37um",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_particle_phase_37um_mean",
         "weighted_mean",
@@ -319,11 +319,11 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     # Three fields whose LOWER layer is already carried by the base specs above
-    # (cloud_optical_depth_lower / cloud_water_particle_radius_lower /
-    # cloud_ice_particle_radius_lower); add only the UPPER layer here to avoid a
+    # (Cloud_Optical_Depth_Lower / Cloud_Water_Particle_Radius_Lower /
+    # Cloud_Ice_Particle_Radius_Lower); add only the UPPER layer here to avoid a
     # redundant lower duplicate.
     (
-        "cloud_optical_depth",
+        "Cloud_Optical_Depth",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_mean",
@@ -331,7 +331,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _UPPER_LAYER_ONLY,
     ),
     (
-        "cloud_water_particle_radius",
+        "Cloud_Water_Particle_Radius",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
@@ -339,7 +339,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _UPPER_LAYER_ONLY,
     ),
     (
-        "cloud_ice_particle_radius",
+        "Cloud_Ice_Particle_Radius",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
@@ -347,19 +347,19 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _UPPER_LAYER_ONLY,
     ),
     # --- Aerosol fields ---
-    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
+    ("Match_AOT", "Assimilated_Aerosol_Properties", "match_aot", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
     # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
-    # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
+    # not recorded in the file; flattened to placeholder _Type0.._Type6 suffixes.
     (
-        "aerosol_type_percentage",
+        "Aerosol_Type_Percentage",
         "Assimilated_Aerosol_Properties",
         "aerosol_type_percentage",
         "weighted_mean",
         _AERO_TYPE_DIMS,
-        tuple((f"type{i}", i) for i in range(7)),
+        tuple((f"Type{i}", i) for i in range(7)),
     ),
     (
-        "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
+        "Imager_Dark_Target_Land_055um_Corrected_Aerosol_Optical_Depth",
         "Imager_Land_Aerosols",
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
         "weighted_mean",
@@ -367,7 +367,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _SCALAR_MEMBER,
     ),
     (
-        "imager_deep_blue_ocean_055um_aerosol_optical_depth",
+        "Imager_Deep_Blue_Ocean_055um_Aerosol_Optical_Depth",
         "Imager_Ocean_Aerosols",
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
         "weighted_mean",
@@ -377,11 +377,11 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
     # --- Surface field (1-D, footprint only) ---
     # Auxillary_Properties/surface_albedo is a single 1-D (Footprints,) broadband value
     # (file long_name "Surface Albedo"; a fraction — no units attr).
-    ("surface_albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
+    ("Surface_Albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
     # --- TOA flux field (1-D, footprint only) ---
     # Observed_TOA_Fluxes/toa_incoming_solar_radiation (file units "W/m^2").
     (
-        "toa_incoming_solar_radiation",
+        "TOA_Incoming_Solar_Radiation",
         "Observed_TOA_Fluxes",
         "toa_incoming_solar_radiation",
         "weighted_mean",
@@ -477,7 +477,7 @@ class FLASHFluxReader(PassReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"flashflux"``.
+        Registry key ``"FLASHFlux"``.
     RESOLUTION_KM : float
         ~20 km (CERES footprint scale at nadir), the fallback when a granule's own
         footprint spacing cannot be measured.
@@ -490,7 +490,7 @@ class FLASHFluxReader(PassReader):
         The CERES FLASHFlux NetCDF4 granule(s) covering the processing period.
     """
 
-    READER_KEY: str = "flashflux"
+    READER_KEY: str = "FLASHFlux"
     # The FLASHFlux product read here is the NOAA-20 stream (FM6, VIIRS imager).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
     # a second reader.

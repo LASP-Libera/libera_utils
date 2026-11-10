@@ -32,11 +32,11 @@ _T = np.datetime64("2026-01-01T00:00:00", "ns")
 # (axis 0 of the returned data array). Kept here so the tests assert the
 # ordering contract independently of the reader's internal constants.
 _EXPECTED_VARIABLES = (
-    "sea_ice_concentration",
-    "snow_free_land",
-    "permanent_ice",
-    "snow_on_land",
-    "open_ocean",
+    "Sea_Ice_Concentration",
+    "Snow_Free_Land",
+    "Permanent_Ice",
+    "Snow_On_Land",
+    "Open_Ocean",
 )
 
 
@@ -167,7 +167,7 @@ class TestNISEReaderSamples:
         reader = _make_reader(tmp_path, north=_filled(50))
         samples = reader.samples_in(_whole_grid_box(reader), _T)
         assert isinstance(samples, SampleSet)
-        assert samples.source == "nise"
+        assert samples.source == "NISE"
         assert samples.timestamp_source is None
         assert samples.values.dtype == np.float32
         assert samples.values.shape == (len(NISEReader.VARIABLES), _TEST_ROWS * _TEST_COLS)
@@ -328,7 +328,7 @@ class TestNISEReaderBothHemispheres:
         reader = NISEReader([_granule(tmp_path, north=_filled(255), south=_filled(50))])
         values = reader.samples_in(_whole_grid_box(reader), _T).values
         assert values.shape[1] == _TEST_ROWS * _TEST_COLS
-        assert np.allclose(values[_layer_index("sea_ice_concentration")], 0.5, atol=1e-5)
+        assert np.allclose(values[_layer_index("Sea_Ice_Concentration")], 0.5, atol=1e-5)
 
     @pytest.mark.usefixtures("north_test_grid")
     def test_off_earth_code_254_is_dropped_not_zeroed(self, tmp_path):
@@ -421,11 +421,11 @@ class TestNISEReaderRealSubset:
         """
         layer = {name: _layer_index(name) for name in _EXPECTED_VARIABLES}
         south_pole = reader.samples_in(BoundingBox(-90.0, -89.5, -180.0, 180.0), self._TIME).values
-        assert np.all(south_pole[layer["permanent_ice"]] == 1.0)
+        assert np.all(south_pole[layer["Permanent_Ice"]] == 1.0)
         arctic = reader.samples_in(BoundingBox(84.9, 85.1, -0.3, 0.3), self._TIME).values
-        assert np.allclose(arctic[layer["sea_ice_concentration"]], 0.93)
+        assert np.allclose(arctic[layer["Sea_Ice_Concentration"]], 0.93)
         boulder = reader.samples_in(BoundingBox(39.9, 40.1, -105.3, -104.7), self._TIME).values
-        assert np.all(boulder[layer["snow_free_land"]] == 1.0)
+        assert np.all(boulder[layer["Snow_Free_Land"]] == 1.0)
 
     def test_suspect_ice_at_the_north_pole_is_missing_in_every_layer(self, reader):
         """On the real granule, the North Pole pixels are served, but as NaN in every layer.

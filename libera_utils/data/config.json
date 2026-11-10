@@ -54,9 +54,9 @@
     "11": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/jpss_sc_pos_l1a.yml"
   },
   "TEST_KEY": -999,
-  "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/trmm.csv",
-  "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv",
-  "UNFILTERING_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/unfiltering.csv",
+  "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/TRMM.csv",
+  "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/ERBE.csv",
+  "UNFILTERING_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/Unfiltering.csv",
   "SCENE_ID_CAM_PRODUCT_DEFINITION": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/scene_id_cam.yml",
   "SCENE_ID_CAM_CAMTIME_PRODUCT_DEFINITION": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/scene_id_cam_camtime.yml"
 }

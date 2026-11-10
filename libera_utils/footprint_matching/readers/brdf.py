@@ -69,15 +69,15 @@ _BRDF_GRID_NAME: str = "VIIRS_CMG_BRDF"
 # Each output variable and the HDF5 field it reads from the grid's Data Fields group.
 # This order is VARIABLES order and axis 0 of the reader's data array.
 _BRDF_FIELDS: tuple[tuple[str, str], ...] = (
-    ("shortwave_fiso", "BRDF_Albedo_Parameter1_shortwave"),
-    ("shortwave_fvol", "BRDF_Albedo_Parameter2_shortwave"),
-    ("shortwave_fgeo", "BRDF_Albedo_Parameter3_shortwave"),
-    ("vis_fiso", "BRDF_Albedo_Parameter1_vis"),
-    ("vis_fvol", "BRDF_Albedo_Parameter2_vis"),
-    ("vis_fgeo", "BRDF_Albedo_Parameter3_vis"),
-    ("nir_fiso", "BRDF_Albedo_Parameter1_nir"),
-    ("nir_fvol", "BRDF_Albedo_Parameter2_nir"),
-    ("nir_fgeo", "BRDF_Albedo_Parameter3_nir"),
+    ("Shortwave_Fiso", "BRDF_Albedo_Parameter1_shortwave"),
+    ("Shortwave_Fvol", "BRDF_Albedo_Parameter2_shortwave"),
+    ("Shortwave_Fgeo", "BRDF_Albedo_Parameter3_shortwave"),
+    ("VIS_Fiso", "BRDF_Albedo_Parameter1_vis"),
+    ("VIS_Fvol", "BRDF_Albedo_Parameter2_vis"),
+    ("VIS_Fgeo", "BRDF_Albedo_Parameter3_vis"),
+    ("NIR_Fiso", "BRDF_Albedo_Parameter1_nir"),
+    ("NIR_Fvol", "BRDF_Albedo_Parameter2_nir"),
+    ("NIR_Fgeo", "BRDF_Albedo_Parameter3_nir"),
 )
 
 # The per-field attributes a VJ143C1 BRDF field carries and the read applies.
@@ -129,7 +129,7 @@ class VIIRSBRDFReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"viirs_brdf"``.
+        Registry key ``"VIIRS_BRDF"``.
     RESOLUTION_KM : float
         5.6 km (0.05° CMG grid spacing at equator).
     VARIABLES : tuple[VariableSpec, ...]
@@ -142,7 +142,7 @@ class VIIRSBRDFReader(StaticReader):
         The one VJ143C1 HDF5 (HDF-EOS5) file for the processing day.
     """
 
-    READER_KEY: str = "viirs_brdf"
+    READER_KEY: str = "VIIRS_BRDF"
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.

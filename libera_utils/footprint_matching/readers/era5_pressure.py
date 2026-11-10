@@ -18,7 +18,7 @@ Read planes and product variables
 ---------------------------------
 A reader's samples carry one value row per ``VariableSpec``, and each row is PSF-weighted
 and aggregated on its own. Each (variable, pressure level) pair is therefore its own
-spec -- e.g. ``temperature_500hPa`` -- so every level is aggregated as the 2-D field it
+spec -- e.g. ``Temperature_500hPa`` -- so every level is aggregated as the 2-D field it
 is. In the product, ``PRODUCT_STACKS`` collects each variable's levels back into one
 variable on ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` -- e.g. ``era5_pressure_temperature``
 -- with the ``PRESSURE_LEVEL`` coordinate taken from ``_ERA5_PRESSURE_LEVELS``. That
@@ -106,11 +106,11 @@ _ERA5_PRESSURE_LEVELS: tuple[int, ...] = (
 # ascending level) to produce one spec per (variable, level) pair; that combined
 # order defines axis 0 of the reader's data array.
 _ERA5_PRESSURE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
-    ("temperature", "t"),
-    ("geopotential", "z"),
-    ("ozone_mass_mixing_ratio", "o3"),
-    ("specific_humidity", "q"),
-    ("relative_humidity", "r"),
+    ("Temperature", "t"),
+    ("Geopotential", "z"),
+    ("Ozone_Mass_Mixing_Ratio", "o3"),
+    ("Specific_Humidity", "q"),
+    ("Relative_Humidity", "r"),
 )
 
 # Name of the vertical coordinate in CDS pressure-level files (hPa values).
@@ -127,8 +127,8 @@ _PRESSURE_LEVEL_DIMENSION: str = "PRESSURE_LEVEL"
 def _pressure_level_layers() -> Iterator[tuple[str, str, int]]:
     """Yield ``(spec name, ERA5 variable name, level hPa)`` for every reader output layer.
 
-    Variable-major, levels ascending (``temperature_1hPa`` ... ``temperature_1000hPa``,
-    then ``geopotential_1hPa`` ...). This is VARIABLES order and the plane order
+    Variable-major, levels ascending (``Temperature_1hPa`` ... ``Temperature_1000hPa``,
+    then ``Geopotential_1hPa`` ...). This is VARIABLES order and the plane order
     ``ERA5PressureLevelReader._read_step_layers`` writes.
     """
     for base_name, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
@@ -140,7 +140,7 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
     """Generate one VariableSpec per (variable, pressure level) pair, in :func:`_pressure_level_layers` order.
 
     Every field is continuous (weighted-mean aggregated), so each also gains an
-    automatic ``_standard_deviation`` companion in ``product_variable_specs()``.
+    automatic ``_Standard_Deviation`` companion in ``product_variable_specs()``.
     """
     return tuple(
         VariableSpec(
@@ -179,7 +179,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"era5_pressure"``.
+        Registry key ``"ERA5_Pressure"``.
     RESOLUTION_KM : float
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
@@ -195,7 +195,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
         level in ``_ERA5_PRESSURE_LEVELS`` and an hourly time axis.
     """
 
-    READER_KEY: str = "era5_pressure"
+    READER_KEY: str = "ERA5_Pressure"
     # Same producing-center token as the single-level reader so the long_name
     # provenance tag stays uniform: "Air temperature on ERA5 pressure levels (ECMWF)" etc.
     # Product variable names are era5_pressure_temperature etc. (no instrument token).

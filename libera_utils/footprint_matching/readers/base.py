@@ -260,22 +260,23 @@ class AncillaryReader(abc.ABC):
     Class-Level Attributes (required on every concrete subclass)
     -------------------------------------------------------------
     READER_KEY : str
-        Unique string key used to register the reader in ``ReaderRegistry``.
-        Examples: ``"igbp"``, ``"nise"``, ``"era5_surface"``, ``"viirs_aod"``.
+        Unique string key used to register the reader in ``ReaderRegistry``, and the
+        prefix of its product variable names, spelled as in the product (Camel_Case,
+        acronyms in capitals). Examples: ``"IGBP"``, ``"NISE"``, ``"ERA5_Surface"``,
+        ``"VIIRS_AOD"``.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
-        for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable's
-        internal name is ``f"{READER_KEY}_{spec.name}"`` and its product name is
-        :func:`~libera_utils.io.product_variable_names.product_variable_name` of that;
-        the instrument is appended to the product-definition ``long_name`` as
-        ``"... ({INSTRUMENT})"``.
+        for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
+        *name* is ``f"{READER_KEY}_{spec.name}"``; the instrument is appended to the
+        product-definition ``long_name`` as ``"... ({INSTRUMENT})"``.
     RESOLUTION_KM : float
         Native sample spacing of the source in km. The weigher sizes its coverage
         measure from it, unless the reader measures the spacing on the granule itself
         (``PointSamples.spacing_km``), which then takes precedence.
     VARIABLES : tuple[VariableSpec, ...]
-        Ordered tuple of the variables this reader *reads from its source*. Axis 0 of
-        every ``values`` array follows this order.
+        Ordered tuple of the variables this reader *reads from its source*, each named
+        as in the product without the ``READER_KEY`` prefix (e.g. ``"Sea_Ice_Concentration"``).
+        Axis 0 of every ``values`` array follows this order.
     TIME_MATCH : TimeMatch
         The time-selection policy (see the module docstring).
     PASS_WINDOW : np.timedelta64 or None
@@ -400,14 +401,13 @@ class AncillaryReader(abc.ABC):
     def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
         """Return every variable this reader contributes to the product definition.
 
-        This is the full set of *output* variables -- what appears, under each
-        name's :func:`~libera_utils.io.product_variable_names.product_variable_name`,
-        in the FMATCH product definition YAMLs and what the product/test cross-check
-        is built against. It is distinct from ``VARIABLES`` (the smaller set actually read
-        from the source file) and is composed of, in order:
+        This is the full set of *output* variables -- what appears, prefixed with
+        ``<READER_KEY>_``, in the FMATCH product definition YAMLs and what the
+        product/test cross-check is built against. It is distinct from ``VARIABLES``
+        (the smaller set actually read from the source file) and is composed of, in order:
 
         1. each read variable in ``VARIABLES``;
-        2. a ``<name>_standard_deviation`` companion for every *continuous*
+        2. a ``<name>_Standard_Deviation`` companion for every *continuous*
            (mean-aggregated) read variable, inserted right after its parent by
            :func:`~libera_utils.footprint_matching.types.with_standard_deviation_companions`;
         3. any reader-specific derived outputs declared in
@@ -419,7 +419,7 @@ class AncillaryReader(abc.ABC):
     def product_stacks(cls) -> tuple[ProductStack, ...]:
         """Return every stacked product variable this reader contributes.
 
-        Each stack in ``PRODUCT_STACKS``, followed by a ``<name>_standard_deviation``
+        Each stack in ``PRODUCT_STACKS``, followed by a ``<name>_Standard_Deviation``
         stack of its members' companions when its members are continuous. The stacked
         members leave the product as separate variables; every other spec in
         ``product_variable_specs`` stays a 1-D product variable.

@@ -103,7 +103,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def valid_scene_csv(self):
         """Create a temporary CSV file with valid scene definitions."""
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -119,7 +119,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def overlapping_scene_csv(self):
         """Create a temporary CSV file with overlapping scene definitions."""
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
     1,0.0,60.0,0.0,10.0
     2,40.0,100.0,0.0,10.0
     """
@@ -133,7 +133,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def gap_scene_csv(self):
         """Create a temporary CSV file with gaps in coverage."""
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
     1,0.0,40.0,0.0,10.0
     2,60.0,100.0,0.0,10.0
     """
@@ -147,7 +147,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def touching_boundaries_csv(self):
         """Create CSV where scenes touch exactly at boundaries (no overlap)."""
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -163,39 +163,39 @@ class TestSceneDefinition:
     def test_point_in_scene_inside(self):
         """Test point inside scene bounds."""
 
-        scene = Scene(1, {"cloud_fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
-        point = {"cloud_fraction": 25.0, "optical_depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 25.0, "optical_depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["cloud_fraction", "optical_depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "optical_depth"])
 
         assert result is True
 
     def test_point_in_scene_outside(self):
         """Test point outside scene bounds."""
 
-        scene = Scene(1, {"cloud_fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
-        point = {"cloud_fraction": 75.0, "optical_depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 75.0, "optical_depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["cloud_fraction", "optical_depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "optical_depth"])
 
         assert result is False
 
     def test_point_in_scene_on_min_boundary(self):
         """Test point on minimum boundary (inclusive)."""
 
-        scene = Scene(1, {"cloud_fraction": (50.0, 100.0)})
-        point = {"cloud_fraction": 50.0}
+        scene = Scene(1, {"Cloud_Fraction": (50.0, 100.0)})
+        point = {"Cloud_Fraction": 50.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["cloud_fraction"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction"])
 
         assert result is True
 
     def test_point_in_scene_on_max_boundary(self):
         """Test point on maximum boundary (exclusive)."""
-        scene = Scene(1, {"cloud_fraction": (0.0, 50.0)})
-        point = {"cloud_fraction": 50.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0)})
+        point = {"Cloud_Fraction": 50.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["cloud_fraction"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction"])
 
         assert result is False
 
@@ -242,9 +242,9 @@ class TestViewingGeometryClassificationVariables:
     # The full physical range placeholder bins, shared by every scene (degrees). These match the CERES SSF
     # valid_range attributes and the values written into the scene definition CSVs.
     GEOMETRY_BINS = {
-        "solar_zenith_angle": (0.0, 180.0),
-        "viewing_zenith_angle": (0.0, 90.0),
-        "relative_azimuth_angle": (0.0, 360.0),
+        "Solar_Zenith_Surface": (0.0, 180.0),
+        "Viewing_Zenith_Surface": (0.0, 90.0),
+        "Relative_Azimuth_Surface": (0.0, 360.0),
     }
 
     @pytest.mark.parametrize(
@@ -274,8 +274,8 @@ class TestViewingGeometryClassificationVariables:
         bins = scene_def._compute_property_bins(scene_ids)
 
         for variable, (bin_min, bin_max) in self.GEOMETRY_BINS.items():
-            min_name = f"scene_bin_{scene_def.type}_{variable}_min"
-            max_name = f"scene_bin_{scene_def.type}_{variable}_max"
+            min_name = f"Scene_Bin_{scene_def.type}_{variable}_Min"
+            max_name = f"Scene_Bin_{scene_def.type}_{variable}_Max"
             # Matched footprint gets the placeholder bounds; unmatched footprint gets NaN.
             np.testing.assert_array_equal(bins[min_name], [bin_min, np.nan])
             np.testing.assert_array_equal(bins[max_name], [bin_max, np.nan])
@@ -288,7 +288,7 @@ class TestPropertyBins:
     def scene_definition(self, tmp_path):
         """Create a fully-covering 4-scene definition over two variables."""
         csv_content = (
-            "scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max\n"
+            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max\n"
             "1,0.0,50.0,0.0,10.0\n"
             "2,50.0,100.0,0.0,10.0\n"
             "3,0.0,50.0,10.0,20.0\n"
@@ -301,7 +301,7 @@ class TestPropertyBins:
     def test_get_bin_bounds_for_scene_id(self, scene_definition):
         """Test looking up bin bounds for a known scene ID."""
         bounds = scene_definition.get_bin_bounds_for_scene_id(4)
-        assert bounds == {"cloud_fraction": (50.0, 100.0), "optical_depth": (10.0, 20.0)}
+        assert bounds == {"Cloud_Fraction": (50.0, 100.0), "optical_depth": (10.0, 20.0)}
 
     def test_get_bin_bounds_for_unknown_scene_id_raises(self, scene_definition):
         """Test that an unknown scene ID (including 0) raises KeyError."""
@@ -313,15 +313,15 @@ class TestPropertyBins:
         scene_ids = np.array([1, 4, 0])
         bins = scene_definition._compute_property_bins(scene_ids)
 
-        np.testing.assert_array_equal(bins["scene_bin_bins_cloud_fraction_min"], [0.0, 50.0, np.nan])
-        np.testing.assert_array_equal(bins["scene_bin_bins_cloud_fraction_max"], [50.0, 100.0, np.nan])
-        np.testing.assert_array_equal(bins["scene_bin_bins_optical_depth_min"], [0.0, 10.0, np.nan])
-        np.testing.assert_array_equal(bins["scene_bin_bins_optical_depth_max"], [10.0, 20.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Min"], [0.0, 50.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Max"], [50.0, 100.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_optical_depth_Min"], [0.0, 10.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_optical_depth_Max"], [10.0, 20.0, np.nan])
 
     def test_compute_property_bins_unbounded_side_is_nan(self, tmp_path):
         """Test that an unbounded bin side is reported as NaN."""
         csv_content = (
-            "scene_id,cloud_fraction_min,cloud_fraction_max\n"
+            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max\n"
             "1,,50.0\n"  # unbounded minimum
             "2,50.0,\n"  # unbounded maximum
         )
@@ -330,15 +330,15 @@ class TestPropertyBins:
         scene_definition = SceneDefinition(csv_file)
 
         bins = scene_definition._compute_property_bins(np.array([1, 2]))
-        np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_min"], [np.nan, 50.0])
-        np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_max"], [50.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_unbounded_Cloud_Fraction_Min"], [np.nan, 50.0])
+        np.testing.assert_array_equal(bins["Scene_Bin_unbounded_Cloud_Fraction_Max"], [50.0, np.nan])
 
     def test_continuous_bin_bounds_are_float32(self, scene_definition):
         """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
         bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
         # cloud_fraction / optical_depth are continuous, so they use the default float32 storage dtype.
-        assert bins["scene_bin_bins_cloud_fraction_min"].dtype == np.float32
-        assert bins["scene_bin_bins_optical_depth_max"].dtype == np.float32
+        assert bins["Scene_Bin_bins_Cloud_Fraction_Min"].dtype == np.float32
+        assert bins["Scene_Bin_bins_optical_depth_Max"].dtype == np.float32
 
     def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
         """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
@@ -348,7 +348,7 @@ class TestPropertyBins:
         scene_id == 0 is the authoritative flag that the footprint was not classified.
         """
         # Two contiguous bins covering surface_type [0, 6) so the SceneDefinition coverage check passes.
-        csv_content = "scene_id,surface_type_min,surface_type_max\n1,0,3\n2,3,6\n"
+        csv_content = "scene_id,Surface_Type_Min,Surface_Type_Max\n1,0,3\n2,3,6\n"
         csv_file = tmp_path / "surface.csv"
         csv_file.write_text(csv_content)
         scene_definition = SceneDefinition(csv_file)
@@ -356,8 +356,8 @@ class TestPropertyBins:
         # Two matched footprints (scenes 1 and 2) and one unmatched footprint (scene_id 0).
         bins = scene_definition._compute_property_bins(np.array([1, 2, 0]))
 
-        min_bounds = bins["scene_bin_surface_surface_type_min"]
-        max_bounds = bins["scene_bin_surface_surface_type_max"]
+        min_bounds = bins["Scene_Bin_surface_Surface_Type_Min"]
+        max_bounds = bins["Scene_Bin_surface_Surface_Type_Max"]
 
         # Bounds are stored as compact unsigned bytes.
         assert min_bounds.dtype == np.uint8
@@ -377,7 +377,7 @@ class TestIdentifyAndUpdateGrid:
         own shape (derived from a reference classification variable rather than from all dataset dims), and the
         pixel-block bound passthroughs on the same grid must be carried through untouched.
         """
-        csv_content = "scene_id,cloud_fraction_min,cloud_fraction_max\n1,0.0,50.0\n2,50.0,100.0\n"
+        csv_content = "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max\n1,0.0,50.0\n2,50.0,100.0\n"
         csv_file = tmp_path / "single.csv"
         csv_file.write_text(csv_content)
         scene_definition = SceneDefinition(csv_file)
@@ -385,7 +385,7 @@ class TestIdentifyAndUpdateGrid:
         grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         data = xr.Dataset(
             {
-                "cloud_fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
+                "Cloud_Fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
                 # Pixel-block bound passthrough on the same grid; classification must carry it through untouched.
                 "camera_pixel_x_min": (grid_dims, np.array([[0, 6], [10, 3]], dtype=np.int32)),
             }
@@ -393,7 +393,7 @@ class TestIdentifyAndUpdateGrid:
 
         updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
 
-        scene_ids = updated["scene_id_single"]
+        scene_ids = updated["Scene_ID_single"]
         # Scene IDs stay 2-D on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid, one per subsection.
         assert scene_ids.dims == grid_dims
         np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
@@ -407,7 +407,7 @@ class TestSceneDefinitionValidation:
     def test_overlapping_scenes_detection(self, tmp_path):
         """Test detection of overlapping scene definitions."""
         # Create overlapping scene definitions
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
 1,0.0,60.0,0.0,10.0
 2,40.0,100.0,0.0,10.0
 3,0.0,50.0,5.0,15.0
@@ -423,7 +423,7 @@ class TestSceneDefinitionValidation:
     def test_gap_in_coverage_detection(self, tmp_path):
         """Test detection of gaps in scene definition coverage."""
         # Create scene definitions with gaps
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
 1,0.0,30.0,0.0,10.0
 2,70.0,100.0,0.0,10.0
 3,0.0,30.0,20.0,50.0
@@ -435,10 +435,34 @@ class TestSceneDefinitionValidation:
         with pytest.raises(ValueError, match="Incomplete coverage detected."):
             SceneDefinition(csv_file)
 
+    def test_lower_case_bound_columns_raise(self, tmp_path):
+        """A column ending in a lower-case ``_min``/``_max`` is refused rather than silently ignored.
+
+        Only ``_Min``/``_Max`` columns are read as bounds, so a definition written with lower-case suffixes would
+        otherwise load with its variables missing from the classification. Asserts the error names the column and
+        says to rename it.
+        """
+        csv_file = tmp_path / "lower_case.csv"
+        csv_file.write_text("scene_id,Cloud_Fraction_min,Cloud_Fraction_max\n1,0.0,50.0\n2,50.0,100.0\n")
+
+        with pytest.raises(ValueError, match=r"\['Cloud_Fraction_min', 'Cloud_Fraction_max'\] .*rename each"):
+            SceneDefinition(csv_file)
+
+    def test_min_greater_than_max_raises(self, tmp_path):
+        """A bin whose ``_Min`` exceeds its ``_Max`` is refused, naming the scene and both bounds."""
+        csv_file = tmp_path / "inverted.csv"
+        csv_file.write_text("scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max\n1,0.0,50.0\n2,100.0,50.0\n")
+
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid bin definitions \(min > max\):\nScene 2\S*: Cloud_Fraction_Min \(100\.0\) > Cloud_Fraction_Max \(50\.0\)",
+        ):
+            SceneDefinition(csv_file)
+
     def test_unbounded_scene_definitions(self, tmp_path):
         """Test scene definitions with unbounded ranges."""
         # Create scenes with unbounded min/max values using very large numbers
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
 1,0.0,50.0,0.0,10.0
 2,50.0,100.0,0.0,10.0
 3,0.0,50.0,10.0,9999999.0
@@ -463,7 +487,7 @@ class TestSceneDefinitionValidation:
         footprint_data = FootprintData(data)
         footprint_data.identify_scenes([scene_def])
 
-        scene_ids = footprint_data._data[f"scene_id_{scene_def.type}"].values
+        scene_ids = footprint_data._data[f"Scene_ID_{scene_def.type}"].values
 
         # All should be classified
         assert scene_ids[0] == 1  # cloud=25%, optical=5

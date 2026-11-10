@@ -16,11 +16,11 @@ What this reader exposes
 FMATCH-IMAGER carries both **AOD** and **aerosol type**. The single-sensor Deep
 Blue granule carries both, so this one reader serves both:
 
-1. ``optical_depth_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
+1. ``Optical_Depth_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
    and ocean (continuous, ``weighted_mean``).
-2. ``aerosol_type`` — the modal aerosol type over land and ocean (categorical,
+2. ``Aerosol_Type`` — the modal aerosol type over land and ocean (categorical,
    8 classes, ``weighted_mode``), plus three ranked companions
-   (``aerosol_type_primary/secondary/tertiary``) declared in
+   (``Aerosol_Type_Primary/Secondary/Tertiary``) declared in
    ``ADDITIONAL_PRODUCT_VARIABLES``, mirroring the IGBP reader's ranked scenes.
 
 Aerosol type categories (from the file's ``long_name``)
@@ -95,7 +95,7 @@ _MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, Operatio
 class VIIRSAODReader(StaticReader):
     """Read NOAA-20 VIIRS Deep Blue AOD + aerosol type from an AERDB_D3_VIIRS_NOAA20 file.
 
-    Loads two variables -- ``optical_depth_550`` (continuous) and ``aerosol_type``
+    Loads two variables -- ``Optical_Depth_550`` (continuous) and ``Aerosol_Type``
     (categorical) -- from a single-sensor Deep Blue Level-3 daily file as a
     ``(2, n_lat, n_lon)`` grid stacked in ``VARIABLES`` order. The file is a daily
     mean with no time axis, so the staged day is the time match
@@ -104,11 +104,11 @@ class VIIRSAODReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"viirs_aod"``.
+        Registry key ``"VIIRS_AOD"``.
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Two variables: ``optical_depth_550`` (``weighted_mean``) and ``aerosol_type``
+        Two variables: ``Optical_Depth_550`` (``weighted_mean``) and ``Aerosol_Type``
         (``weighted_mode``, 8 categories).
     ADDITIONAL_PRODUCT_VARIABLES : tuple[VariableSpec, ...]
         Three ranked aerosol-type outputs (primary/secondary/tertiary), derived
@@ -120,7 +120,7 @@ class VIIRSAODReader(StaticReader):
         The one AERDB_D3_VIIRS_NOAA20 NetCDF4 file for the processing day.
     """
 
-    READER_KEY: str = "viirs_aod"
+    READER_KEY: str = "VIIRS_AOD"
     # Deep Blue single-sensor product for VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.
@@ -129,7 +129,7 @@ class VIIRSAODReader(StaticReader):
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="optical_depth_550",
+            name="Optical_Depth_550",
             dtype="float32",
             # CERES averages aerosol optical depth arithmetically over its footprint:
             # SSF-137 takes "an arithmetic mean ... of all imager pixels in the angular
@@ -140,7 +140,7 @@ class VIIRSAODReader(StaticReader):
             n_categories=None,
         ),
         VariableSpec(
-            name="aerosol_type",
+            name="Aerosol_Type",
             dtype="int16",
             # Categorical: the single aggregated (most-common) aerosol type in
             # the footprint. A std-dev companion is (correctly) not generated for
@@ -150,28 +150,28 @@ class VIIRSAODReader(StaticReader):
             n_categories=_N_AEROSOL_TYPES,
         ),
     )
-    # A footprint spans several aerosol types. ``aerosol_type`` above is the single
+    # A footprint spans several aerosol types. ``Aerosol_Type`` above is the single
     # aggregated result; these three report the ranked mix (1st/2nd/3rd most common by
     # PSF-weighted area), computed during PSF aggregation from the same modal field rather
     # than read from a source field -- hence here rather than in VARIABLES, mirroring the
     # IGBP reader's ranked surface types.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="aerosol_type_primary",
+            name="Aerosol_Type_Primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
             modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
-            name="aerosol_type_secondary",
+            name="Aerosol_Type_Secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
             modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
-            name="aerosol_type_tertiary",
+            name="Aerosol_Type_Tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
             modes=_MODES,
@@ -191,7 +191,7 @@ class VIIRSAODReader(StaticReader):
         -------
         GridSamples
             ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
-            [optical_depth_550, aerosol_type] (fill / out-of-range as NaN). The categorical
+            [Optical_Depth_550, Aerosol_Type] (fill / out-of-range as NaN). The categorical
             aerosol type is carried as float32 with NaN fill here; its ``int16``
             product dtype is applied at product-write time (the same convention
             IGBP uses).
@@ -222,7 +222,7 @@ class VIIRSAODReader(StaticReader):
                 "update the reader's aerosol-type categories before reading it."
             )
 
-        # Stack in VARIABLES order: axis 0 = [optical_depth_550, aerosol_type].
+        # Stack in VARIABLES order: axis 0 = [Optical_Depth_550, Aerosol_Type].
         data = np.stack([aod, aerosol_type], axis=0)  # (2, n_lat_full, n_lon_full)
         return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)
 

@@ -54,13 +54,13 @@ _IMAGER_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, O
 # the products that carry it. This order is VARIABLES order and axis 0 of the reader's
 # data array.
 _ERA5_SURFACE_VARIABLES: tuple[tuple[str, str, frozenset[OperationalMode]], ...] = (
-    ("wind_u10", "u10", _WIND_MODES),
-    ("wind_v10", "v10", _WIND_MODES),
-    ("temperature_2m", "t2m", _IMAGER_MODES),
-    ("dew_point_temperature_2m", "d2m", _IMAGER_MODES),
-    ("surface_pressure", "sp", _IMAGER_MODES),
-    ("surface_geopotential", "z", _IMAGER_MODES),
-    ("forecast_albedo", "fal", _IMAGER_MODES),
+    ("Wind_U10", "u10", _WIND_MODES),
+    ("Wind_V10", "v10", _WIND_MODES),
+    ("Temperature_2m", "t2m", _IMAGER_MODES),
+    ("Dew_Point_Temperature_2m", "d2m", _IMAGER_MODES),
+    ("Surface_Pressure", "sp", _IMAGER_MODES),
+    ("Surface_Geopotential", "z", _IMAGER_MODES),
+    ("Forecast_Albedo", "fal", _IMAGER_MODES),
 )
 
 
@@ -195,13 +195,13 @@ class ERA5SurfaceReader(ERA5ReaderBase):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"era5_surface"``.
+        Registry key ``"ERA5_Surface"``.
     RESOLUTION_KM : float
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
+        Seven continuous float32 variables. The winds (``Wind_U10``/``Wind_V10``)
         are carried by every product; the five additional single-level fields only
-        by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME. So ``era5_surface`` feeds every
+        by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME. So ``ERA5_Surface`` feeds every
         product but contributes a different variable subset to each.
 
     Parameters
@@ -212,7 +212,7 @@ class ERA5SurfaceReader(ERA5ReaderBase):
         time axis.
     """
 
-    READER_KEY: str = "era5_surface"
+    READER_KEY: str = "ERA5_Surface"
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
     # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"

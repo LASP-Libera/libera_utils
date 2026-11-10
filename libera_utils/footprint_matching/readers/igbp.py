@@ -76,12 +76,12 @@ class IGBPReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"igbp"``.
+        Registry key ``"IGBP"``.
     RESOLUTION_KM : float
         0.463 km, the MCD12Q1 sinusoidal grid cell (463.3 m; MCD12Q1 v061 User Guide).
         The coverage measure credits each pixel with a cell of this side.
     VARIABLES : tuple[VariableSpec, ...]
-        Single variable: ``"surface_type"`` (categorical, 20 IGBP classes).
+        Single variable: ``"Surface_Type"`` (categorical, 20 IGBP classes).
 
     Parameters
     ----------
@@ -89,7 +89,7 @@ class IGBPReader(StaticReader):
         The MCD12Q1 HDF4 tile file(s) (e.g., ``MCD12Q1.A2023001.h09v05.061.hdf``).
     """
 
-    READER_KEY: str = "igbp"
+    READER_KEY: str = "IGBP"
     # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
     # TODO[LIBSDC-899]: decide the land-cover source once Terra and Aqua MODIS end: a successor product on this
     # sinusoidal grid (this reader, a new INSTRUMENT) or a new reader.
@@ -99,34 +99,34 @@ class IGBPReader(StaticReader):
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="surface_type",
+            name="Surface_Type",
             dtype="int16",
             aggregation="weighted_mode",
             modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
-    # A footprint spans several IGBP land-cover classes. ``surface_type`` above is the single
+    # A footprint spans several IGBP land-cover classes. ``Surface_Type`` above is the single
     # aggregated result; these three report the ranked mix (1st/2nd/3rd most-common class by
     # PSF-weighted area), computed during PSF aggregation from the same pixels rather than read
     # from a source field -- hence here rather than in VARIABLES.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="surface_type_primary",
+            name="Surface_Type_Primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
             modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
-            name="surface_type_secondary",
+            name="Surface_Type_Secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
             modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
-            name="surface_type_tertiary",
+            name="Surface_Type_Tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
             modes=_MODES,

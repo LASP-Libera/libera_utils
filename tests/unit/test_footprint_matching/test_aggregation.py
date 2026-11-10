@@ -87,7 +87,7 @@ class TestWeightedStd:
     def test_uniform_weight_matches_population_std(self):
         """``weighted_std`` with equal weights equals the population standard deviation.
 
-        Each continuous product variable has a ``_standard_deviation`` companion describing the spread of the source
+        Each continuous product variable has a ``_Standard_Deviation`` companion describing the spread of the source
         within the footprint. Checking the equal-weight case pins the formula to the familiar population (divide by
         N) definition rather than the sample (divide by N - 1) one.
 
@@ -156,7 +156,7 @@ class TestWeightedLogMean:
         """``weighted_positive_std`` is the spread of the same positive samples ``weighted_log_mean`` averages.
 
         A zero is in range for an optical depth but has no logarithm, so the log mean drops it. If its
-        ``_standard_deviation`` companion kept the zero, the mean and its spread would describe different samples.
+        ``_Standard_Deviation`` companion kept the zero, the mean and its spread would describe different samples.
 
         Passes 0, 4 and 9 at equal weight. Asserts the log mean is 6 (4 and 9 only) and the positive std is 2.5, the
         spread of 4 and 9, where ``weighted_std`` over all three would be about 3.68.
@@ -335,7 +335,7 @@ class TestDispatcher:
 class _ParityReader:
     """Reader stand-in exercising every shared-plane case aggregate_sample_variables optimizes.
 
-    ``field_a``/``field_b`` are continuous (each gains a ``_standard_deviation`` companion
+    ``field_a``/``field_b`` are continuous (each gains a ``_Standard_Deviation`` companion
     sharing its plane), and ``surface`` is categorical with three ranked-mode extras that
     all derive from the one ``surface`` plane. Only the attributes
     ``aggregate_sample_variables`` / ``_map_product_specs`` touch are defined.
@@ -436,7 +436,7 @@ class TestAggregateSampleVariablesParity:
 
         For speed, the production path computes the usable-sample mask and the category histogram once per data plane
         and shares them across every product variable derived from that plane: a variable, its
-        ``_standard_deviation`` companion, and its ranked modes. That shortcut must not change any number the product
+        ``_Standard_Deviation`` companion, and its ranked modes. That shortcut must not change any number the product
         stores.
 
         Over 20 random footprints that include NaN values, a non-positive log-mean input, zero weights and a NaN
@@ -517,9 +517,9 @@ class TestAggregateSampleVariablesValues:
             _ParityReader, _sample_set(values), _weight_field(np.array([1.0, 1.0, 1.0, 2.0]))
         )
         assert got["field_a"] == pytest.approx(3.5)
-        assert got["field_a_standard_deviation"] == pytest.approx(math.sqrt(2.75))
+        assert got["field_a_Standard_Deviation"] == pytest.approx(math.sqrt(2.75))
         assert got["field_b"] == pytest.approx(math.sqrt(24.0))
-        assert got["field_b_standard_deviation"] == pytest.approx(math.sqrt(4.6875))
+        assert got["field_b_Standard_Deviation"] == pytest.approx(math.sqrt(4.6875))
         assert got["surface"] == 1.0
         assert got["surface_primary"] == 1.0
         assert got["surface_secondary"] == 2.0
@@ -642,19 +642,19 @@ class TestStackProductValues:
         A reader may contribute 1-D product variables alongside its stacks; dropping them would leave those
         variables empty.
 
-        Adds an extra ``surface_pressure`` scalar to the ERA5 scalars and asserts it comes back as is.
+        Adds an extra ``Surface_Pressure`` scalar to the ERA5 scalars and asserts it comes back as is.
         """
-        scalars = self._scalars() | {"surface_pressure": 1013.0}
-        assert agg.stack_product_values(ERA5PressureLevelReader, scalars)["surface_pressure"] == 1013.0
+        scalars = self._scalars() | {"Surface_Pressure": 1013.0}
+        assert agg.stack_product_values(ERA5PressureLevelReader, scalars)["Surface_Pressure"] == 1013.0
 
     def test_missing_member_raises(self):
         """A missing member scalar raises ``ValueError`` rather than publishing a stack with a level missing.
 
         Without the check, a stacked variable would be built one element short and misaligned with its coordinate.
 
-        Drops ``temperature_500hPa`` from the scalars and asserts the error names it.
+        Drops ``Temperature_500hPa`` from the scalars and asserts the error names it.
         """
         scalars = self._scalars()
-        del scalars["temperature_500hPa"]
-        with pytest.raises(ValueError, match="temperature_500hPa"):
+        del scalars["Temperature_500hPa"]
+        with pytest.raises(ValueError, match="Temperature_500hPa"):
             agg.stack_product_values(ERA5PressureLevelReader, scalars)

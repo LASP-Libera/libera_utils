@@ -4,8 +4,8 @@ Importing this package triggers the registration of all built-in reader
 subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.AncillaryReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
-lists all readers: ``cldpix``, ``era5_pressure``, ``era5_surface``, ``flashflux``,
-``igbp``, ``nise``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cldprop_d3``, and
+lists all readers: ``CLDPIX``, ``ERA5_Pressure``, ``ERA5_Surface``, ``FLASHFlux``,
+``IGBP``, ``NISE``, ``VIIRS_AOD``, ``VIIRS_BRDF``, ``VIIRS_CLDPROP_D3``, and
 :data:`~libera_utils.footprint_matching.readers.registry.FMATCH_MODE_READERS` holds
 the readers each product draws on, derived from their ``VariableSpec.modes``.
 

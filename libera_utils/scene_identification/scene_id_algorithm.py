@@ -35,7 +35,6 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import ALGORITHM_VERSION_ATTRIBUTE, LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import internal_variable_name
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
@@ -90,7 +89,7 @@ class SceneIdRunnerConfig:
 # FMATCH-CAM, but that reader is not implemented yet (the FMATCH step is a separate milestone), so this runner
 # currently reads placeholder CERES SSF files via from_ceres_ssf. CERES SSF files are NOT Libera products, so
 # input_product_id is None to select the "keep non-Libera-product files" input-collection mode in collect_input_files.
-# Runs ERBE and unfiltering (both keyed off surface_type and cloud_fraction) but not TRMM, whose variables are absent.
+# Runs ERBE and unfiltering (both keyed off Surface_Type and Cloud_Fraction) but not TRMM, whose variables are absent.
 # TODO[LIBSDC-794]: switch reader to FootprintData.from_fmatch_cam and input_product_id to aux_fmatch_cam once the
 # FMATCH-CAM product format is available.
 CAM_CONFIG = SceneIdRunnerConfig(
@@ -361,9 +360,6 @@ def create_and_write_data_product(
     ------
     FileNotFoundError
         If the SCENE-ID product definition cannot be found in the installed libera_utils package.
-    ValueError
-        If a variable the definition declares does not follow the product variable naming rule, or the footprint
-        dataset holds a declared variable under both its internal and its product name.
     """
     if not config.product_definition_path.exists():
         raise FileNotFoundError(f"SCENE-ID product definition not found: {config.product_definition_path}")
@@ -372,31 +368,14 @@ def create_and_write_data_product(
     # correct dimension) so the product aligns 1:1 with its upstream product.
     product_dataset = footprint_data.to_time_product(config.time_variable)
 
-    # Keep only the variables/coordinates declared in the product definition, under their product names.
-    # FootprintData carries intermediate inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the
-    # classification consumes but that are not part of the SCENE-ID product; dropping them here keeps the written
-    # product to exactly its definition rather than leaking undeclared variables (the conformance check does not
-    # flag extras). FootprintData names its variables internally (snake_case); a declared variable is taken under
-    # its product name when the dataset already holds it (the placeholder Quality_Flag) and is otherwise renamed
-    # from its internal name. Coordinates keep their own names.
+    # Keep only the variables/coordinates declared in the product definition. FootprintData carries intermediate
+    # inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the classification consumes but that are
+    # not part of the SCENE-ID product; dropping them here keeps the written product to exactly its definition
+    # rather than leaking undeclared variables (the conformance check does not flag extras).
     definition = LiberaDataProductDefinition.from_yaml(config.product_definition_path)
-    keep = [name for name in definition.coordinates if name in product_dataset.variables]
-    renames = {}
-    for name in definition.variables:
-        internal = internal_variable_name(name)
-        has_product = name in product_dataset.variables
-        has_internal = internal != name and internal in product_dataset.variables
-        if has_product and has_internal:
-            raise ValueError(
-                f"The footprint dataset holds both {internal!r} and its product name {name!r}; keep one of them "
-                "before writing the SCENE-ID product."
-            )
-        if has_product:
-            keep.append(name)
-        elif has_internal:
-            keep.append(internal)
-            renames[internal] = name
-    product_dataset = product_dataset[keep].rename(renames)
+    declared = set(definition.coordinates) | set(definition.variables)
+    keep = [name for name in product_dataset.variables if name in declared]
+    product_dataset = product_dataset[keep]
 
     # Materialize any declared coordinate not yet present in .coords so the written product passes the coordinate
     # conformance check.

@@ -971,16 +971,16 @@ class TestProductStacks:
         Every continuous product variable reports its within-footprint spread, so a stacked variable needs a stacked
         companion along the same dimension, or the spread of each level would be dropped from the product.
 
-        A reader stacking ``t_1``/``t_2`` must return the declared stack, then ``t_standard_deviation`` over
-        ``t_1_standard_deviation``/``t_2_standard_deviation`` with the same dimension and coordinate values.
+        A reader stacking ``t_1``/``t_2`` must return the declared stack, then ``t_Standard_Deviation`` over
+        ``t_1_Standard_Deviation``/``t_2_Standard_Deviation`` with the same dimension and coordinate values.
         """
         declared, companion = _Stacked.product_stacks()
         assert declared == _Stacked.PRODUCT_STACKS[0]
         assert companion == ProductStack(
-            name="t_standard_deviation",
+            name="t_Standard_Deviation",
             dimension="PRESSURE_LEVEL",
             coordinate_values=(0, 1),
-            members=("t_1_standard_deviation", "t_2_standard_deviation"),
+            members=("t_1_Standard_Deviation", "t_2_Standard_Deviation"),
         )
 
     def test_categorical_stack_has_no_standard_deviation_stack(self):
@@ -1072,7 +1072,7 @@ class TestLoadedShapeValidation:
 
 class TestProductVariableSpecs:
     def test_continuous_variables_get_a_standard_deviation_companion(self):
-        """``product_variable_specs`` adds a ``_standard_deviation`` companion after each continuous variable only.
+        """``product_variable_specs`` adds a ``_Standard_Deviation`` companion after each continuous variable only.
 
         A continuous field also reports its spread within the footprint, while a standard deviation of a most-common
         category is not physically meaningful; the derived ``ADDITIONAL_PRODUCT_VARIABLES`` follow the read ones.
@@ -1097,7 +1097,7 @@ class TestProductVariableSpecs:
             ADDITIONAL_PRODUCT_VARIABLES = (ranked,)
 
         names = [spec.name for spec in _Companions.product_variable_specs()]
-        assert names == ["v", "v_standard_deviation", "c", "c_primary"]
+        assert names == ["v", "v_Standard_Deviation", "c", "c_primary"]
 
 
 class TestFilePaths:

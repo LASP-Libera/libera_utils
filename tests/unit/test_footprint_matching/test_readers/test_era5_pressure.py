@@ -24,7 +24,6 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
 )
 from libera_utils.footprint_matching.types import STANDARD_DEVIATION_SUFFIX, BoundingBox
 from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
-from libera_utils.io.product_variable_names import product_variable_name
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
@@ -85,15 +84,12 @@ class TestERA5PressureLevelProductDefinition:
         The product writer fills each stacked variable from the reader's stack of the same name; a variable with no
         stack would be left empty, and a stack with no variable would have nowhere to go.
 
-        Asserts the definition's ``ERA5_Pressure_`` variable names equal the product names of
-        ``era5_pressure_<stack name>`` for every stack, and each has dimensions ``["RADIOMETER_TIME", "PRESSURE_LEVEL"]``.
+        Asserts the definition's ``ERA5_Pressure_`` variable names equal ``ERA5_Pressure_<stack name>`` for every
+        stack, and each has dimensions ``["RADIOMETER_TIME", "PRESSURE_LEVEL"]``.
         """
         prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
-        product_prefix = f"{product_variable_name(ERA5PressureLevelReader.READER_KEY)}_"
-        declared = {name: var for name, var in definition.variables.items() if name.startswith(product_prefix)}
-        expected = {
-            product_variable_name(f"{prefix}{stack.name}") for stack in ERA5PressureLevelReader.product_stacks()
-        }
+        declared = {name: var for name, var in definition.variables.items() if name.startswith(prefix)}
+        expected = {f"{prefix}{stack.name}" for stack in ERA5PressureLevelReader.product_stacks()}
         assert set(declared) == expected
         for var in declared.values():
             assert var.dimensions == ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
@@ -104,12 +100,12 @@ class TestERA5PressureLevelProductDefinition:
         A spread is in the units of the quantity it spreads; a mismatch would tell a reader the spread of temperature
         is, say, in percent.
 
-        Compares the ``units`` attribute of every ``*_standard_deviation`` stacked variable with its mean's.
+        Compares the ``units`` attribute of every ``*_Standard_Deviation`` stacked variable with its mean's.
         """
         prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
         for stack in ERA5PressureLevelReader.PRODUCT_STACKS:
-            mean = definition.variables[product_variable_name(f"{prefix}{stack.name}")]
-            spread = definition.variables[product_variable_name(f"{prefix}{stack.name}{STANDARD_DEVIATION_SUFFIX}")]
+            mean = definition.variables[f"{prefix}{stack.name}"]
+            spread = definition.variables[f"{prefix}{stack.name}{STANDARD_DEVIATION_SUFFIX}"]
             assert spread.attributes["units"] == mean.attributes["units"]
 
     def test_pressure_level_coordinate_is_declared_in_hpa(self, definition):
@@ -147,7 +143,7 @@ class TestERA5PressureLevelReaderPlanes:
 
         The synthetic 4 x 4 file stores levels descending and fills each (variable, level) layer with its own constant
         from ``era5_pressure_fixture_value``; a full-extent query must fold back to one float32 plane per spec, each
-        the constant for its spec (so levels are selected by value, not by position), with source ``"era5_pressure"``
+        the constant for its spec (so levels are selected by value, not by position), with source ``"ERA5_Pressure"``
         and no timestamp source.
         """
         reader = ERA5PressureLevelReader([make_era5_pressure_netcdf_fixture(tmp_path)])
@@ -162,7 +158,7 @@ class TestERA5PressureLevelReaderPlanes:
                 assert np.allclose(data[layer], expected, rtol=1e-6), (var_index, level)
                 layer += 1
         samples = reader.samples_in(bbox, _T)
-        assert samples.source == "era5_pressure"
+        assert samples.source == "ERA5_Pressure"
         assert samples.timestamp_source is None
 
 
@@ -239,11 +235,11 @@ class TestERA5PressureLevelReaderRealSubset:
         A value must reach the product exactly as the source granule stores it, under the name of its own variable and
         level.
 
-        Queries a small box around 45N, 105W of the real subset and compares ``temperature_500hPa`` and
+        Queries a small box around 45N, 105W of the real subset and compares ``Temperature_500hPa`` and
         ``geopotential_500hPa`` with the source granule's values there.
         """
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
         names = [v.name for v in ERA5PressureLevelReader.VARIABLES]
         values = sample_at(samples, 45.0, -105.0)
-        assert values[names.index("temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
-        assert values[names.index("geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)
+        assert values[names.index("Temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
+        assert values[names.index("Geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)

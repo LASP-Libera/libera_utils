@@ -607,7 +607,7 @@ class TestIdentifyScenes:
     @pytest.fixture
     def simple_scene_definition_csv(self, tmp_path):
         """Create a simple scene definition CSV."""
-        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max
 1,0.0,50.0
 2,50.0,100.0
 """
@@ -679,11 +679,11 @@ class TestIdentifyScenes:
         sample_footprint_data.identify_scenes([scene_def])
 
         data = sample_footprint_data._data
-        # clear_area [80, 50, 20] -> cloud_fraction [20, 50, 80] -> scenes [1, 2, 2]
-        np.testing.assert_array_equal(data["scene_id_test_scenes"].values, [1, 2, 2])
+        # clear_area [80, 50, 20] -> Cloud_Fraction [20, 50, 80] -> scenes [1, 2, 2]
+        np.testing.assert_array_equal(data["Scene_ID_test_scenes"].values, [1, 2, 2])
 
-        min_col = "scene_bin_test_scenes_cloud_fraction_min"
-        max_col = "scene_bin_test_scenes_cloud_fraction_max"
+        min_col = "Scene_Bin_test_scenes_Cloud_Fraction_Min"
+        max_col = "Scene_Bin_test_scenes_Cloud_Fraction_Max"
         assert min_col in data.data_vars
         assert max_col in data.data_vars
         assert data[min_col].dims == (RADIOMETER_TIME_DIMENSION,)
@@ -696,8 +696,8 @@ class TestIdentifyScenes:
         sample_footprint_data.identify_scenes([scene_def], report_bin_bounds=False)
 
         data = sample_footprint_data._data
-        assert "scene_id_test_scenes" in data.data_vars
-        bin_columns = [name for name in data.data_vars if str(name).startswith("scene_bin_")]
+        assert "Scene_ID_test_scenes" in data.data_vars
+        bin_columns = [name for name in data.data_vars if str(name).startswith("Scene_Bin_")]
         assert bin_columns == []
 
     def test_identify_scenes_preserves_radiometer_time_dimension(
@@ -707,7 +707,7 @@ class TestIdentifyScenes:
         scene_def = SceneDefinition(simple_scene_definition_csv)
         sample_footprint_data.identify_scenes([scene_def])
 
-        assert sample_footprint_data._data["scene_id_test_scenes"].dims == (RADIOMETER_TIME_DIMENSION,)
+        assert sample_footprint_data._data["Scene_ID_test_scenes"].dims == (RADIOMETER_TIME_DIMENSION,)
 
 
 class TestToRadiometerTimeProduct:
@@ -746,7 +746,7 @@ class TestAddPlaceholderQualityFlag:
 
     def test_one_dimensional_default(self):
         """The default RADIOMETER_TIME dimension yields a 1-D all-zero uint32 flag."""
-        product = xr.Dataset({"cloud_fraction": ([RADIOMETER_TIME_DIMENSION], [10.0, 20.0, 30.0])})
+        product = xr.Dataset({"Cloud_Fraction": ([RADIOMETER_TIME_DIMENSION], [10.0, 20.0, 30.0])})
 
         flagged = add_placeholder_quality_flag(product)
 
@@ -757,7 +757,7 @@ class TestAddPlaceholderQualityFlag:
     def test_two_dimensional_grid(self):
         """A (CAMERA_TIME, PSEUDOFOOTPRINT) grid yields a 2-D all-zero uint32 flag of the same shape."""
         grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
-        product = xr.Dataset({"cloud_fraction": (grid_dims, np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32))})
+        product = xr.Dataset({"Cloud_Fraction": (grid_dims, np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32))})
 
         flagged = add_placeholder_quality_flag(product, dimensions=grid_dims)
 
@@ -797,7 +797,7 @@ class TestSceneIdCamProductDtypes:
         """The continuous scene-bin bounds are declared as float32 rather than float64."""
         definition = self._scene_id_cam_definition()
         assert definition.variables["Scene_Bin_ERBE_Cloud_Fraction_Min"].dtype == "float32"
-        assert definition.variables["Scene_Bin_Unfiltering_Relative_Azimuth_Angle_Max"].dtype == "float32"
+        assert definition.variables["Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Max"].dtype == "float32"
 
     def test_surface_type_bin_bounds_are_uint8(self):
         """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
@@ -828,17 +828,17 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
     """Assert that the reported property bin bounds are consistent with the data.
 
     For each classification variable, checks that the
-    ``scene_bin_{scene_type}_{variable}_min`` / ``_max`` columns exist, that
+    ``Scene_Bin_{scene_type}_{variable}_Min`` / ``_Max`` columns exist, that
     unmatched footprints (scene ID 0) carry no bin (NaN for the float bounds; the
-    integer surface_type bounds are just 0, flagged by scene_id 0), and that each
+    integer Surface_Type bounds are just 0, flagged by scene_id 0), and that each
     matched footprint's value falls within the reported bin (min inclusive, max
     exclusive).
     """
-    scene_ids = dataset[f"scene_id_{scene_type}"].values
+    scene_ids = dataset[f"Scene_ID_{scene_type}"].values
     matched = scene_ids != 0
     for variable in variables:
-        min_name = f"scene_bin_{scene_type}_{variable}_min"
-        max_name = f"scene_bin_{scene_type}_{variable}_max"
+        min_name = f"Scene_Bin_{scene_type}_{variable}_Min"
+        max_name = f"Scene_Bin_{scene_type}_{variable}_Max"
         assert min_name in dataset.data_vars
         assert max_name in dataset.data_vars
 
@@ -874,9 +874,9 @@ class TestEndToEndSceneIdentification:
         fp.identify_scenes()
         expected = xr.open_dataset(expected_file_path)
         xr.testing.assert_equal(fp._data, expected)
-        geometry_variables = ["solar_zenith_angle", "viewing_zenith_angle", "relative_azimuth_angle"]
-        assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction", *geometry_variables])
-        assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction", *geometry_variables])
+        geometry_variables = ["Solar_Zenith_Surface", "Viewing_Zenith_Surface", "Relative_Azimuth_Surface"]
+        assert_property_bins_consistent(fp._data, "TRMM", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
+        assert_property_bins_consistent(fp._data, "ERBE", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
         for geometry_variable in geometry_variables:
             assert geometry_variable in fp._data.data_vars
 
@@ -895,7 +895,7 @@ class TestEndToEndSceneIdentification:
             scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
         )
         expected = xr.open_dataset(expected_file_path)
-        scene_id_col = f"scene_id_{scene_definition.type.lower()}"
+        scene_id_col = f"Scene_ID_{scene_definition.type}"
         np.testing.assert_array_equal(fp._data[scene_id_col].values, expected[scene_id_col].values)
 
     @pytest.mark.parametrize(
@@ -925,7 +925,7 @@ class TestEndToEndSceneIdentification:
         # Each synthetic dataset should contain one of every scene.
         # Loop below confirms that we have coverage of all scenes for each scene type
         for scene in scene_definition.scenes:
-            assert scene.scene_id in fp._data[f"scene_id_{scene_definition.type.lower()}"]
+            assert scene.scene_id in fp._data[f"Scene_ID_{scene_definition.type}"]
 
 
 class TestSceneDefinitionBehavior:

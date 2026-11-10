@@ -41,15 +41,15 @@ def _finite(data: np.ndarray, name: str) -> np.ndarray:
 # The served pixels of every field in the default fixture, as (count, value): every field is constant, effective
 # pressure under its descending valid_range, and one Cloud_Particle_Phase pixel and one Top_Cld_Height pixel are fill.
 _FIXTURE_VALUES = {
-    "cloud_optical_depth": (12, 4.0),
-    "cloud_water_path": (12, 100.0),
-    "cloud_effective_temperature": (12, 270.0),
-    "cloud_effective_height": (12, 5.0),
-    "cloud_effective_pressure": (12, 800.0),
-    "cloud_top_height": (11, 6.0),
-    "cloud_particle_radius": (12, 10.0),
-    "cloud_particle_phase": (11, 1.0),
-    "cloud_mask": (12, 1.0),
+    "Cloud_Optical_Depth": (12, 4.0),
+    "Cloud_Water_Path": (12, 100.0),
+    "Cloud_Effective_Temperature": (12, 270.0),
+    "Cloud_Effective_Height": (12, 5.0),
+    "Cloud_Effective_Pressure": (12, 800.0),
+    "Cloud_Top_Height": (11, 6.0),
+    "Cloud_Particle_Radius": (12, 10.0),
+    "Cloud_Particle_Phase": (11, 1.0),
+    "Cloud_Mask": (12, 1.0),
 }
 
 
@@ -62,14 +62,14 @@ class TestCLDPIXReaderSamples:
         footprint at -15 degrees.
 
         Builds the default 3 x 4 pixel fixture at 345 degrees longitude, queries the box at -16..-14 degrees and asserts
-        float32 values of shape ``(len(VARIABLES), 12)``, every longitude at -15 degrees, the source ``"cldpix"``, no
+        float32 values of shape ``(len(VARIABLES), 12)``, every longitude at -15 degrees, the source ``"CLDPIX"``, no
         timestamp source and every pixel time at the fixture time.
         """
         samples = CLDPIXReader([make_cldpix_fixture(tmp_path)]).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), 12)
         assert samples.values.dtype == np.float32
         assert np.allclose(samples.lons, -15.0, atol=1e-4)
-        assert samples.source == "cldpix"
+        assert samples.source == "CLDPIX"
         assert samples.timestamp_source is None
         assert np.all(samples.times == _T)
 
@@ -130,7 +130,7 @@ class TestCLDPIXReaderSamples:
             ds.variables["Top_Cld_Height"].valid_range = np.array([0.0, 3.4028235e38], dtype=np.float32)
         reader = CLDPIXReader([path])
         data = _values(reader, _BBOX)
-        heights = _finite(data, "cloud_top_height")
+        heights = _finite(data, "Cloud_Top_Height")
         assert heights.size > 0
         assert np.allclose(heights, 6.0, atol=1e-3)
 
@@ -138,9 +138,9 @@ class TestCLDPIXReaderSamples:
         ("var", "out_name", "value", "kept"),
         [
             # Inside the file's [2, 78] µm.
-            ("Cld_Radius", "cloud_particle_radius", 70.0, True),
+            ("Cld_Radius", "Cloud_Particle_Radius", 70.0, True),
             # Outside the file's [0, 18] km.
-            ("Top_Cld_Height", "cloud_top_height", 20.0, False),
+            ("Top_Cld_Height", "Cloud_Top_Height", 20.0, False),
         ],
     )
     def test_valid_range_comes_from_the_file(self, tmp_path, var, out_name, value, kept):
@@ -166,7 +166,7 @@ class TestCLDPIXReaderSamples:
 
     @pytest.mark.parametrize(
         ("var", "out_name", "bad_code", "kept_code"),
-        [("Cloud_Particle_Phase", "cloud_particle_phase", 5, 4), ("CERES_Cloud_Mask", "cloud_mask", 3, 2)],
+        [("Cloud_Particle_Phase", "Cloud_Particle_Phase", 5, 4), ("CERES_Cloud_Mask", "Cloud_Mask", 3, 2)],
     )
     def test_bad_data_codes_do_not_vote(self, tmp_path, var, out_name, bad_code, kept_code):
         """``CLDPIXReader`` drops the categorical codes the file's ``flag_meanings`` label bad data.
@@ -555,7 +555,7 @@ class TestCLDPIXReaderRealSubset:
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), samples.n_samples)
         at_i = served_at(samples, points.lats[i], points.lons[i], points.times[i])
         assert at_i.size > 0
-        row = [v.name for v in CLDPIXReader.VARIABLES].index("cloud_particle_radius")
+        row = [v.name for v in CLDPIXReader.VARIABLES].index("Cloud_Particle_Radius")
         assert np.allclose(samples.values[row, at_i], radius.ravel()[i])
 
     def test_granule_span_matches_the_coverage_attributes(self, cldpix_path):

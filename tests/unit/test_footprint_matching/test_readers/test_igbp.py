@@ -291,7 +291,7 @@ class TestIGBPTiles:
 
         Places the box's top edge 0.001 degree below one row of pixel centers, inside the 0.0021 degree padding, and
         its bottom edge 0.003 degree above another, beyond it; asserts the first row is served and the second is not,
-        then that the result is a ``SampleSet`` with source ``"igbp"``, float32 values of shape ``(1, n_samples)``
+        then that the result is a ``SampleSet`` with source ``"IGBP"``, float32 values of shape ``(1, n_samples)``
         and ``resolution_km`` 0.463.
         """
         reader, tiles = self._reader(tmp_path, [(18, 4)])
@@ -302,7 +302,7 @@ class TestIGBPTiles:
         assert np.isclose(samples.lats, inside_pad_lat).any()
         assert not np.isclose(samples.lats, beyond_pad_lat).any()
         assert isinstance(samples, SampleSet)
-        assert samples.source == "igbp"
+        assert samples.source == "IGBP"
         assert samples.values.dtype == np.float32
         assert samples.values.shape == (1, samples.n_samples)
         assert samples.n_samples > 0

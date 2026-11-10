@@ -92,10 +92,10 @@ variables:
   # ---------------------------------------------------------------------------
   # PSF-aggregated external variables: aggregated here from external sources
   #     with the PSF weights, one value per footprint.
-  #     Variable names are product_variable_name(<source_key>_<spec_name>); the source instrument is
+  #     Variable names are <READER_KEY>_<spec name>; the source instrument is
   #     recorded in each variable's long_name as "... (INSTRUMENT)".
   # ---------------------------------------------------------------------------
-  # --- source reader: cldpix (resolution 1.0 km) ---
+  # --- source reader: CLDPIX (resolution 1.0 km) ---
   CLDPIX_Cloud_Optical_Depth:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -190,7 +190,7 @@ variables:
     attributes:
       _FillValue: -1
       long_name: CERES cloud mask (NOAA20)
-  # --- source reader: era5_surface (resolution 28.0 km) ---
+  # --- source reader: ERA5_Surface (resolution 28.0 km) ---
   ERA5_Surface_Wind_U10:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -273,7 +273,7 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Standard deviation of forecast albedo (broadband surface albedo), PSF-weighted over within-footprint values (ECMWF)
-  # --- source reader: era5_pressure (resolution 28.0 km) ---
+  # --- source reader: ERA5_Pressure (resolution 28.0 km) ---
   ERA5_Pressure_Temperature:
     dtype: float32
     dimensions: ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
@@ -334,7 +334,7 @@ variables:
     attributes:
       long_name: Standard deviation of relative humidity on ERA5 pressure levels, PSF-weighted over within-footprint values (ECMWF)
       units: "percent"
-  # --- source reader: flashflux (resolution 20.0 km) ---
+  # --- source reader: FLASHFlux (resolution 20.0 km) ---
   FLASHFlux_Aerosol_Optical_Depth:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -695,7 +695,7 @@ variables:
     attributes:
       long_name: Standard deviation of TOA incoming solar radiation (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
       units: "W m-2"
-  # --- source reader: igbp (resolution 0.463 km) ---
+  # --- source reader: IGBP (resolution 0.463 km) ---
   IGBP_Surface_Type:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
@@ -720,7 +720,7 @@ variables:
     attributes:
       _FillValue: -1
       long_name: Third most common IGBP surface type in footprint (MODIS)
-  # --- source reader: nise (resolution 25.0 km) ---
+  # --- source reader: NISE (resolution 25.0 km) ---
   NISE_Sea_Ice_Concentration:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -771,7 +771,7 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
-  # --- source reader: viirs_aod (resolution 111.0 km) ---
+  # --- source reader: VIIRS_AOD (resolution 111.0 km) ---
   VIIRS_AOD_Optical_Depth_550:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -806,7 +806,7 @@ variables:
     attributes:
       _FillValue: -1
       long_name: Third most common VIIRS Deep Blue aerosol type (land+ocean) in footprint (NOAA20)
-  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  # --- source reader: VIIRS_BRDF (resolution 5.6 km) ---
   # BRDF (Bidirectional Reflectance Distribution Function): how surface reflectance
   # varies with the Sun and view angles. VJ143C1 gives it as the weights of the
   # RossThick-LiSparse (RTLS) kernel model, R = fiso + fvol * kvol + fgeo * kgeo:
@@ -903,7 +903,7 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Standard deviation of near-infrared BRDF geometric kernel weight, PSF-weighted over within-footprint values (NOAA20)
-  # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
+  # --- source reader: VIIRS_CLDPROP_D3 (resolution 111.0 km) ---
   # valid_min/valid_max are the CLDPROP_D3_VIIRS_NOAA20 Cloud_Optical_Thickness_Combined group's
   #     valid_min/valid_max. A PSF-weighted mean of in-range cells stays in that range; the reader
   #     masks only the source _FillValue and does not reject out-of-range cells.

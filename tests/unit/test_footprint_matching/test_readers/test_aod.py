@@ -65,7 +65,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
 
         Builds a 4 x 8 fixture with AOD 0.2 and aerosol type 1 (smoke) in every cell and no fill pixel, queries a box
         enclosing it, and asserts a float32 ``(2, 4, 8)`` grid whose AOD plane is 0.2 and aerosol-type plane is 1, with
-        source ``"viirs_aod"`` and no timestamp source.
+        source ``"VIIRS_AOD"`` and no timestamp source.
         """
         reader = _make_reader(tmp_path, include_fill_pixel=False)
         data, _, _ = _region(reader, _full_bbox(), _T)
@@ -74,7 +74,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         assert np.allclose(data[_AOD_AXIS], _AOD_FILL, atol=1e-5)
         assert np.allclose(data[_TYPE_AXIS], _AEROSOL_TYPE, atol=1e-5)
         samples = reader.samples_in(_full_bbox(), _T)
-        assert samples.source == "viirs_aod"
+        assert samples.source == "VIIRS_AOD"
         assert samples.timestamp_source is None
 
     def test_fill_pixel_becomes_nan_in_both_fields(self, tmp_path):

@@ -18,7 +18,6 @@ from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
-from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
@@ -33,14 +32,14 @@ logger = logging.getLogger(__name__)
 # libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
-# Product name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
+# Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
 # (scene_id_cam.yml).
-QUALITY_FLAG_VARIABLE = product_variable_name("q_flags")
+QUALITY_FLAG_VARIABLE = "Quality_Flag"
 
-# Standard scene definitions shipped with libera_utils, keyed by scene "type". The type is the lowercased stem of
-# the CSV filename and also becomes the output column name (scene_id_{type}, written to the product under its
-# product name, e.g. Scene_ID_ERBE). The value is the config.json key that resolves to the CSV path. Consumers can
-# select a subset by type (e.g. the SCENE-ID-CAM product runs "erbe" and "unfiltering" but not "trmm").
+# Standard scene definitions shipped with libera_utils, keyed by scene type: the lowercased stem of the CSV
+# filename. The value is the config.json key that resolves to the CSV path. Consumers can select a subset by type
+# (e.g. the SCENE-ID-CAM product runs "erbe" and "unfiltering" but not "trmm"). The CSV filename stem, as spelled,
+# names the output variables (Scene_ID_ERBE, Scene_Bin_ERBE_<variable>_Min); see SceneDefinition.
 STANDARD_SCENE_DEFINITION_CONFIG_KEYS: dict[str, str] = {
     "trmm": "TRMM_SCENE_DEFINITION",
     "erbe": "ERBE_SCENE_DEFINITION",
@@ -75,7 +74,7 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     -----
     These are only the definitions shipped with libera_utils. A user can supply a *custom* scene definition without
     editing library code: build a CSV with the same column layout as the shipped definitions in
-    ``libera_utils/data/scene_definitions/`` (``scene_id`` plus ``<variable>_min`` / ``<variable>_max`` columns),
+    ``libera_utils/data/scene_definitions/`` (``scene_id`` plus ``<variable>_Min`` / ``<variable>_Max`` columns),
     wrap it in a :class:`~libera_utils.scene_identification.scene_definitions.SceneDefinition`, and pass it through
     the ``additional_scene_definitions_files`` argument of :meth:`FootprintData.identify_scenes` (or pass an explicit
     ``scene_definitions`` list). The CSV is the source of truth for the bins, which is what makes the classification
@@ -556,8 +555,9 @@ class FootprintVariables(enum.StrEnum):
         Cloud-fraction-weighted dominant cloud phase (calculated variable)
     """
 
-    # Columns from input datasets
-    IGBP_SURFACE_TYPE = "igbp_surface_type"
+    # Columns from input datasets. A variable the SCENE-ID products write carries its product name (Camel_Case,
+    # as declared in scene_id_cam.yml); the intermediate inputs the classification consumes stay snake_case.
+    IGBP_SURFACE_TYPE = "IGBP_Surface_Type"
     SURFACE_WIND_U = "surface_wind_u"
     SURFACE_WIND_V = "surface_wind_v"
     CLEAR_AREA = "clear_area"
@@ -570,19 +570,18 @@ class FootprintVariables(enum.StrEnum):
 
     # Viewing-geometry angles (input variables). These are measured per footprint and read directly from the CERES
     # SSF "Viewing_Angles" group. They are required classification variables for every scene definition (each scene
-    # CSV carries solar_zenith_angle/viewing_zenith_angle/relative_azimuth_angle min/max columns). The string values
-    # here must match those CSV variable names exactly, otherwise SceneDefinition.required_columns will not line up
-    # with the dataset variables. Note the SSF file names the viewing-zenith variable "view_zenith_angle"; we rename
-    # it to "viewing_zenith_angle" on extraction so the pipeline uses one consistent name.
-    SOLAR_ZENITH_ANGLE = "solar_zenith_angle"
-    VIEWING_ZENITH_ANGLE = "viewing_zenith_angle"
-    RELATIVE_AZIMUTH_ANGLE = "relative_azimuth_angle"
+    # CSV carries Solar_Zenith_Surface/Viewing_Zenith_Surface/Relative_Azimuth_Surface min/max columns). The string
+    # values here must match those CSV variable names exactly, otherwise SceneDefinition.required_columns will not
+    # line up with the dataset variables. They are the L1B names of the same quantities.
+    SOLAR_ZENITH_ANGLE = "Solar_Zenith_Surface"
+    VIEWING_ZENITH_ANGLE = "Viewing_Zenith_Surface"
+    RELATIVE_AZIMUTH_ANGLE = "Relative_Azimuth_Surface"
 
     # Calculated columns
-    CLOUD_FRACTION = "cloud_fraction"
+    CLOUD_FRACTION = "Cloud_Fraction"
     OPTICAL_DEPTH = "optical_depth"
     SURFACE_WIND = "surface_wind"
-    SURFACE_TYPE = "surface_type"
+    SURFACE_TYPE = "Surface_Type"
     CLOUD_PHASE = "cloud_phase"
 
 
@@ -610,7 +609,7 @@ class CalculationSpec:
     Examples
     --------
     >>> spec = CalculationSpec(
-    ...     output_var="cloud_fraction",
+    ...     output_var="Cloud_Fraction",
     ...     function=calculate_cloud_fraction,
     ...     input_vars=["clear_area"],
     ...     output_datatype=float
@@ -874,7 +873,7 @@ class FootprintData:
         report_bin_bounds : bool, optional
             If True (default), also report, for each classification variable, the
             (min, max) bounds of the property bin that each footprint's matched
-            scene occupies, as ``scene_bin_{type}_{variable}_min`` / ``_max``
+            scene occupies, as ``Scene_Bin_{type}_{variable}_Min`` / ``_Max``
             variables. Set to False to emit only the scene ID columns.
 
         Notes
@@ -917,7 +916,7 @@ class FootprintData:
         for scene_definition in scene_definitions:
             logger.info(f"Identifying {scene_definition.type} scenes...")
             self._data = scene_definition.identify_and_update(self._data, report_bin_bounds=report_bin_bounds)
-            logger.info(f"Added scene_id_{scene_definition.type.lower()} to dataset")
+            logger.info(f"Added Scene_ID_{scene_definition.type} to dataset")
 
     def _calculate_required_fields(self, result_fields: list[str]):
         """Calculate necessary derived fields on data from input FootprintVariables.
@@ -928,7 +927,7 @@ class FootprintData:
         Parameters
         ----------
         result_fields : list of str
-            List of field names to calculate (e.g., 'cloud_fraction', 'optical_depth')
+            List of field names to calculate (e.g., 'Cloud_Fraction', 'optical_depth')
 
         Raises
         ------
@@ -1072,9 +1071,9 @@ class FootprintData:
 
         Examples
         --------
-        >>> footprint._data = xr.Dataset({'cloud_fraction': [50, 120, 80]})
-        >>> footprint._fill_column_above_max_value('cloud_fraction', 100.0)
-        >>> print(footprint._data['cloud_fraction'].values)
+        >>> footprint._data = xr.Dataset({'Cloud_Fraction': [50, 120, 80]})
+        >>> footprint._fill_column_above_max_value('Cloud_Fraction', 100.0)
+        >>> print(footprint._data['Cloud_Fraction'].values)
         array([50., nan, 80.])
         """
         if column_name not in self._data.variables:
@@ -1131,8 +1130,8 @@ class FootprintData:
 
             # Viewing-geometry angles, one value per footprint, read from the CERES SSF "Viewing_Angles" group. These
             # feed the geometry classification bins on every scene definition (their physical ranges are declared in
-            # the product definition). NOTE the SSF variable is named "view_zenith_angle"; we carry it forward under
-            # the pipeline name "viewing_zenith_angle".
+            # the product definition). They are carried forward under their L1B names (FootprintVariables), e.g. the SSF
+            # "view_zenith_angle" becomes "Viewing_Zenith_Surface".
             viewing_angles_group = dataset.groups["Viewing_Angles"]
             solar_zenith_angle_np = np.array(viewing_angles_group.variables["solar_zenith_angle"][:])
             viewing_zenith_angle_np = np.array(viewing_angles_group.variables["view_zenith_angle"][:])
@@ -1252,9 +1251,7 @@ class FootprintData:
         -------
         xr.Dataset
             A copy of the internal dataset with the time variable promoted to a coordinate and a placeholder
-            ``Quality_Flag`` added over the record grid. Every other variable keeps its internal (snake_case) name;
-            :func:`~libera_utils.scene_identification.scene_id_algorithm.create_and_write_data_product` renames the
-            declared ones to their product names when it writes the product.
+            ``Quality_Flag`` added over the record grid.
 
         Raises
         ------

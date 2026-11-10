@@ -974,3 +974,30 @@ class TestVariableChunksizesEncoding:
     def test_encoding_without_chunksizes_is_untouched(self):
         variable = LiberaVariableDefinition(**yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\n"))
         assert "chunksizes" not in variable.encoding
+
+
+_SHIPPED_PRODUCT_DEFINITIONS = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")))
+
+
+def _section_keys(path: Path) -> dict[str, list[str]]:
+    """Return every key under ``variables`` and ``coordinates`` as written, duplicates included."""
+    document = yaml.compose(path.read_text())
+    keys: dict[str, list[str]] = {}
+    for section_key, section in document.value:
+        if section_key.value in ("variables", "coordinates"):
+            keys[section_key.value] = [key.value for key, _ in section.value]
+    return keys
+
+
+@pytest.mark.parametrize(
+    "definition_path", sorted(_SHIPPED_PRODUCT_DEFINITIONS.glob("*.yml")), ids=lambda path: path.name
+)
+def test_shipped_definition_names_are_unique(definition_path):
+    """No shipped product definition writes a variable or coordinate name twice.
+
+    YAML loading keeps the last of two equal keys and drops the first without a warning, so a repeated name would
+    silently lose one definition. Composes the YAML node tree, which keeps every key as written, and asserts each
+    ``variables`` and ``coordinates`` section lists each name once.
+    """
+    for section, keys in _section_keys(definition_path).items():
+        assert len(keys) == len(set(keys)), f"duplicate {section} key in {definition_path.name}"
