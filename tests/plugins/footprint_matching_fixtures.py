@@ -1502,33 +1502,33 @@ def make_l1b_radiometer_fixture(
     # stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The subsatellite point
     # sits a few degrees off the footprint boresight so the ray-traced box has a real scan azimuth to orient by.
     ranges = {
-        "latitude": (-60.0, 60.0),
-        "longitude": (-170.0, 170.0),
+        "Latitude": (-60.0, 60.0),
+        "Longitude": (-170.0, 170.0),
         # Surface height of the boresight point above the WGS84 ellipsoid, meters.
-        "altitude": (0.0, 4000.0),
-        "solar_zenith_angle": (10.0, 80.0),
-        "viewing_zenith_angle": (0.0, 45.0),
-        "relative_azimuth_angle": (0.0, 350.0),
-        "subsatellite_latitude": (-58.0, 62.0),
-        "subsatellite_longitude": (-168.0, 172.0),
+        "Altitude": (0.0, 4000.0),
+        "Solar_Zenith_Surface": (10.0, 80.0),
+        "Viewing_Zenith_Surface": (0.0, 45.0),
+        "Relative_Azimuth_Surface": (0.0, 350.0),
+        "Subsatellite_Latitude": (-58.0, 62.0),
+        "Subsatellite_Longitude": (-168.0, 172.0),
         # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
-        "satellite_radius_km": (7205.0, 7215.0),
+        "Radius_of_Satellite_from_Center_of_Earth": (7205.0, 7215.0),
     }
     data_vars = {}
     # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
-    for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items():
-        low, high = ranges[fmatch_name]
+    for name in L1B_PASSTHROUGH_VARIABLES:
+        low, high = ranges[name]
         values = np.linspace(low, high, n_footprints, dtype=np.float32)
         if n_invalid:
             # NaN is how the real L1B marks samples whose boresight misses the Earth.
             values[:n_invalid] = np.nan
-        data_vars[l1b_name] = ((L1B_TIME_VARIABLE,), values)
-    for fmatch_name, l1b_name in L1B_SCAN_REFERENCE_VARIABLES.items():
-        low, high = ranges[fmatch_name]
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
+    for name in L1B_SCAN_REFERENCE_VARIABLES:
+        low, high = ranges[name]
         values = np.linspace(low, high, n_footprints, dtype=np.float64)
         if n_invalid:
             values[:n_invalid] = np.nan
-        data_vars[l1b_name] = ((L1B_TIME_VARIABLE,), values)
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
     # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
     cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
     data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
@@ -1576,7 +1576,7 @@ def make_cf_cam_camtime_dataset(
         How many trailing cells of the last image are padding (fill) rather than real footprints, as when an image
         is segmented into fewer subsections than the widest one. Defaults to 0.
     with_cloud_fraction : bool, optional
-        Whether to include the ``cloud_fraction`` variable (percent). Defaults to True.
+        Whether to include the ``Cloud_Fraction`` variable (percent). Defaults to True.
 
     Returns
     -------
@@ -1599,30 +1599,30 @@ def make_cf_cam_camtime_dataset(
         return np.full(shape, value, dtype=float)
 
     floats = {
-        "latitude": lat,
-        "longitude": lon,
-        "altitude": const(835_000.0),
-        "solar_zenith_angle": const(30.0),
-        "viewing_zenith_angle": const(10.0),
-        "relative_azimuth_angle": const(120.0),
-        "psf_bbox_lat_min": lat - 0.25,
-        "psf_bbox_lat_max": lat + 0.25,
-        "psf_bbox_lon_min": lon - 0.25,
-        "psf_bbox_lon_max": lon + 0.25,
+        "Latitude": lat,
+        "Longitude": lon,
+        "Altitude": const(835_000.0),
+        "Solar_Zenith_Surface": const(30.0),
+        "Viewing_Zenith_Surface": const(10.0),
+        "Relative_Azimuth_Surface": const(120.0),
+        "PSF_Bbox_Lat_Min": lat - 0.25,
+        "PSF_Bbox_Lat_Max": lat + 0.25,
+        "PSF_Bbox_Lon_Min": lon - 0.25,
+        "PSF_Bbox_Lon_Max": lon + 0.25,
     }
     if with_cloud_fraction:
-        floats["cloud_fraction"] = np.linspace(0.0, 100.0, n_images * n_cells).reshape(shape)
+        floats["Cloud_Fraction"] = np.linspace(0.0, 100.0, n_images * n_cells).reshape(shape)
     ints = {
-        "center_pixel_x": pixel_x,
-        "center_pixel_y": pixel_y,
-        "psf_bbox_flags": np.zeros(shape, dtype=np.int32),
-        "q_flags": np.zeros(shape, dtype=np.int32),
+        "Center_Pixel_X": pixel_x,
+        "Center_Pixel_Y": pixel_y,
+        "PSF_Bbox_Flags": np.zeros(shape, dtype=np.int32),
+        "Quality_Flag": np.zeros(shape, dtype=np.int32),
     }
     pixel_bounds = {
-        "camera_pixel_x_min": pixel_x,
-        "camera_pixel_x_max": pixel_x.copy(),
-        "camera_pixel_y_min": pixel_y,
-        "camera_pixel_y_max": pixel_y.copy(),
+        "Camera_Pixel_X_Min": pixel_x,
+        "Camera_Pixel_X_Max": pixel_x.copy(),
+        "Camera_Pixel_Y_Min": pixel_y,
+        "Camera_Pixel_Y_Max": pixel_y.copy(),
     }
     if n_padded:
         for values in floats.values():
