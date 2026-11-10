@@ -34,7 +34,7 @@ RADIOMETER_TIME:
 CAMERA_TIME:
   long_name: "Camera time dimension"
 # The 37 isobaric levels (1 to 1000 hPa) of the Copernicus CDS dataset "ERA5 hourly data on pressure levels from
-# 1940 to present", ascending. Must equal len(_ERA5_PRESSURE_LEVELS) in footprint_matching/readers/era5_pressure.py.
+# 1940 to present", ascending.
 PRESSURE_LEVEL:
   size: 37
   long_name: "ERA5 pressure level, ascending from 1 to 1000 hPa"
