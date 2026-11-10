@@ -659,7 +659,7 @@ class TestWriteFmatchProduct:
 def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
     """A one-footprint L1B pass-through dict at a chosen boresight location."""
     return {
-        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")]),
+        "RADIOMETER_TIME": np.array([ERA5_FIXTURE_TIME]),
         "Latitude": np.array([lat], dtype=np.float32),
         "Longitude": np.array([lon], dtype=np.float32),
         "Altitude": np.array([0.0], dtype=np.float32),
@@ -678,12 +678,14 @@ class TestAssemblyWithAggregation:
     """Supplying readers makes the external columns carry real aggregated values."""
 
     def _era5_sources(self, tmp_path) -> dict[str, AncillaryReader]:
-        """The real ERA5 surface reader, the one CAM reader for these tests, over a constant-wind grid.
+        """The real ERA5 surface and pressure-level readers, the IMAGER readers for these tests.
 
-        The grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
+        The surface grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
         (~26 km) of the test boresight; u10 == 2.5 and v10 == -1.5 everywhere, so the
-        PSF-weighted mean is exactly those constants regardless of the weight kernel. The
-        fixture's one hourly step is the L1B time of ``_l1b_at``, so the step matches.
+        PSF-weighted mean is exactly those constants regardless of the weight kernel. Both
+        fixtures carry one hourly step at ``ERA5_FIXTURE_TIME``, which ``_l1b_at`` uses as
+        the L1B time. The pressure-level reader supplies the ``PRESSURE_LEVEL`` stack
+        FMATCH-IMAGER declares.
         """
         era5_cls = ReaderRegistry.get("ERA5_Surface")
         era5_file = make_era5_surface_netcdf_fixture(
@@ -694,22 +696,22 @@ class TestAssemblyWithAggregation:
             lon_max=12.0,
             n_lat=21,
             n_lon=21,
-            times=[np.datetime64("2026-06-11T00:00:00", "ns")],
+            times=[ERA5_FIXTURE_TIME],
         )
-        return {"ERA5_Surface": era5_cls([era5_file])}
+        pressure_file = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        return {"ERA5_Surface": era5_cls([era5_file]), "ERA5_Pressure": ERA5PressureLevelReader([pressure_file])}
 
     @pytest.fixture(autouse=True)
-    def _cam_uses_era5_surface_only(self, set_mode_readers):
-        set_mode_readers(OperationalMode.CAM, ("ERA5_Surface",))
+    def _imager_uses_era5_only(self, set_mode_readers):
+        set_mode_readers(OperationalMode.IMAGER, ("ERA5_Surface", "ERA5_Pressure"))
 
     def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
         # Footprint sits inside the ERA5 grid so every PSF cell has data.
         l1b = _l1b_at(lat=1.0, lon=11.0)
         dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM,
+            OperationalMode.IMAGER,
             l1b,
             sources=self._era5_sources(tmp_path),
-            cloud_fraction_camera=np.zeros(1),
             algorithm_version="1.0.0",
             input_files="l1b.nc,era5.nc",
             allow_placeholders=True,
@@ -726,16 +728,15 @@ class TestAssemblyWithAggregation:
         # igbp is not among the readers set for the test, so its column stays the -1 integer category fill.
         assert int(dataset["IGBP_Surface_Type"].values[0]) == -1
         # The product still conforms strictly with the computed columns in place.
-        assert load_fmatch_definition(OperationalMode.CAM).check_dataset_conformance(dataset, strict=True) == []
+        assert load_fmatch_definition(OperationalMode.IMAGER).check_dataset_conformance(dataset, strict=True) == []
 
     def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, tmp_path):
         # Boresight far from the ERA5 grid -> no samples -> zero coverage.
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM,
+            OperationalMode.IMAGER,
             l1b,
             sources=self._era5_sources(tmp_path),
-            cloud_fraction_camera=np.zeros(1),
             allow_placeholders=True,
         )
 
