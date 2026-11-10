@@ -1,10 +1,11 @@
 """Unit tests for FMATCH product assembly and writing (product.py).
 
 Covers the assembly entry points (``assemble_fmatch_dataset`` / ``write_fmatch_product``) for both
-timescales: the L1B pass-through columns, ``cloud_fraction_camera``, their failure paths, the integer
-fill, the derived sun glint angle, the footprint geometry the PSF weighers read, the coverage QA bits,
-assembly with the real ERA5 surface reader, and the small helpers whose edge cases decide a product
-value (longitude wrapping, the viewing zenith angle read).
+timescales: the L1B pass-through columns and PSF bounding box, ``cloud_fraction_camera`` and its percent
+check, their failure paths, the placeholder raise, the integer fill, the derived sun glint angle, the
+footprint geometry the PSF weighers read, the coverage QA bits, assembly with the real ERA5 surface and
+pressure-level readers (including the stacked ``PRESSURE_LEVEL`` variables), and the small helpers whose
+edge cases decide a product value (longitude wrapping, the viewing zenith angle read).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching import product
+from libera_utils.footprint_matching.geometry import MissingGeolocationError
 from libera_utils.footprint_matching.product import (
     L1B_PASSTHROUGH_VARIABLES,
     _assemble_camtime_dataset,
@@ -31,6 +33,11 @@ from libera_utils.footprint_matching.product import (
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader
+from libera_utils.footprint_matching.readers.era5_pressure import (
+    _ERA5_PRESSURE_LEVEL_VARIABLES,
+    _ERA5_PRESSURE_LEVELS,
+    ERA5PressureLevelReader,
+)
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import (
     BoundingBox,
@@ -43,13 +50,15 @@ from libera_utils.footprint_matching.types import (
     TimeMatch,
     VariableSpec,
 )
-from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 from libera_utils.io.product_definition import LiberaVariableDefinition
 from tests.plugins.footprint_matching_fixtures import (
+    ERA5_FIXTURE_TIME,
     FAKE_GRID_LATS,
     FAKE_GRID_LONS,
     FakeMeanReader,
+    era5_pressure_fixture_value,
     fake_radiometer_footprint,
+    make_era5_pressure_netcdf_fixture,
     make_era5_surface_netcdf_fixture,
 )
 
@@ -65,19 +74,19 @@ RADIOMETER_MODES = tuple(mode for mode in OperationalMode if fmatch_time_variabl
 
 
 def _l1b_inputs(n: int = 3) -> dict[str, np.ndarray]:
-    """L1B pass-through inputs for ``n`` nadir footprints over the fake readers' grid near (0.5, 0.5)."""
+    """L1B inputs, keyed by their L1B names, for ``n`` nadir footprints over the fake readers' grid near (0.5, 0.5)."""
     return {
         "RADIOMETER_TIME": np.datetime64("2028-01-01T00:00:00", "ns") + np.arange(n) * np.timedelta64(1, "s"),
-        "latitude": np.full(n, 0.5),
-        "longitude": np.full(n, 0.5),
-        "altitude": np.zeros(n),
-        "solar_zenith_angle": np.full(n, 30.0),
-        "viewing_zenith_angle": np.zeros(n),
-        "relative_azimuth_angle": np.full(n, 90.0),
-        "subsatellite_latitude": np.full(n, 0.5),
-        "subsatellite_longitude": np.full(n, 0.5),
-        "satellite_radius_km": np.full(n, 7213.0),
-        "cone_angle_rate": np.full(n, -1.0),
+        "Latitude": np.full(n, 0.5),
+        "Longitude": np.full(n, 0.5),
+        "Altitude": np.zeros(n),
+        "Solar_Zenith_Surface": np.full(n, 30.0),
+        "Viewing_Zenith_Surface": np.zeros(n),
+        "Relative_Azimuth_Surface": np.full(n, 90.0),
+        "Subsatellite_Latitude": np.full(n, 0.5),
+        "Subsatellite_Longitude": np.full(n, 0.5),
+        "Radius_of_Satellite_from_Center_of_Earth": np.full(n, 7213.0),
+        "Cone_Angle_Rate": np.full(n, -1.0),
     }
 
 
@@ -129,28 +138,54 @@ class TestRadiometerPassThrough:
         l1b_inputs = _l1b_inputs()
         dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
 
-        for name, product_name in L1B_PASSTHROUGH_VARIABLES.items():
-            np.testing.assert_allclose(dataset[product_name].values, l1b_inputs[name], rtol=1e-6)
+        for name in L1B_PASSTHROUGH_VARIABLES:
+            np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
         np.testing.assert_array_equal(dataset["RADIOMETER_TIME"].values, l1b_inputs["RADIOMETER_TIME"])
 
     @pytest.mark.parametrize("mode", RADIOMETER_MODES)
     def test_altitude_is_the_l1b_altitude(self, mode):
         """altitude is copied from L1B ``Altitude``, the boresight surface height in meters, not a placeholder."""
-        assert L1B_PASSTHROUGH_VARIABLES["altitude"] == "Altitude"
+        assert "Altitude" in L1B_PASSTHROUGH_VARIABLES
         l1b_inputs = _l1b_inputs()
-        l1b_inputs["altitude"] = np.array([0.0, 150.0, 4000.0], dtype=np.float32)
+        l1b_inputs["Altitude"] = np.array([0.0, 150.0, 4000.0], dtype=np.float32)
         dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
 
-        np.testing.assert_array_equal(dataset["Altitude"].values, l1b_inputs["altitude"])
+        np.testing.assert_array_equal(dataset["Altitude"].values, l1b_inputs["Altitude"])
+
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_psf_bbox_is_each_footprints_box(self, mode):
+        """The radiometer PSF_Bbox_* columns are each record's ray-traced box, written even without ancillary data."""
+        l1b_inputs = _l1b_inputs()
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs, allow_placeholders=True)
+
+        boxes = [footprint.bbox for footprint in build_radiometer_footprints(l1b_inputs)]
+        np.testing.assert_allclose(dataset["PSF_Bbox_Lat_Min"].values, [b.lat_min for b in boxes], rtol=1e-6)
+        np.testing.assert_allclose(dataset["PSF_Bbox_Lat_Max"].values, [b.lat_max for b in boxes], rtol=1e-6)
+        np.testing.assert_allclose(
+            dataset["PSF_Bbox_Lon_Min"].values, [_normalize_longitude(b.lon_min) for b in boxes], rtol=1e-6
+        )
+        np.testing.assert_allclose(
+            dataset["PSF_Bbox_Lon_Max"].values, [_normalize_longitude(b.lon_max) for b in boxes], rtol=1e-6
+        )
+
+    def test_off_limb_record_has_no_box(self):
+        l1b_inputs = _l1b_inputs()
+        l1b_inputs["Latitude"] = np.array([0.5, np.nan, 0.5])
+        l1b_inputs["Longitude"] = np.array([0.5, np.nan, 0.5])
+        dataset = assemble_fmatch_dataset(OperationalMode.IMAGER, l1b_inputs, allow_placeholders=True)
+
+        for name in ("PSF_Bbox_Lat_Min", "PSF_Bbox_Lat_Max", "PSF_Bbox_Lon_Min", "PSF_Bbox_Lon_Max"):
+            values = dataset[name].values
+            assert np.isnan(values[1]), name
+            assert np.isfinite(values[[0, 2]]).all(), name
 
     def test_cloud_fraction_camera_is_merged_when_declared(self):
         """FMATCH-CAM declares cloud_fraction_camera, so supplied values become real, not placeholder."""
-        values = np.array([0.0, 0.5, 1.0], dtype=np.float32)
         dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM, _l1b_inputs(), cloud_fraction_camera=values, allow_placeholders=True
+            OperationalMode.CAM, _l1b_inputs(), cloud_fraction_camera=_CLOUD_FRACTION, allow_placeholders=True
         )
 
-        np.testing.assert_allclose(dataset["Cloud_Fraction_Camera"].values, values, rtol=1e-6)
+        np.testing.assert_allclose(dataset["Cloud_Fraction_Camera"].values, _CLOUD_FRACTION, rtol=1e-6)
 
 
 class TestCloudFractionCamera:
@@ -188,6 +223,32 @@ class TestCloudFractionCamera:
         with pytest.raises(ValueError, match="2 values for 3 footprints"):
             assemble_fmatch_dataset(mode, inputs(), cloud_fraction_camera=np.zeros(2), allow_placeholders=True)
 
+    @pytest.mark.parametrize("values", [[0.0, 50.0, 150.0], [-1.0, 50.0, 100.0], [-999.0, 50.0, 100.0]])
+    @pytest.mark.parametrize(
+        ("mode", "inputs"),
+        [
+            pytest.param(OperationalMode.CAM, _l1b_inputs, id="radiometer"),
+            pytest.param(OperationalMode.CAM_CAMTIME, _pseudo_footprints, id="camtime"),
+        ],
+    )
+    def test_value_outside_percent_raises(self, mode, inputs, values):
+        with pytest.raises(ValueError, match=r"must be in percent, \[0, 100\]"):
+            assemble_fmatch_dataset(mode, inputs(), cloud_fraction_camera=np.array(values), allow_placeholders=True)
+
+    @pytest.mark.parametrize(
+        ("mode", "inputs"),
+        [
+            pytest.param(OperationalMode.CAM, _l1b_inputs, id="radiometer"),
+            pytest.param(OperationalMode.CAM_CAMTIME, _pseudo_footprints, id="camtime"),
+        ],
+    )
+    def test_nan_is_a_missing_value(self, mode, inputs):
+        values = np.array([0.0, np.nan, 100.0])
+        dataset = assemble_fmatch_dataset(mode, inputs(), cloud_fraction_camera=values, allow_placeholders=True)
+        written = dataset["Cloud_Fraction_Camera"].values
+        assert np.isnan(written).sum() == np.isnan(values).sum() + (written.size - values.size)
+        np.testing.assert_array_equal(np.sort(written[np.isfinite(written)]), [0.0, 100.0])
+
 
 class TestRadiometerAssemblyRaises:
     """_assemble_radiometer_dataset rejects inputs it cannot build a product from."""
@@ -207,18 +268,36 @@ class TestRadiometerAssemblyRaises:
     @pytest.mark.parametrize(
         ("inputs", "match"),
         [
-            pytest.param(lambda: TestRadiometerAssemblyRaises._without("relative_azimuth_angle"), "missing", id="key"),
+            pytest.param(
+                lambda: TestRadiometerAssemblyRaises._without("Relative_Azimuth_Surface"), "missing", id="key"
+            ),
+            pytest.param(
+                lambda: TestRadiometerAssemblyRaises._without("Radius_of_Satellite_from_Center_of_Earth"),
+                "missing required key.*Radius_of_Satellite_from_Center_of_Earth",
+                id="scan-reference-key",
+            ),
             pytest.param(lambda: _l1b_inputs(0), "zero footprints", id="empty"),
-            pytest.param(lambda: TestRadiometerAssemblyRaises._short("latitude"), "inconsistent", id="length"),
+            pytest.param(lambda: TestRadiometerAssemblyRaises._short("Latitude"), "inconsistent", id="length"),
         ],
     )
     def test_bad_inputs_raise(self, inputs, match):
         with pytest.raises(ValueError, match=match):
             assemble_fmatch_dataset(OperationalMode.CAM, inputs(), allow_placeholders=True)
 
+    def test_footprint_beyond_the_horizon_raises_without_ancillary_inputs(self):
+        # Every radiometer assembly builds the footprints, so an unusable ephemeris raises with no sources too.
+        inputs = _l1b_inputs()
+        inputs["Subsatellite_Latitude"] = np.full(3, 30.5)  # 30 deg from the boresight: past an ~835 km horizon
+        with pytest.raises(MissingGeolocationError):
+            assemble_fmatch_dataset(OperationalMode.IMAGER, inputs, allow_placeholders=True)
+
     def test_camera_timescale_mode_raises(self):
         with pytest.raises(ValueError, match="camera-timescale mode"):
-            _assemble_radiometer_dataset(_l1b_inputs(), mode=OperationalMode.CAM_CAMTIME)
+            _assemble_radiometer_dataset(
+                _l1b_inputs(),
+                mode=OperationalMode.CAM_CAMTIME,
+                definition=load_fmatch_definition(OperationalMode.CAM_CAMTIME),
+            )
 
 
 class TestCamtimeAssemblyRaises:
@@ -230,7 +309,9 @@ class TestCamtimeAssemblyRaises:
 
     def test_radiometer_mode_raises(self):
         with pytest.raises(ValueError, match="not a camera-timescale mode"):
-            _assemble_camtime_dataset(_pseudo_footprints(), mode=OperationalMode.CAM)
+            _assemble_camtime_dataset(
+                _pseudo_footprints(), mode=OperationalMode.CAM, definition=load_fmatch_definition(OperationalMode.CAM)
+            )
 
 
 class TestAncillaryInputs:
@@ -249,6 +330,13 @@ class TestAncillaryInputs:
                 algorithm_version="1.0.0",
                 input_files="x",
                 cloud_fraction_camera=_CLOUD_FRACTION,
+            )
+
+    def test_unproduced_declared_variable_raises(self, fake_sources):
+        # The fake readers produce none of FMATCH-CAM's real reader columns, so they are left unproduced.
+        with pytest.raises(ValueError, match="IGBP_Surface_Type, .*which no input produced"):
+            assemble_fmatch_dataset(
+                OperationalMode.CAM, _l1b_inputs(), sources=fake_sources, cloud_fraction_camera=_CLOUD_FRACTION
             )
 
     def test_allow_placeholders_writes_fills(self):
@@ -488,7 +576,11 @@ class TestIntegerAggregatePlacement:
     def test_radiometer_column(self, fake_sources, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
         dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM, _l1b_inputs(), sources=fake_sources, cloud_fraction_camera=_CLOUD_FRACTION
+            OperationalMode.CAM,
+            _l1b_inputs(),
+            sources=fake_sources,
+            cloud_fraction_camera=_CLOUD_FRACTION,
+            allow_placeholders=True,
         )
         assert dataset["IGBP_Surface_Type"].dtype == np.int16
         np.testing.assert_array_equal(dataset["IGBP_Surface_Type"].values, [-1, 3, 3])
@@ -500,30 +592,14 @@ class TestIntegerAggregatePlacement:
             _pseudo_footprints(),
             sources=fake_sources,
             cloud_fraction_camera=_CLOUD_FRACTION,
+            allow_placeholders=True,
         )
         # The first footprint's gap and the padded cell both take -1.
         np.testing.assert_array_equal(dataset["IGBP_Surface_Type"].values, [[-1, 3], [3, -1]])
 
 
-class TestRadiometerAggregation:
-    def test_defaults_to_angular_weigher(self, fake_sources, monkeypatch):
-        calls = []
-        original = AngularPSFWeigher.weight_field
-
-        def spy(self, *args, **kwargs):
-            calls.append(type(self))
-            return original(self, *args, **kwargs)
-
-        monkeypatch.setattr(AngularPSFWeigher, "weight_field", spy)
-        assemble_fmatch_dataset(
-            OperationalMode.CAM, _l1b_inputs(), sources=fake_sources, cloud_fraction_camera=_CLOUD_FRACTION
-        )
-        assert calls
-        assert set(calls) == {AngularPSFWeigher}
-
-
 class TestWriteFmatchProduct:
-    def test_round_trip(self, tmp_path, fake_sources):
+    def test_round_trip(self, tmp_path, fake_sources, recwarn):
         filename = write_fmatch_product(
             OperationalMode.CAM,
             _l1b_inputs(),
@@ -532,7 +608,10 @@ class TestWriteFmatchProduct:
             input_files="x",
             sources=fake_sources,
             cloud_fraction_camera=_CLOUD_FRACTION,
+            allow_placeholders=True,
         )
+        # The writer builds the Dataset itself, so date_created is set once and never overwritten.
+        assert not [w for w in recwarn if "date_created" in str(w.message)]
         assert filename.data_product_id == DataProductIdentifier.aux_fmatch_cam
 
         with xr.open_dataset(filename.path, mask_and_scale=False) as written:
@@ -581,17 +660,17 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
     """A one-footprint L1B pass-through dict at a chosen boresight location."""
     return {
         "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")]),
-        "latitude": np.array([lat], dtype=np.float32),
-        "longitude": np.array([lon], dtype=np.float32),
-        "altitude": np.array([0.0], dtype=np.float32),
-        "solar_zenith_angle": np.array([sza], dtype=np.float32),
-        "viewing_zenith_angle": np.array([vza], dtype=np.float32),
-        "relative_azimuth_angle": np.array([raa], dtype=np.float32),
+        "Latitude": np.array([lat], dtype=np.float32),
+        "Longitude": np.array([lon], dtype=np.float32),
+        "Altitude": np.array([0.0], dtype=np.float32),
+        "Solar_Zenith_Surface": np.array([sza], dtype=np.float32),
+        "Viewing_Zenith_Surface": np.array([vza], dtype=np.float32),
+        "Relative_Azimuth_Surface": np.array([raa], dtype=np.float32),
         # The satellite sits just north of the boresight, consistent with a small VZA.
-        "subsatellite_latitude": np.array([lat + 0.5], dtype=np.float64),
-        "subsatellite_longitude": np.array([lon], dtype=np.float64),
-        "satellite_radius_km": np.array([7213.0]),
-        "cone_angle_rate": np.array([-1.0]),
+        "Subsatellite_Latitude": np.array([lat + 0.5], dtype=np.float64),
+        "Subsatellite_Longitude": np.array([lon], dtype=np.float64),
+        "Radius_of_Satellite_from_Center_of_Earth": np.array([7213.0]),
+        "Cone_Angle_Rate": np.array([-1.0]),
     }
 
 
@@ -633,6 +712,7 @@ class TestAssemblyWithAggregation:
             cloud_fraction_camera=np.zeros(1),
             algorithm_version="1.0.0",
             input_files="l1b.nc,era5.nc",
+            allow_placeholders=True,
         )
 
         # Weighted mean of a constant field is that constant.
@@ -652,9 +732,71 @@ class TestAssemblyWithAggregation:
         # Boresight far from the ERA5 grid -> no samples -> zero coverage.
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(
-            OperationalMode.CAM, l1b, sources=self._era5_sources(tmp_path), cloud_fraction_camera=np.zeros(1)
+            OperationalMode.CAM,
+            l1b,
+            sources=self._era5_sources(tmp_path),
+            cloud_fraction_camera=np.zeros(1),
+            allow_placeholders=True,
         )
 
         assert np.isnan(dataset["ERA5_Surface_Wind_U10"].values[0])
         np.testing.assert_allclose(dataset["PSF_Coverage_Fraction"].values, [0.0])
         assert int(dataset["Quality_Flag"].values[0]) & _INSUFFICIENT
+
+
+class TestStackedProductVariables:
+    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, tmp_path, set_mode_readers):
+        """FMATCH-IMAGER carries each ERA5 pressure-level field as one variable on ``PRESSURE_LEVEL``.
+
+        The reader aggregates every (field, level) pair on its own, and the product definition declares one
+        ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` variable per field. If assembly published the per-level columns under
+        their own names, the definition would drop them and write the stacked variables as fill, with no error.
+
+        Assembles three nadir footprints inside a dense ERA5 pressure-level fixture whose every layer is a known
+        constant, so the PSF-weighted mean is that constant. Asserts every stacked mean holds its layers' constants in
+        level order, every stacked standard deviation is zero, and the ``PRESSURE_LEVEL`` coordinate holds the levels.
+        """
+        set_mode_readers(OperationalMode.IMAGER, ("ERA5_Pressure",))
+        era5_path = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        l1b = _l1b_inputs()
+        l1b["RADIOMETER_TIME"] = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "s")
+        for name, value in [("Latitude", 1.0), ("Subsatellite_Latitude", 1.0)]:
+            l1b[name] = np.full(3, value)
+        for name in ("Longitude", "Subsatellite_Longitude"):
+            l1b[name] = np.full(3, 11.0)
+
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.IMAGER,
+            l1b,
+            sources={"ERA5_Pressure": ERA5PressureLevelReader([era5_path])},
+            allow_placeholders=True,
+        )
+
+        np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
+        for var_index, (field_name, _) in enumerate(_ERA5_PRESSURE_LEVEL_VARIABLES):
+            mean = dataset[f"ERA5_Pressure_{field_name}"]
+            assert mean.dims == ("RADIOMETER_TIME", "PRESSURE_LEVEL")
+            expected = [era5_pressure_fixture_value(var_index, level) for level in _ERA5_PRESSURE_LEVELS]
+            np.testing.assert_allclose(mean.values, np.tile(expected, (3, 1)), rtol=1e-6)
+            spread = dataset[f"ERA5_Pressure_{field_name}_Standard_Deviation"]
+            np.testing.assert_allclose(spread.values, 0.0, atol=1e-6 * np.max(np.abs(expected)))
+
+    def test_unstaged_era5_pressure_leaves_stacked_placeholders(self):
+        """Without ERA5 pressure-level inputs, FMATCH-IMAGER still carries the levels and level-shaped fill.
+
+        The ``PRESSURE_LEVEL`` coordinate comes from the reader's stacks, not its inputs, and a stacked variable no
+        input produced must still have its declared ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` shape to conform.
+
+        Assembles three footprints with ``allow_placeholders=True`` and no ancillary inputs, and asserts the coordinate
+        holds the configured levels and a stacked variable is all fill at shape ``(3, n_levels)``.
+        """
+        dataset = assemble_fmatch_dataset(OperationalMode.IMAGER, _l1b_inputs(), allow_placeholders=True)
+
+        np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
+        temperature = dataset["ERA5_Pressure_Temperature"]
+        assert temperature.shape == (3, len(_ERA5_PRESSURE_LEVELS))
+        _, fill_value = _fill_value_for(
+            "ERA5_Pressure_Temperature",
+            load_fmatch_definition(OperationalMode.IMAGER).variables["ERA5_Pressure_Temperature"],
+        )
+        np.testing.assert_array_equal(temperature.values, fill_value)

@@ -1317,6 +1317,8 @@ FAKE_GRID_LONS = np.array([0.1, 0.3, 0.5, 0.7, 0.9], dtype=np.float64)
 FAKE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 # The satellite radius the fake footprints carry, km: an ~835 km orbit above the WGS84 equator.
 FAKE_SATELLITE_RADIUS_KM = 7213.0
+# A finite instrument cone-angle rate (degrees/second) for fake radiometer footprints.
+FAKE_CONE_ANGLE_RATE: float = -1.0
 
 # Every product carries the fake variables, so the fakes serve whichever mode a test runs.
 _ALL_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
@@ -1391,14 +1393,16 @@ def fake_radiometer_footprint(
     subsatellite_latitude: float | None = None,
     subsatellite_longitude: float | None = None,
     satellite_radius_km: float = FAKE_SATELLITE_RADIUS_KM,
-    cone_angle_rate: float | None = None,
+    cone_angle_rate: float | None = FAKE_CONE_ANGLE_RATE,
     viewing_zenith_angle: float = 0.0,
     off_limb: bool = False,
     time: np.datetime64 = FAKE_TIME,
 ) -> RadiometerFootprint:
     """A radiometer footprint over the fake readers' grid, viewed from nadir unless the ephemeris says otherwise.
 
-    The subsatellite point defaults to the boresight, which matches the default zero viewing zenith angle.
+    The subsatellite point defaults to the boresight, which matches the default zero viewing zenith angle. The
+    cone-angle rate defaults to ``FAKE_CONE_ANGLE_RATE``, a finite scanning rate, so the default
+    ``AngularPSFWeigher`` can orient the PSF; pass ``None`` for a footprint with no rate.
     """
     return RadiometerFootprint(
         bbox=bbox,

@@ -12,8 +12,9 @@ Assembly and writing are wired for **every** operational mode, and each declared
 variable is filled by one of three routes:
 
 * **Input pass-through** - the geolocation and viewing angles come straight from
-  the L1B Daily inputs (``L1B_PASSTHROUGH_VARIABLES`` for the radiometer
-  modes, ``_CAMTIME_SEGMENTATION_VARIABLES`` for the camera-segmented ones).
+  the L1B Daily inputs (``L1B_PASSTHROUGH_VARIABLES`` for the radiometer modes) or
+  from the camera pseudo-footprints (``real_columns`` in ``_assemble_camtime_dataset``).
+  Each footprint's PSF bounding box (``PSF_Bbox_*``) comes from its ray-traced box.
 * **Computed** - the derived viewing geometry (``Sunglint_Angle``, via
   :func:`compute_derived_viewing_geometry`) is always calculated, and the external
   aggregated variables (:func:`aggregate_external_variables`) plus the coverage/QA
@@ -21,15 +22,18 @@ variable is filled by one of three routes:
   ancillary inputs are supplied - the PSF aggregation of each source's native samples.
 * **Placeholders** - a declared variable no input produced, when the caller opts in
   with ``allow_placeholders=True``: the external columns when no ancillary data is
-  staged, and ``Cloud_Fraction_Camera`` when it is omitted for a CAM mode.
+  staged, a reader's columns when its source is not supplied, and
+  ``Cloud_Fraction_Camera`` when it is omitted for a CAM mode. Without the opt-in,
+  assembly raises.
 
 Variable names
 --------------
 Assembly fills each column under the name the product definition declares
 (``Sunglint_Angle``, ``Quality_Flag``, ``<READER_KEY>_<spec_name>`` such as
 ``ERA5_Surface_Wind_U10``), so nothing is renamed on the way to the file. The L1B input
-dict stays keyed by snake_case input names (``latitude``, ``subsatellite_latitude``);
-``L1B_PASSTHROUGH_VARIABLES`` maps each pass-through input to its product name.
+dict is keyed by the L1B RAD-4CH variable names (``Latitude``, ``Subsatellite_Latitude``,
+``Cone_Angle_Rate``) plus the ``RADIOMETER_TIME`` coordinate; the pass-through names are
+also the product names, since the L1B names follow CERES BDS.
 
 A placeholder is *structurally* correct (declared dtype, shape and attributes)
 but numerically meaningless. Floating-point placeholders are filled with ``NaN``
@@ -78,7 +82,6 @@ from libera_utils.footprint_matching.types import (
 from libera_utils.footprint_matching.weighting import (
     AngularPSFWeigher,
     PixelWeigher,
-    RadialWeigher,
 )
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -94,48 +97,17 @@ if TYPE_CHECKING:
     from libera_utils.footprint_matching.types import VariableSpec
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
-# Product names of the variables that the camera-segmentation tool fills with
-# *real* per-footprint values (center-pixel geolocation/geometry, the corner-derived
-# PSF bounding box, and the QA flags). Every other declared variable is filled by the
-# derived-geometry engine (:func:`compute_derived_viewing_geometry`, always) or the
-# external aggregation engine (:func:`aggregate_external_variables`, when ancillary
-# inputs are staged); a declared variable no input produced falls back to a conformant
-# placeholder under ``allow_placeholders=True``. Kept as one set so the assembly and its
-# tests agree on exactly which variables come straight off the segmentation.
-_CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
-    {
-        "Latitude",
-        "Longitude",
-        "Altitude",
-        "Solar_Zenith_Surface",
-        "Viewing_Zenith_Surface",
-        "Relative_Azimuth_Surface",
-        "PSF_Bbox_Lat_Min",
-        "PSF_Bbox_Lat_Max",
-        "PSF_Bbox_Lon_Min",
-        "PSF_Bbox_Lon_Max",
-        "Quality_Flag",
-        # Boresight (center) pixel provenance: which L1B camera pixel this pseudo-footprint's
-        # boresight stand-in falls on. Real per-footprint integers straight off the
-        # PseudoFootprint. The block's inclusive pixel extent is emitted separately as the four
-        # Camera_Pixel_{X,Y}_{Min,Max} COORDINATES, which this set (real data *variables*)
-        # deliberately does not list.
-        "Center_Pixel_X",
-        "Center_Pixel_Y",
-    }
+# L1B RAD-4CH variables FMATCH copies straight out of L1B rather than computing. They keep
+# their L1B name in the product, which follows CERES BDS, so each is also the FMATCH product
+# variable name and the key the L1B input dict carries it under.
+L1B_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
+    "Latitude",
+    "Longitude",
+    "Altitude",
+    "Solar_Zenith_Surface",
+    "Viewing_Zenith_Surface",
+    "Relative_Azimuth_Surface",
 )
-
-# Mapping of L1B input key -> L1B RAD-4CH variable name, for the per-footprint quantities
-# FMATCH copies straight out of L1B rather than computing. These keep their L1B name in the
-# product, so the L1B name is also the FMATCH product variable name.
-L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
-    "latitude": "Latitude",
-    "longitude": "Longitude",
-    "altitude": "Altitude",
-    "solar_zenith_angle": "Solar_Zenith_Surface",
-    "viewing_zenith_angle": "Viewing_Zenith_Surface",
-    "relative_azimuth_angle": "Relative_Azimuth_Surface",
-}
 
 # L1B fields (beyond the pass-through product columns) that FMATCH reads only to build
 # each footprint's viewing geometry - the true ray-traced bounding box
@@ -151,11 +123,11 @@ L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
 #
 # Like L1B_PASSTHROUGH_VARIABLES this lives here (not in the runner that reads it) so the
 # assembly path and the runner share one source of truth without a circular import.
-L1B_SCAN_REFERENCE_VARIABLES: dict[str, str] = {
-    "subsatellite_latitude": "Subsatellite_Latitude",
-    "subsatellite_longitude": "Subsatellite_Longitude",
-    "satellite_radius_km": "Radius_of_Satellite_from_Center_of_Earth",
-}
+L1B_SCAN_REFERENCE_VARIABLES: tuple[str, ...] = (
+    "Subsatellite_Latitude",
+    "Subsatellite_Longitude",
+    "Radius_of_Satellite_from_Center_of_Earth",
+)
 
 # The instrument cone-angle rate (degrees/second) sets the along-scan PSF orientation
 # and flags the stationary-scanner case. Unlike the subsatellite point it is optional:
@@ -163,7 +135,6 @@ L1B_SCAN_REFERENCE_VARIABLES: dict[str, str] = {
 # footprint downstream, so it is read but deliberately kept out of the finite mask (it
 # must not drop an otherwise-good Earth-viewing footprint).
 L1B_CONE_ANGLE_RATE_VARIABLE: str = "Cone_Angle_Rate"
-FMATCH_CONE_ANGLE_RATE_KEY: str = "cone_angle_rate"
 # Key of the radiometer observation time in the L1B input map (and the product's time
 # coordinate for the radiometer-timescale modes). Each footprint carries it so the readers
 # can match ancillary samples to it in time.
@@ -297,6 +268,8 @@ def _footprint_geometry(footprint: RadiometerFootprint | PseudoFootprint) -> _Fo
 
     The L1B ``Cone_Angle_Rate`` fill value (``-999``) is normalized to ``None`` so a
     fill never masquerades as a real (near-zero) stationary-scanner rate.
+    :func:`build_radiometer_footprints` already does this; the check here covers a
+    :class:`RadiometerFootprint` constructed directly.
 
     Parameters
     ----------
@@ -420,14 +393,13 @@ def aggregate_external_variables(
     one copy of every source; otherwise (Windows) the workers are spawned and each builds
     its own sources from ``source_file_paths``.
 
-    The PSF weigher is swappable via ``weigher``. This function keeps the boresight
-    **radial stand-in** (:class:`~libera_utils.footprint_matching.weighting.RadialWeigher`)
-    as its own generic default, but the radiometer-timescale assembly path defaults to
-    the scientifically faithful angular-frame PSF
+    The PSF weigher is swappable via ``weigher``. It defaults to the angular-frame PSF
     (:class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`), oriented by
-    the L1B ephemeris (subsatellite point + satellite radius) and cone-angle rate (see
-    ``_assemble_radiometer_dataset``). Both weighers size the PSF from the ephemeris,
-    so camera pseudo-footprints, which carry none yet, raise ``ValueError``.
+    the L1B ephemeris (subsatellite point + satellite radius) and each footprint's
+    cone-angle rate, for both timescales. A caller whose footprints carry no cone-angle
+    rate passes :class:`~libera_utils.footprint_matching.weighting.RadialWeigher`
+    explicitly. Both weighers size the PSF from the ephemeris, so camera
+    pseudo-footprints, which carry none yet, raise ``ValueError``.
 
     Coverage-based *acceptance* (the CERES 75%/95% discard/flag rule) is not applied
     here -- this function computes each footprint's coverage and, when
@@ -457,7 +429,8 @@ def aggregate_external_variables(
         ``sources``, not both; a pool that must spawn its workers needs it.
     weigher : PixelWeigher, optional
         The per-sample PSF weight provider. Defaults to a fresh
-        :class:`~libera_utils.footprint_matching.weighting.RadialWeigher`.
+        :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`, which needs
+        each on-Earth footprint's cone-angle rate.
     return_coverage : bool, optional
         When ``True``, also return a per-footprint coverage array. Defaults to
         ``False`` (return only the values dict).
@@ -486,7 +459,8 @@ def aggregate_external_variables(
     ValueError
         If neither or both of ``sources`` and ``source_file_paths`` are supplied; if an on-Earth
         footprint is a :class:`~libera_utils.footprint_matching.types.PseudoFootprint`, which carries no L1B ephemeris; if a footprint
-        has no finite viewing zenith angle; if a footprint's time is NaT and a
+        has no finite viewing zenith angle; if an on-Earth footprint has no usable cone-angle
+        rate and ``weigher`` is the default ``AngularPSFWeigher``; if a footprint's time is NaT and a
         source selects by time; if ``n_workers``, or the ``FMATCH_WORKERS`` configuration
         key it defaults to, is below one or not an integer; or if the pool must be
         spawned (no fork on this platform) and ``source_file_paths`` was not given, so a
@@ -510,7 +484,7 @@ def aggregate_external_variables(
         require_mode_reader_keys(mode, sources, "sources")
 
     if weigher is None:
-        weigher = RadialWeigher()
+        weigher = AngularPSFWeigher()
 
     footprints = list(footprints)
     n_footprints = len(footprints)
@@ -831,10 +805,10 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The L1B pass-through arrays the FMATCH runner reads from L1B Daily (already
-        filtered to finite geolocation). ``RADIOMETER_TIME``, ``latitude``,
-        ``longitude``, ``viewing_zenith_angle`` and every
-        ``L1B_SCAN_REFERENCE_VARIABLES`` key are required;
-        ``FMATCH_CONE_ANGLE_RATE_KEY`` is read when present.
+        filtered to finite geolocation), keyed by their L1B names. ``RADIOMETER_TIME``,
+        ``Latitude``, ``Longitude``, ``Viewing_Zenith_Surface`` and every name in
+        ``L1B_SCAN_REFERENCE_VARIABLES`` are required; ``Cone_Angle_Rate``
+        (``L1B_CONE_ANGLE_RATE_VARIABLE``) is read when present.
 
     Returns
     -------
@@ -849,19 +823,19 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         If any record's ephemeris is unusable or its footprint is not visible from the
         satellite (see :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_boxes`).
     """
-    required = (RADIOMETER_TIME_KEY, "latitude", "longitude", "viewing_zenith_angle", *L1B_SCAN_REFERENCE_VARIABLES)
+    required = (RADIOMETER_TIME_KEY, "Latitude", "Longitude", "Viewing_Zenith_Surface", *L1B_SCAN_REFERENCE_VARIABLES)
     missing = [name for name in required if name not in l1b_inputs]
     if missing:
         raise ValueError(f"L1B inputs are missing the key(s) radiometer footprints need: {', '.join(missing)}")
 
     times = np.asarray(l1b_inputs[RADIOMETER_TIME_KEY]).astype("datetime64[ns]")
-    latitudes = np.asarray(l1b_inputs["latitude"], dtype=float)
-    longitudes = np.asarray(l1b_inputs["longitude"], dtype=float)
-    viewing_zeniths = np.asarray(l1b_inputs["viewing_zenith_angle"], dtype=float)
-    subsatellite_lats = np.asarray(l1b_inputs["subsatellite_latitude"], dtype=float)
-    subsatellite_lons = np.asarray(l1b_inputs["subsatellite_longitude"], dtype=float)
-    satellite_radii = np.asarray(l1b_inputs["satellite_radius_km"], dtype=float)
-    cone_rates = np.asarray(l1b_inputs.get(FMATCH_CONE_ANGLE_RATE_KEY, np.full(latitudes.shape, np.nan)), dtype=float)
+    latitudes = np.asarray(l1b_inputs["Latitude"], dtype=float)
+    longitudes = np.asarray(l1b_inputs["Longitude"], dtype=float)
+    viewing_zeniths = np.asarray(l1b_inputs["Viewing_Zenith_Surface"], dtype=float)
+    subsatellite_lats = np.asarray(l1b_inputs["Subsatellite_Latitude"], dtype=float)
+    subsatellite_lons = np.asarray(l1b_inputs["Subsatellite_Longitude"], dtype=float)
+    satellite_radii = np.asarray(l1b_inputs["Radius_of_Satellite_from_Center_of_Earth"], dtype=float)
+    cone_rates = np.asarray(l1b_inputs.get(L1B_CONE_ANGLE_RATE_VARIABLE, np.full(latitudes.shape, np.nan)), dtype=float)
 
     # Every footprint's ray-traced box in one batched call. A None result marks an
     # off-Earth view.
@@ -888,8 +862,8 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
                 subsatellite_latitude=float(subsatellite_lats[i]),
                 subsatellite_longitude=float(subsatellite_lons[i]),
                 satellite_radius_km=float(satellite_radii[i]),
-                # A fill/NaN cone-angle rate means "unknown scan rate" -> None.
-                cone_angle_rate=None if not np.isfinite(cone_rate) else cone_rate,
+                # A fill (-999) or NaN cone-angle rate means an unknown scan rate, so it becomes None.
+                cone_angle_rate=None if (not np.isfinite(cone_rate) or cone_rate == L1B_FILL_VALUE) else cone_rate,
                 off_limb=off_limb,
             )
         )
@@ -948,7 +922,8 @@ def _merge_computed_variables(
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers
         active in ``mode``. Pass this or ``source_file_paths``, not both.
     weigher : PixelWeigher or None
-        PSF weigher for the aggregation (defaults to the radial stand-in downstream).
+        PSF weigher for the aggregation, or ``None`` for the
+        :func:`aggregate_external_variables` default.
     allow_placeholders : bool, optional
         When ``True`` and neither ``sources`` nor ``source_file_paths`` is given,
         skip the external aggregation and leave those columns as placeholders. Defaults
@@ -1089,9 +1064,10 @@ def assemble_fmatch_dataset(
     :func:`compute_derived_viewing_geometry`, and the aggregated external
     variables from :func:`aggregate_external_variables` into the variable dict
     expected by the mode's product definition (from
-    :func:`load_fmatch_definition`), then builds a Dataset via
-    ``LiberaDataProductDefinition.create_product_dataset`` and brings it into
-    conformance with ``enforce_dataset_conformance``.
+    :func:`load_fmatch_definition`), then builds the Dataset once via
+    ``LiberaDataProductDefinition.create_product_dataset``, with ``algorithm_version``
+    and ``InputGranules`` as its dynamic attributes, and brings it into conformance
+    with ``enforce_dataset_conformance``.
 
     Dispatch is by timescale, because that determines what the mode is built
     *from*:
@@ -1109,9 +1085,9 @@ def assemble_fmatch_dataset(
     In both cases the derived viewing geometry (``Sunglint_Angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
     coverage/QA columns are computed from the ancillary inputs (``sources`` or
-    ``source_file_paths``, forwarded to :func:`aggregate_external_variables`). Without
-    them assembly raises, unless ``allow_placeholders=True`` asks for those columns to
-    be written as conformant placeholders. Columns are named as the product definition
+    ``source_file_paths``, forwarded to :func:`aggregate_external_variables`). A declared
+    variable no input produced raises, unless ``allow_placeholders=True`` asks for it to
+    be written as a conformant placeholder. Columns are named as the product definition
     declares them.
 
     Parameters
@@ -1119,8 +1095,8 @@ def assemble_fmatch_dataset(
     mode : OperationalMode
         The FMATCH operational mode being assembled.
     inputs : Sequence[PseudoFootprint] or dict[str, np.ndarray]
-        Camera pseudo-footprints for the camera-timescale modes, or the L1B
-        pass-through dict for the radiometer-timescale modes.
+        Camera pseudo-footprints for the camera-timescale modes, or the L1B dict
+        (keyed by L1B names) for the radiometer-timescale modes.
     definition : LiberaDataProductDefinition, optional
         The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
     algorithm_version : str, optional
@@ -1131,8 +1107,9 @@ def assemble_fmatch_dataset(
         the product requires it; assembly alone does not.
     cloud_fraction_camera : np.ndarray, optional
         Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
-        algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
-        the same order as the time coordinate. This is an *internal* algorithm
+        algorithm (Libera WFOV camera), in percent ``[0, 100]`` with ``NaN`` for a
+        missing value, as a 1-D array indexed by footprint in the same order as the
+        time coordinate. This is an *internal* algorithm
         output - it does not come from a reader and is already aggregated to one
         value per footprint - so it is merged directly into the ``Cloud_Fraction_Camera``
         variable rather than going through :func:`aggregate_external_variables`.
@@ -1146,14 +1123,15 @@ def assemble_fmatch_dataset(
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers
         active in ``mode``. Pass this or ``source_file_paths``, not both.
     weigher : PixelWeigher, optional
-        PSF weigher for the aggregation. The radiometer-timescale modes default to
-        :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`.
+        PSF weigher for the aggregation. Defaults to
+        :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher` (see
+        :func:`aggregate_external_variables`).
     allow_placeholders : bool, optional
-        When ``True``, a declared input the call does not supply is written as fill
-        instead of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag``
-        columns when neither ``sources`` nor ``source_file_paths`` is given, and
-        ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera`` is omitted for a CAM mode.
-        Defaults to ``False``.
+        When ``True``, a declared variable no input produced is written as fill instead
+        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` columns
+        when neither ``sources`` nor ``source_file_paths`` is given, a reader's columns when
+        its source is missing, and ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera``
+        is omitted for a CAM mode. Defaults to ``False``.
 
     Returns
     -------
@@ -1164,15 +1142,16 @@ def assemble_fmatch_dataset(
     ------
     ValueError
         If ``inputs`` is empty; if the radiometer-timescale ``inputs`` dict is missing
-        a required pass-through key or its arrays have inconsistent lengths; if neither
+        a required L1B key or its arrays have inconsistent lengths; if neither
         ``sources`` nor ``source_file_paths`` is given and ``allow_placeholders``
         is ``False``, or both are given; if ``cloud_fraction_camera`` is omitted for a CAM
-        mode without ``allow_placeholders``, given for an IMAGER mode, or not one value per
-        footprint; if a footprint has no finite viewing zenith angle; if a
-        camera-timescale mode is aggregated, since camera pseudo-footprints carry no L1B
-        ephemeris; if a footprint's time is NaT and a source selects by time; or if the
-        definition declares a variable off the product variable naming rule or assembly
-        produces a column it does not declare.
+        mode without ``allow_placeholders``, given for an IMAGER mode, not one value per
+        footprint, or has a finite value outside ``[0, 100]``; if any other declared
+        variable no input produced is left without ``allow_placeholders``; if a footprint
+        has no finite viewing zenith angle, or no usable cone-angle rate under the default
+        weigher; if a camera-timescale mode is aggregated, since camera pseudo-footprints
+        carry no L1B ephemeris; if a footprint's time is NaT and a source selects by time;
+        or if assembly produces a column the definition does not declare.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active
         in ``mode``.
@@ -1180,13 +1159,74 @@ def assemble_fmatch_dataset(
         If a radiometer record's ephemeris is unusable or its footprint is not visible
         from the satellite (see :func:`build_radiometer_footprints`).
     """
+    if definition is None:
+        definition = load_fmatch_definition(mode)
+    data = _assemble_fmatch_data(
+        mode,
+        inputs,
+        definition,
+        cloud_fraction_camera=cloud_fraction_camera,
+        source_file_paths=source_file_paths,
+        sources=sources,
+        weigher=weigher,
+        allow_placeholders=allow_placeholders,
+    )
+    dataset = definition.create_product_dataset(
+        data, dynamic_product_attributes={"algorithm_version": algorithm_version, "InputGranules": input_files}
+    )
+    return definition.enforce_dataset_conformance(dataset)
+
+
+def _assemble_fmatch_data(
+    mode: OperationalMode,
+    inputs: Sequence[PseudoFootprint] | dict[str, np.ndarray],
+    definition: LiberaDataProductDefinition,
+    *,
+    cloud_fraction_camera: np.ndarray | None,
+    source_file_paths: dict[str, Sequence[Path]] | None,
+    sources: dict[str, AncillaryReader] | None,
+    weigher: PixelWeigher | None,
+    allow_placeholders: bool,
+) -> dict[str, np.ndarray]:
+    """Assemble every array a FMATCH product declares, dispatching on the mode's timescale.
+
+    The step :func:`assemble_fmatch_dataset` and :func:`write_fmatch_product` share: the
+    first builds a Dataset from the arrays, the second hands them to
+    :func:`~libera_utils.io.netcdf.write_libera_data_product`, which builds, enforces and
+    checks the Dataset once.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The FMATCH operational mode being assembled.
+    inputs : Sequence[PseudoFootprint] or dict[str, np.ndarray]
+        Camera pseudo-footprints for the camera-timescale modes, or the L1B dict for the
+        radiometer-timescale modes.
+    definition : LiberaDataProductDefinition
+        The mode's product definition.
+    cloud_fraction_camera, source_file_paths, sources, weigher, allow_placeholders
+        As in :func:`assemble_fmatch_dataset`.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Every coordinate and variable array the definition declares, keyed by product name.
+
+    Raises
+    ------
+    ValueError
+        As ``_assemble_camtime_dataset`` or ``_assemble_radiometer_dataset`` raises.
+    KeyError
+        If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active
+        in ``mode``.
+    MissingGeolocationError
+        If a radiometer record's ephemeris is unusable (see :func:`build_radiometer_footprints`).
+    """
     assembler = _assemble_camtime_dataset if mode in _CAMERA_TIMESCALE_MODES else _assemble_radiometer_dataset
     return assembler(
         inputs,
         mode=mode,
         definition=definition,
-        algorithm_version=algorithm_version,
-        input_files=input_files,
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
         sources=sources,
@@ -1272,16 +1312,18 @@ def _fill_placeholder_variables(
     data: dict[str, np.ndarray],
     definition: LiberaDataProductDefinition,
     shape: int | tuple[int, ...],
+    *,
+    allow_placeholders: bool,
 ) -> None:
-    """Fill every declared variable missing from ``data`` with a conformant placeholder.
+    """Fill every declared variable missing from ``data`` with a conformant placeholder, if allowed.
 
-    Mutates ``data`` in place, adding one array per declared variable no input
-    produced, under ``allow_placeholders=True``: the external columns when no ancillary
-    data was staged, and ``Cloud_Fraction_Camera`` when it was omitted. The product
-    definition requires every declared variable to be present, so this is what lets such
-    a product conform. Each placeholder is filled with what :func:`_fill_value_for`
-    returns: structurally valid (declared dtype/shape/attributes) but numerically
-    meaningless.
+    A declared variable no input produced (the external columns when no ancillary data
+    was staged, a reader's columns when its source was not supplied, or
+    ``Cloud_Fraction_Camera`` when it was omitted) would otherwise reach the file as a
+    column of fill indistinguishable from a computed one, so it is written only when the
+    caller opts in with ``allow_placeholders=True``. Mutates ``data`` in place, adding one
+    array per such variable, filled with what :func:`_fill_value_for` returns: structurally
+    valid (declared dtype/shape/attributes) but numerically meaningless.
 
     Parameters
     ----------
@@ -1294,57 +1336,30 @@ def _fill_placeholder_variables(
         length for the radiometer-timescale products, or the ``(CAMERA_TIME, PSEUDOFOOTPRINT)``
         grid shape for the camera-timescale products. A variable declared on a further
         dimension (e.g. ``PRESSURE_LEVEL``) is as long on it as that coordinate in ``data``.
-    """
-    record_shape = (shape,) if isinstance(shape, int) else tuple(shape)
-    for name, variable_definition in definition.variables.items():
-        if name not in data:
-            further = variable_definition.dimensions[len(record_shape) :]
-            placeholder_shape = record_shape + tuple(len(data[dimension]) for dimension in further)
-            dtype, fill_value = _fill_value_for(name, variable_definition)
-            data[name] = np.full(placeholder_shape, fill_value, dtype=dtype)
-
-
-def _finalize_product_dataset(
-    definition: LiberaDataProductDefinition,
-    data: dict[str, np.ndarray],
-    *,
-    algorithm_version: str | None,
-    input_files: str | None,
-) -> Dataset:
-    """Build a conformant Dataset from assembled arrays and set the dynamic global attributes.
-
-    Shared tail of both assembly paths. Dynamic (per-run) global attributes are set
-    directly on the Dataset; they are declared (as null) in the definition, so
-    ``enforce_dataset_conformance`` keeps them rather than stripping them as extras.
-
-    Parameters
-    ----------
-    definition : LiberaDataProductDefinition
-        The product definition to build against.
-    data : dict[str, np.ndarray]
-        Every coordinate and variable array the product declares, keyed by product name.
-    algorithm_version : str, optional
-        Value for the required dynamic ``algorithm_version`` global attribute.
-    input_files : str, optional
-        Provenance string for the required dynamic ``InputGranules`` global attribute.
-
-    Returns
-    -------
-    xarray.Dataset
-        The conformance-enforced dataset, ready to write.
+    allow_placeholders : bool
+        Whether a declared variable no input produced may be written as fill.
 
     Raises
     ------
     ValueError
-        If a key of ``data`` names a variable the definition does not declare.
+        If a declared variable is missing from ``data`` and ``allow_placeholders`` is
+        ``False``, naming every such variable.
     """
-    dataset = definition.create_product_dataset(data)
-    dataset = definition.enforce_dataset_conformance(dataset)
-    if input_files is not None:
-        dataset.attrs["InputGranules"] = input_files
-    if algorithm_version is not None:
-        dataset.attrs["algorithm_version"] = algorithm_version
-    return dataset
+    missing = [name for name in definition.variables if name not in data]
+    if missing and not allow_placeholders:
+        product_id = definition.attributes.get("ProductID", "this product")
+        raise ValueError(
+            f"{product_id} declares {', '.join(missing)}, which no input produced: supply every source the "
+            "mode's readers use (sources or source_file_paths) and, for a CAM mode, cloud_fraction_camera, or pass "
+            "allow_placeholders=True to write them as fill values."
+        )
+    record_shape = (shape,) if isinstance(shape, int) else tuple(shape)
+    for name in missing:
+        variable_definition = definition.variables[name]
+        further = variable_definition.dimensions[len(record_shape) :]
+        placeholder_shape = record_shape + tuple(len(data[dimension]) for dimension in further)
+        dtype, fill_value = _fill_value_for(name, variable_definition)
+        data[name] = np.full(placeholder_shape, fill_value, dtype=dtype)
 
 
 def _normalize_longitude(longitude_deg: float) -> float:
@@ -1364,17 +1379,15 @@ def _normalize_longitude(longitude_deg: float) -> float:
 def _assemble_camtime_dataset(
     footprints: Sequence[PseudoFootprint],
     *,
-    mode: OperationalMode = OperationalMode.CAM_CAMTIME,
-    definition: LiberaDataProductDefinition | None = None,
-    algorithm_version: str | None = None,
-    input_files: str | None = None,
+    mode: OperationalMode,
+    definition: LiberaDataProductDefinition,
     cloud_fraction_camera: np.ndarray | None = None,
     source_file_paths: dict[str, Sequence[Path]] | None = None,
     sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
-) -> Dataset:
-    """Assemble a camera-timescale FMATCH Dataset from camera pseudo-footprints.
+) -> dict[str, np.ndarray]:
+    """Assemble the arrays of a camera-timescale FMATCH product from camera pseudo-footprints.
 
     Serves both camera-timescale modes (``CAM_CAMTIME`` and ``IMAGER_CAMTIME``).
     They are built the same way - from the same L1B camera segmentation - and
@@ -1383,28 +1396,22 @@ def _assemble_camtime_dataset(
 
     Builds the per-footprint variable arrays declared by the mode's product
     definition. The center-pixel geolocation/geometry, the corner-derived PSF
-    bounding box, and the QA flags come straight from the pseudo-footprints
-    (:data:`_CAMTIME_SEGMENTATION_VARIABLES`). The derived ``Sunglint_Angle`` is
-    computed from the geolocation angles, and (when ``source_file_paths`` or
-    ``sources`` is supplied) the external aggregated variables and coverage/QA
-    columns are computed via :func:`_merge_computed_variables`; any remaining declared
-    variable is a conformant placeholder.
+    bounding box, and the QA flags come straight from the pseudo-footprints (the
+    ``real_columns`` built below). The derived ``Sunglint_Angle`` is computed from the
+    geolocation angles, and (when ``source_file_paths`` or ``sources`` is supplied) the
+    external aggregated variables and coverage/QA columns are computed via
+    :func:`_merge_computed_variables`.
 
     Parameters
     ----------
     footprints : Sequence[PseudoFootprint]
         Camera pseudo-footprints in write order, as read from CF-CAM-CAMTIME.
-    mode : OperationalMode, optional
-        Which camera-timescale mode to assemble. Defaults to ``CAM_CAMTIME``.
-    definition : LiberaDataProductDefinition, optional
-        The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
-    algorithm_version : str, optional
-        Value for the required dynamic ``algorithm_version`` global attribute.
-    input_files : str, optional
-        Provenance string for the required dynamic ``InputGranules`` global attribute
-        (typically the source L1B camera filename).
+    mode : OperationalMode
+        Which camera-timescale mode to assemble.
+    definition : LiberaDataProductDefinition
+        The mode's product definition.
     cloud_fraction_camera : np.ndarray, optional
-        Per-footprint Camera Cloud Fraction values (Libera WFOV), in footprint order.
+        Per-footprint Camera Cloud Fraction values (Libera WFOV), in percent, in footprint order.
         ``CAM_CAMTIME`` declares this variable and ``IMAGER_CAMTIME`` does not; see
         :func:`assemble_fmatch_dataset`.
     source_file_paths, sources, weigher, allow_placeholders
@@ -1412,24 +1419,23 @@ def _assemble_camtime_dataset(
 
     Returns
     -------
-    xarray.Dataset
-        A dataset brought into conformance with the mode's definition.
+    dict[str, np.ndarray]
+        Every coordinate and variable array the definition declares, keyed by product name.
 
     Raises
     ------
     ValueError
-        If ``mode`` is not a camera-timescale mode, or ``footprints`` is empty
-        (there would be no time axis to write), or as :func:`_merge_computed_variables`
-        raises, or if assembly produces a column the definition does not declare
-        (``_finalize_product_dataset``).
+        If ``mode`` is not a camera-timescale mode, or ``footprints`` is empty (there
+        would be no time axis to write); as :func:`_merge_cloud_fraction_camera` or
+        :func:`_merge_computed_variables` raises; or if a declared variable no input
+        produced is left without ``allow_placeholders`` (see
+        :func:`_fill_placeholder_variables`).
     """
     if mode not in _CAMERA_TIMESCALE_MODES:
         raise ValueError(
             f"{mode.value} is not a camera-timescale mode; camera pseudo-footprints only assemble "
             f"{', '.join(sorted(m.value for m in _CAMERA_TIMESCALE_MODES))}."
         )
-    if definition is None:
-        definition = load_fmatch_definition(mode)
 
     footprints = list(footprints)
     if not footprints:
@@ -1545,15 +1551,8 @@ def _assemble_camtime_dataset(
         to_grid=to_grid,
     )
 
-    # Every remaining declared variable no input produced is filled with a placeholder.
-    _fill_placeholder_variables(data, definition, grid_shape)
-
-    return _finalize_product_dataset(
-        definition,
-        data,
-        algorithm_version=algorithm_version,
-        input_files=input_files,
-    )
+    _fill_placeholder_variables(data, definition, grid_shape, allow_placeholders=allow_placeholders)
+    return data
 
 
 def _merge_cloud_fraction_camera(
@@ -1582,7 +1581,8 @@ def _merge_cloud_fraction_camera(
     ValueError
         If the definition declares ``Cloud_Fraction_Camera`` and no values are given while
         ``allow_placeholders`` is ``False``; if values are given for a product that does not
-        declare the variable; or if their length is not ``n_footprints``.
+        declare the variable; if their length is not ``n_footprints``; or if a finite value
+        is outside ``[0, 100]`` (see :func:`_check_cloud_fraction_percent`).
     """
     variable_definition = definition.variables.get("Cloud_Fraction_Camera")
     product_id = definition.attributes.get("ProductID", "this product")
@@ -1606,6 +1606,7 @@ def _merge_cloud_fraction_camera(
             f"cloud_fraction_camera has {len(cloud_fraction_camera)} values for {n_footprints} footprints: pass one "
             "value per footprint, in footprint order."
         )
+    _check_cloud_fraction_percent(cloud_fraction_camera)
     dtype, fill_value = _fill_value_for("Cloud_Fraction_Camera", variable_definition)
     if to_grid is None:
         data["Cloud_Fraction_Camera"] = np.asarray(cloud_fraction_camera, dtype=dtype)
@@ -1613,64 +1614,90 @@ def _merge_cloud_fraction_camera(
         data["Cloud_Fraction_Camera"] = to_grid(cloud_fraction_camera, dtype, fill_value)
 
 
+def _check_cloud_fraction_percent(cloud_fraction_camera: np.ndarray) -> None:
+    """Check that the CF-CAM cloud fraction is in percent, ``[0, 100]``.
+
+    Cloud fraction is carried in percent in every product that carries it, as the Data
+    Product Definition Working Group agreed on 2026-08-19 and the ``Cloud_Fraction_Camera``
+    definitions record. ``NaN`` marks a missing value and passes. A 0-1 fraction lies
+    inside ``[0, 100]`` too, so this catches an unmasked fill or an out-of-range value,
+    not a fraction passed in place of a percent.
+
+    Parameters
+    ----------
+    cloud_fraction_camera : np.ndarray
+        Per-footprint cloud fraction values.
+
+    Raises
+    ------
+    ValueError
+        If any finite value is below 0 or above 100.
+    """
+    values = np.asarray(cloud_fraction_camera, dtype=float)
+    out_of_range = np.isfinite(values) & ((values < 0.0) | (values > 100.0))
+    if out_of_range.any():
+        bad = values[out_of_range]
+        raise ValueError(
+            f"cloud_fraction_camera must be in percent, [0, 100], as Cloud_Fraction_Camera declares; "
+            f"{bad.size} value(s) are outside it (min {bad.min()}, max {bad.max()}). Pass the CF-CAM cloud fraction "
+            "in percent, with NaN for a missing value."
+        )
+
+
 def _assemble_radiometer_dataset(
     l1b_inputs: dict[str, np.ndarray],
     *,
     mode: OperationalMode,
-    definition: LiberaDataProductDefinition | None = None,
-    algorithm_version: str | None = None,
-    input_files: str | None = None,
+    definition: LiberaDataProductDefinition,
     cloud_fraction_camera: np.ndarray | None = None,
     source_file_paths: dict[str, Sequence[Path]] | None = None,
     sources: dict[str, AncillaryReader] | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
-) -> Dataset:
-    """Assemble a radiometer-timescale FMATCH Dataset from L1B pass-through inputs.
+) -> dict[str, np.ndarray]:
+    """Assemble the arrays of a radiometer-timescale FMATCH product from L1B inputs.
 
-    Serves the two radiometer-timescale modes (``CAM`` and ``IMAGER``). Their footprints are the L1B radiometer footprints themselves, so
-    the time coordinate and the geolocation/viewing-angle columns
-    (:data:`L1B_PASSTHROUGH_VARIABLES`) are carried through verbatim from L1B. The
-    derived ``Sunglint_Angle`` is computed from those angles, and (when
-    ``source_file_paths`` or ``sources`` is supplied) the external aggregated
-    variables and coverage/QA columns are computed from bounding boxes built for each
-    footprint via :func:`build_radiometer_footprints`; any remaining declared variable
-    is a conformant placeholder.
+    Serves the two radiometer-timescale modes (``CAM`` and ``IMAGER``). Their footprints
+    are the L1B radiometer footprints themselves, so the time coordinate and the
+    geolocation/viewing-angle columns (:data:`L1B_PASSTHROUGH_VARIABLES`) are carried
+    through verbatim from L1B. Each record's footprint is built by
+    :func:`build_radiometer_footprints`, and its ray-traced bounding box is written as
+    ``PSF_Bbox_*`` (``NaN`` for an off-limb record). The derived ``Sunglint_Angle`` is
+    computed from the angles, and (when ``source_file_paths`` or ``sources`` is supplied)
+    the external aggregated variables and coverage/QA columns are computed over those
+    footprints.
 
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The pass-through arrays the FMATCH runner reads from L1B Daily: the
-        ``RADIOMETER_TIME`` coordinate plus each input key of
-        :data:`L1B_PASSTHROUGH_VARIABLES`, all the same length.
+        The arrays the FMATCH runner reads from L1B Daily, keyed by their L1B names: the
+        ``RADIOMETER_TIME`` coordinate, each name in :data:`L1B_PASSTHROUGH_VARIABLES`
+        and :data:`L1B_SCAN_REFERENCE_VARIABLES`, all the same length, and optionally
+        ``Cone_Angle_Rate``.
     mode : OperationalMode
         Which radiometer-timescale mode to assemble.
-    definition : LiberaDataProductDefinition, optional
-        The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
-    algorithm_version : str, optional
-        Value for the required dynamic ``algorithm_version`` global attribute.
-    input_files : str, optional
-        Provenance string for the required dynamic ``InputGranules`` global attribute
-        (typically the source L1B radiometer filename).
+    definition : LiberaDataProductDefinition
+        The mode's product definition.
     cloud_fraction_camera : np.ndarray, optional
-        Per-footprint Camera Cloud Fraction values (Libera WFOV), in the same footprint
-        order as the time coordinate. ``CAM`` declares this variable and ``IMAGER`` does
-        not; see :func:`assemble_fmatch_dataset`.
+        Per-footprint Camera Cloud Fraction values (Libera WFOV), in percent, in the same
+        footprint order as the time coordinate. ``CAM`` declares this variable and
+        ``IMAGER`` does not; see :func:`assemble_fmatch_dataset`.
     source_file_paths, sources, weigher, allow_placeholders
         Aggregation inputs, as in :func:`assemble_fmatch_dataset`.
 
     Returns
     -------
-    xarray.Dataset
-        A dataset brought into conformance with the mode's definition.
+    dict[str, np.ndarray]
+        Every coordinate and variable array the definition declares, keyed by product name.
 
     Raises
     ------
     ValueError
-        If ``mode`` is a camera-timescale mode, if a required pass-through input is
-        missing, if the inputs have inconsistent lengths, or if they are empty, or as
-        :func:`_merge_computed_variables` raises, or if assembly produces a column the
-        definition does not declare (``_finalize_product_dataset``).
+        If ``mode`` is a camera-timescale mode, if a required L1B input is missing, if the
+        inputs have inconsistent lengths, or if they are empty; as
+        :func:`_merge_cloud_fraction_camera` or :func:`_merge_computed_variables` raises; or
+        if a declared variable no input produced is left without ``allow_placeholders``
+        (see :func:`_fill_placeholder_variables`).
     MissingGeolocationError
         If a record's ephemeris is unusable (see :func:`build_radiometer_footprints`).
     """
@@ -1679,17 +1706,15 @@ def _assemble_radiometer_dataset(
             f"{mode.value} is a camera-timescale mode and cannot be assembled from L1B radiometer pass-through "
             f"inputs; use the camera pseudo-footprint path instead."
         )
-    if definition is None:
-        definition = load_fmatch_definition(mode)
 
     time_variable = fmatch_time_variable(mode)  # "RADIOMETER_TIME"
 
     # Fail with the specific missing names rather than a bare KeyError deep in the
-    # loop below, because a partial pass-through dict is the most likely caller error.
-    required = {time_variable, *L1B_PASSTHROUGH_VARIABLES}
+    # loop below, because a partial L1B dict is the most likely caller error.
+    required = {time_variable, *L1B_PASSTHROUGH_VARIABLES, *L1B_SCAN_REFERENCE_VARIABLES}
     missing = sorted(required - set(l1b_inputs))
     if missing:
-        raise ValueError(f"L1B pass-through inputs for {mode.value} are missing required key(s): {', '.join(missing)}")
+        raise ValueError(f"L1B inputs for {mode.value} are missing required key(s): {', '.join(missing)}")
 
     n_footprints = len(l1b_inputs[time_variable])
     if n_footprints == 0:
@@ -1697,7 +1722,7 @@ def _assemble_radiometer_dataset(
     inconsistent = sorted(name for name in required if len(l1b_inputs[name]) != n_footprints)
     if inconsistent:
         raise ValueError(
-            f"L1B pass-through inputs for {mode.value} have inconsistent lengths; expected {n_footprints} footprints "
+            f"L1B inputs for {mode.value} have inconsistent lengths; expected {n_footprints} footprints "
             f"(from {time_variable}) but got a different length for: {', '.join(inconsistent)}"
         )
 
@@ -1707,8 +1732,19 @@ def _assemble_radiometer_dataset(
         time_variable: np.asarray(l1b_inputs[time_variable], dtype="datetime64[ns]"),
         **_stack_coordinates(mode, definition),
     }
-    for name, product_name in sorted(L1B_PASSTHROUGH_VARIABLES.items()):
-        data[product_name] = np.asarray(l1b_inputs[name], dtype=np.dtype(definition.variables[product_name].dtype))
+    for name in L1B_PASSTHROUGH_VARIABLES:
+        data[name] = np.asarray(l1b_inputs[name], dtype=np.dtype(definition.variables[name].dtype))
+
+    # Each record's ray-traced PSF bounding box needs only L1B, so it is written on every run;
+    # an off-limb record has no box and is written as NaN.
+    footprints = build_radiometer_footprints(l1b_inputs)
+    boxes = np.full((n_footprints, 4), np.nan)
+    for i, footprint in enumerate(footprints):
+        if footprint.bbox is not None:
+            box = footprint.bbox
+            boxes[i] = (box.lat_min, box.lat_max, _normalize_longitude(box.lon_min), _normalize_longitude(box.lon_max))
+    for column, name in enumerate(("PSF_Bbox_Lat_Min", "PSF_Bbox_Lat_Max", "PSF_Bbox_Lon_Min", "PSF_Bbox_Lon_Max")):
+        data[name] = boxes[:, column].astype(np.dtype(definition.variables[name].dtype))
 
     # Internal (non-reader) Camera Cloud Fraction values (CAM only).
     _merge_cloud_fraction_camera(
@@ -1716,41 +1752,23 @@ def _assemble_radiometer_dataset(
     )
 
     # Computed columns: derived geometry (always) and, when ancillary inputs are
-    # supplied, the external aggregated variables + coverage/QA. The radiometer
-    # footprints (with their PSF bounding boxes) are built only when aggregation will
-    # actually run, so the pass-through-only path stays allocation-light.
-    footprints: Sequence[Any] = (
-        build_radiometer_footprints(l1b_inputs) if (sources is not None or source_file_paths is not None) else []
-    )
-    # The radiometer footprints carry the L1B ephemeris (subsatellite point + satellite
-    # radius) and cone-angle rate, so default this path to the CERES-faithful
-    # AngularPSFWeigher, which orients the PSF along the real scan plane. Callers can
-    # still override via `weigher`.
-    if weigher is None:
-        weigher = AngularPSFWeigher()
+    # supplied, the external aggregated variables + coverage/QA.
     _merge_computed_variables(
         data,
         definition,
         mode,
         footprints,
-        solar_zenith_angle=np.asarray(l1b_inputs["solar_zenith_angle"], dtype=float),
-        viewing_zenith_angle=np.asarray(l1b_inputs["viewing_zenith_angle"], dtype=float),
-        relative_azimuth_angle=np.asarray(l1b_inputs["relative_azimuth_angle"], dtype=float),
+        solar_zenith_angle=np.asarray(l1b_inputs["Solar_Zenith_Surface"], dtype=float),
+        viewing_zenith_angle=np.asarray(l1b_inputs["Viewing_Zenith_Surface"], dtype=float),
+        relative_azimuth_angle=np.asarray(l1b_inputs["Relative_Azimuth_Surface"], dtype=float),
         source_file_paths=source_file_paths,
         sources=sources,
         weigher=weigher,
         allow_placeholders=allow_placeholders,
     )
 
-    # Every remaining declared variable no input produced is filled with a placeholder.
-    _fill_placeholder_variables(data, definition, n_footprints)
-
-    return _finalize_product_dataset(
-        definition,
-        data,
-        algorithm_version=algorithm_version,
-        input_files=input_files,
-    )
+    _fill_placeholder_variables(data, definition, n_footprints, allow_placeholders=allow_placeholders)
+    return data
 
 
 def write_fmatch_product(
@@ -1769,8 +1787,10 @@ def write_fmatch_product(
     """Assemble and write one FMATCH NetCDF product for an operational mode.
 
     Loads the product definition once (so assembly and writing cannot disagree about
-    it), assembles a conformant Dataset via :func:`assemble_fmatch_dataset`, and
-    writes it with ``libera_utils.io.netcdf.write_libera_data_product`` using
+    it), assembles the product's arrays as :func:`assemble_fmatch_dataset` does, and
+    hands them, with ``algorithm_version`` and ``InputGranules`` as dynamic attributes,
+    to ``libera_utils.io.netcdf.write_libera_data_product``, which builds the Dataset,
+    enforces and checks its conformance once, and writes it using
     ``time_variable=fmatch_time_variable(mode)`` (``RADIOMETER_TIME`` or
     ``CAMERA_TIME``), so the standardized Libera filename encodes the footprint time
     span.
@@ -1781,7 +1801,7 @@ def write_fmatch_product(
         The FMATCH operational mode to write.
     inputs : Sequence[PseudoFootprint] or dict[str, np.ndarray]
         The mode's assembly inputs: camera pseudo-footprints for the camera-timescale
-        modes, or the L1B pass-through dict for the radiometer-timescale modes.
+        modes, or the L1B dict for the radiometer-timescale modes.
     output_path : str or pathlib.Path
         Directory (or S3 prefix) to write the product file into.
     algorithm_version : str
@@ -1799,13 +1819,15 @@ def write_fmatch_product(
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers
         active in ``mode``. Pass this or ``source_file_paths``, not both.
     weigher : PixelWeigher, optional
-        PSF weigher used by the aggregation path (defaults to the radial stand-in).
+        PSF weigher used by the aggregation path. Defaults to
+        :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher` (see
+        :func:`aggregate_external_variables`).
     allow_placeholders : bool, optional
-        When ``True``, a declared input the call does not supply is written as fill
-        instead of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag``
-        columns when neither ``sources`` nor ``source_file_paths`` is given, and
-        ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera`` is omitted for a CAM mode.
-        Defaults to ``False``.
+        When ``True``, a declared variable no input produced is written as fill instead
+        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` columns
+        when neither ``sources`` nor ``source_file_paths`` is given, a reader's columns when
+        its source is missing, and ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera``
+        is omitted for a CAM mode. Defaults to ``False``.
 
     Returns
     -------
@@ -1817,11 +1839,12 @@ def write_fmatch_product(
     ValueError
         As :func:`assemble_fmatch_dataset` raises (empty or inconsistent inputs, no
         ancillary inputs without ``allow_placeholders`` or both kinds given, a missing,
-        unexpected or wrong-length ``cloud_fraction_camera``, a footprint with no viewing
-        zenith angle, camera pseudo-footprints aggregated without ephemeris, a footprint whose time
-        is NaT when a source selects by time, a declared variable off the product variable
-        naming rule, an assembled column the definition does not declare), or if the assembled
-        Dataset does not conform to the product definition.
+        unexpected, wrong-length or out-of-range ``cloud_fraction_camera``, any other
+        declared variable no input produced without ``allow_placeholders``, a footprint with
+        no viewing zenith angle or no usable cone-angle rate under the default weigher,
+        camera pseudo-footprints aggregated without ephemeris, a footprint whose time is NaT
+        when a source selects by time, an assembled column the definition does not
+        declare), or if the assembled Dataset does not conform to the product definition.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active
         in ``mode``.
@@ -1830,12 +1853,10 @@ def write_fmatch_product(
         :func:`build_radiometer_footprints`).
     """
     definition = load_fmatch_definition(mode)
-    dataset = assemble_fmatch_dataset(
+    data = _assemble_fmatch_data(
         mode,
         inputs,
-        definition=definition,
-        algorithm_version=algorithm_version,
-        input_files=input_files,
+        definition,
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
         sources=sources,
@@ -1844,8 +1865,9 @@ def write_fmatch_product(
     )
     return write_libera_data_product(
         data_product_definition=definition,
-        data=dataset,
+        data=data,
         output_path=output_path,
         time_variable=fmatch_time_variable(mode),
+        dynamic_product_attributes={"algorithm_version": algorithm_version, "InputGranules": input_files},
         strict=True,
     )

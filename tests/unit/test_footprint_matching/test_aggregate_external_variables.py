@@ -1,7 +1,7 @@
 """Integration tests for product.aggregate_external_variables.
 
 These wire the whole samples -> footprint path together: fake readers in the
-readers dict, the RadialWeigher, and the aggregation engine. The fake readers
+readers dict, the default AngularPSFWeigher, and the aggregation engine. The fake readers
 serve *uniform* grids so the expected aggregated values are independent of the
 (stand-in) PSF weight kernel and can be asserted exactly:
 
@@ -43,13 +43,13 @@ _SATELLITE_RADIUS_KM = 7213.0
 
 def _with_ephemeris(l1b: dict, sub_lat, sub_lon) -> dict:
     """``l1b`` plus the time and L1B ephemeris build_radiometer_footprints requires."""
-    n = len(l1b["latitude"])
+    n = len(l1b["Latitude"])
     return {
         "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")] * n),
         **l1b,
-        "subsatellite_latitude": np.broadcast_to(np.asarray(sub_lat, dtype=np.float64), (n,)).copy(),
-        "subsatellite_longitude": np.broadcast_to(np.asarray(sub_lon, dtype=np.float64), (n,)).copy(),
-        "satellite_radius_km": np.full(n, _SATELLITE_RADIUS_KM),
+        "Subsatellite_Latitude": np.broadcast_to(np.asarray(sub_lat, dtype=np.float64), (n,)).copy(),
+        "Subsatellite_Longitude": np.broadcast_to(np.asarray(sub_lon, dtype=np.float64), (n,)).copy(),
+        "Radius_of_Satellite_from_Center_of_Earth": np.full(n, _SATELLITE_RADIUS_KM),
     }
 
 
@@ -142,6 +142,26 @@ class TestAggregateExternalVariables:
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0])
         np.testing.assert_array_equal(result["_fake_agg_cat_surface"], [3])
 
+    def test_default_weigher_is_angular(self, fake_sources, monkeypatch):
+        from libera_utils.footprint_matching.weighting import AngularPSFWeigher
+
+        calls = []
+        original = AngularPSFWeigher.weight_field
+
+        def spy(self, *args, **kwargs):
+            calls.append(type(self))
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(AngularPSFWeigher, "weight_field", spy)
+        aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)
+        assert calls
+        assert set(calls) == {AngularPSFWeigher}
+
+    def test_footprint_without_a_cone_angle_rate_raises_under_the_default(self, fake_sources):
+        footprints = [fake_radiometer_footprint(BoundingBox(0.2, 0.8, 0.2, 0.8), 0.5, 0.5, cone_angle_rate=None)]
+        with pytest.raises(ValueError, match="Cone_Angle_Rate"):
+            aggregate_external_variables(OperationalMode.CAM, footprints, fake_sources)
+
     def test_pseudo_footprints_raise(self, fake_sources):
         # A camera pseudo-footprint carries no subsatellite point or satellite radius, so no
         # weigher can size its PSF.
@@ -171,13 +191,13 @@ class TestBuildRadiometerFootprints:
     def _l1b(**overrides):
         inputs = {
             "RADIOMETER_TIME": np.array(["2026-06-11T00:00:00", "2026-06-11T00:00:01"], dtype="datetime64[ns]"),
-            "latitude": np.array([10.0, np.nan]),
-            "longitude": np.array([20.0, np.nan]),
-            "viewing_zenith_angle": np.array([15.0, np.nan]),
-            "subsatellite_latitude": np.array([11.5, 11.5]),
-            "subsatellite_longitude": np.array([20.0, 20.0]),
-            "satellite_radius_km": np.array([7213.0, 7213.0]),
-            "cone_angle_rate": np.array([-1.0, np.nan]),
+            "Latitude": np.array([10.0, np.nan]),
+            "Longitude": np.array([20.0, np.nan]),
+            "Viewing_Zenith_Surface": np.array([15.0, np.nan]),
+            "Subsatellite_Latitude": np.array([11.5, 11.5]),
+            "Subsatellite_Longitude": np.array([20.0, 20.0]),
+            "Radius_of_Satellite_from_Center_of_Earth": np.array([7213.0, 7213.0]),
+            "Cone_Angle_Rate": np.array([-1.0, np.nan]),
         }
         inputs.update(overrides)
         return inputs
@@ -202,10 +222,10 @@ class TestBuildRadiometerFootprints:
         # fill with zero coverage instead of building its geometry.
         footprints = build_radiometer_footprints(
             self._l1b(
-                latitude=np.array([0.5, np.nan]),
-                longitude=np.array([0.5, np.nan]),
-                subsatellite_latitude=np.array([1.5, 1.5]),
-                subsatellite_longitude=np.array([0.5, 0.5]),
+                Latitude=np.array([0.5, np.nan]),
+                Longitude=np.array([0.5, np.nan]),
+                Subsatellite_Latitude=np.array([1.5, 1.5]),
+                Subsatellite_Longitude=np.array([0.5, 0.5]),
             )
         )
         values, coverage = aggregate_external_variables(
@@ -216,16 +236,16 @@ class TestBuildRadiometerFootprints:
 
     def test_missing_ephemeris_raises(self):
         inputs = self._l1b()
-        del inputs["satellite_radius_km"]
-        with pytest.raises(ValueError, match="satellite_radius_km"):
+        del inputs["Radius_of_Satellite_from_Center_of_Earth"]
+        with pytest.raises(ValueError, match="Radius_of_Satellite_from_Center_of_Earth"):
             build_radiometer_footprints(inputs)
 
     def test_each_footprint_gets_a_box_enclosing_its_boresight(self):
         l1b = _with_ephemeris(
             {
-                "latitude": np.array([1.0, -30.0], dtype=np.float32),
-                "longitude": np.array([11.0, 100.0], dtype=np.float32),
-                "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
+                "Latitude": np.array([1.0, -30.0], dtype=np.float32),
+                "Longitude": np.array([11.0, 100.0], dtype=np.float32),
+                "Viewing_Zenith_Surface": np.array([0.0, 40.0], dtype=np.float32),
             },
             sub_lat=[1.5, -28.0],
             sub_lon=[11.0, 100.0],
@@ -233,7 +253,7 @@ class TestBuildRadiometerFootprints:
         footprints = build_radiometer_footprints(l1b)
 
         assert len(footprints) == 2
-        for footprint, lat, lon in zip(footprints, l1b["latitude"], l1b["longitude"], strict=True):
+        for footprint, lat, lon in zip(footprints, l1b["Latitude"], l1b["Longitude"], strict=True):
             assert footprint.bbox.lat_min <= lat <= footprint.bbox.lat_max
             assert footprint.bbox.lon_min <= lon <= footprint.bbox.lon_max
             assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
@@ -241,7 +261,11 @@ class TestBuildRadiometerFootprints:
             assert footprint.cone_angle_rate is None
 
     def test_oblique_view_gives_a_larger_box(self):
-        boresight = {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        boresight = {
+            "Latitude": np.array([0.0]),
+            "Longitude": np.array([0.0]),
+            "Viewing_Zenith_Surface": np.array([0.0]),
+        }
         (nadir,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=0.0, sub_lon=0.0))
         (oblique,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=8.0, sub_lon=0.0))
         assert (oblique.bbox.lat_max - oblique.bbox.lat_min) > (nadir.bbox.lat_max - nadir.bbox.lat_min)
@@ -249,10 +273,10 @@ class TestBuildRadiometerFootprints:
     def test_ephemeris_and_scan_rate_are_carried_onto_the_footprint(self):
         l1b = _with_ephemeris(
             {
-                "latitude": np.array([1.0], dtype=np.float32),
-                "longitude": np.array([11.0], dtype=np.float32),
-                "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
-                "cone_angle_rate": np.array([12.0], dtype=np.float64),
+                "Latitude": np.array([1.0], dtype=np.float32),
+                "Longitude": np.array([11.0], dtype=np.float32),
+                "Viewing_Zenith_Surface": np.array([40.0], dtype=np.float32),
+                "Cone_Angle_Rate": np.array([12.0], dtype=np.float64),
             },
             sub_lat=1.5,
             sub_lon=11.0,
@@ -270,10 +294,10 @@ class TestBuildRadiometerFootprints:
         # Boresight at the equator, satellite offset to the north along the same meridian.
         l1b = _with_ephemeris(
             {
-                "latitude": np.array([0.0], dtype=np.float32),
-                "longitude": np.array([0.0], dtype=np.float32),
-                "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
-                "cone_angle_rate": np.array([np.nan], dtype=np.float64),
+                "Latitude": np.array([0.0], dtype=np.float32),
+                "Longitude": np.array([0.0], dtype=np.float32),
+                "Viewing_Zenith_Surface": np.array([55.0], dtype=np.float32),
+                "Cone_Angle_Rate": np.array([np.nan], dtype=np.float64),
             },
             sub_lat=10.0,
             sub_lon=0.0,
@@ -288,12 +312,16 @@ class TestBuildRadiometerFootprints:
     def test_footprint_beyond_the_horizon_raises(self):
         # 30 deg from the subsatellite point is past the horizon of an ~835 km orbit.
         l1b = _with_ephemeris(
-            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+            {"Latitude": np.array([0.0]), "Longitude": np.array([0.0]), "Viewing_Zenith_Surface": np.array([0.0])},
             sub_lat=30.0,
             sub_lon=0.0,
         )
         with pytest.raises(MissingGeolocationError):
             build_radiometer_footprints(l1b)
+
+    def test_fill_cone_angle_rate_becomes_none(self):
+        on_earth, _ = build_radiometer_footprints(self._l1b(Cone_Angle_Rate=np.array([-999.0, np.nan])))
+        assert on_earth.cone_angle_rate is None
 
     def test_missing_time_raises(self):
         inputs = self._l1b()
@@ -307,7 +335,7 @@ class TestAggregateReturnsCoverage:
 
     def test_covered_footprints_report_full_coverage(self, fake_sources):
         # The fake readers serve a uniform 10 km grid that fills the footprint box, so every
-        # reference bin of the radial weigher's contour holds a sample -> coverage 1.
+        # reference bin of the weigher's contour holds a sample -> coverage 1.
         values, coverage = aggregate_external_variables(
             OperationalMode.CAM, _footprints(), fake_sources, return_coverage=True
         )
