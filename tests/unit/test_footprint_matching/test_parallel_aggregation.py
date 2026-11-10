@@ -118,11 +118,11 @@ class TestWorkerSources:
             return fake_sources
 
         monkeypatch.setattr(product, "build_sources", fake_build)
-        paths = {"era5_surface": [tmp_path / "a.nc"], "igbp": [tmp_path / "b.hdf"]}
+        paths = {"ERA5_Surface": [tmp_path / "a.nc"], "IGBP": [tmp_path / "b.hdf"]}
         first = product._worker_sources(OperationalMode.CAM, paths)
         second = product._worker_sources(OperationalMode.CAM, paths)
         assert first is second
         assert len(builds) == 1
         # A different staged set replaces the cached sources.
-        product._worker_sources(OperationalMode.CAM, {"era5_surface": [tmp_path / "c.nc"]})
+        product._worker_sources(OperationalMode.CAM, {"ERA5_Surface": [tmp_path / "c.nc"]})
         assert len(builds) == 2

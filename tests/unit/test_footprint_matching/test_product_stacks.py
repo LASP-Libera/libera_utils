@@ -16,7 +16,6 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
     ERA5PressureLevelReader,
 )
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.product_variable_names import product_variable_name
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
@@ -53,7 +52,7 @@ class TestStackedProductVariables:
         constant, so the PSF-weighted mean is that constant. Asserts every stacked mean holds its layers' constants in
         level order, every stacked standard deviation is zero, and the ``PRESSURE_LEVEL`` coordinate holds the levels.
         """
-        set_mode_readers(OperationalMode.IMAGER, ("era5_pressure",))
+        set_mode_readers(OperationalMode.IMAGER, ("ERA5_Pressure",))
         era5_path = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
         l1b = _l1b_inputs()
         l1b["RADIOMETER_TIME"] = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "s")
@@ -63,16 +62,16 @@ class TestStackedProductVariables:
             l1b[name] = np.full(3, 11.0)
 
         dataset = assemble_fmatch_dataset(
-            OperationalMode.IMAGER, l1b, sources={"era5_pressure": ERA5PressureLevelReader([era5_path])}
+            OperationalMode.IMAGER, l1b, sources={"ERA5_Pressure": ERA5PressureLevelReader([era5_path])}
         )
 
         np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
         for var_index, (field_name, _) in enumerate(_ERA5_PRESSURE_LEVEL_VARIABLES):
-            mean = dataset[product_variable_name(f"era5_pressure_{field_name}")]
+            mean = dataset[f"ERA5_Pressure_{field_name}"]
             assert mean.dims == ("RADIOMETER_TIME", "PRESSURE_LEVEL")
             expected = [era5_pressure_fixture_value(var_index, level) for level in _ERA5_PRESSURE_LEVELS]
             np.testing.assert_allclose(mean.values, np.tile(expected, (3, 1)), rtol=1e-6)
-            spread = dataset[product_variable_name(f"era5_pressure_{field_name}_standard_deviation")]
+            spread = dataset[f"ERA5_Pressure_{field_name}_Standard_Deviation"]
             np.testing.assert_allclose(spread.values, 0.0, atol=1e-6 * np.max(np.abs(expected)))
 
     def test_unstaged_era5_pressure_leaves_stacked_placeholders(self):
@@ -87,12 +86,10 @@ class TestStackedProductVariables:
         dataset = assemble_fmatch_dataset(OperationalMode.IMAGER, _l1b_inputs(), allow_placeholders=True)
 
         np.testing.assert_array_equal(dataset["PRESSURE_LEVEL"].values, _ERA5_PRESSURE_LEVELS)
-        temperature = dataset[product_variable_name("era5_pressure_temperature")]
+        temperature = dataset["ERA5_Pressure_Temperature"]
         assert temperature.shape == (3, len(_ERA5_PRESSURE_LEVELS))
         _, fill_value = _fill_value_for(
-            "era5_pressure_temperature",
-            load_fmatch_definition(OperationalMode.IMAGER).variables[
-                product_variable_name("era5_pressure_temperature")
-            ],
+            "ERA5_Pressure_Temperature",
+            load_fmatch_definition(OperationalMode.IMAGER).variables["ERA5_Pressure_Temperature"],
         )
         np.testing.assert_array_equal(temperature.values, fill_value)

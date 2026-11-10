@@ -123,8 +123,8 @@ def test_standard_deviation_is_the_pixel_spread(pixel_run):
     mean, std, _ = _reference(weigher, footprint, sources)
     assert result["_native_stats_texture"][0] == pytest.approx(mean, rel=1e-5)
     # The pixel field has a 5 K spread; the product must report it, not a fraction of it.
-    assert result["_native_stats_texture_standard_deviation"][0] == pytest.approx(std, rel=1e-4)
-    assert 4.0 < result["_native_stats_texture_standard_deviation"][0] < 6.0
+    assert result["_native_stats_texture_Standard_Deviation"][0] == pytest.approx(std, rel=1e-4)
+    assert 4.0 < result["_native_stats_texture_Standard_Deviation"][0] < 6.0
 
 
 def test_minority_class_survives_as_secondary_scene(pixel_run):

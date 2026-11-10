@@ -58,9 +58,9 @@ class TestAggregateExternalVariables:
         result = aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)
         expected_keys = {
             "_fake_agg_mean_field_a",
-            "_fake_agg_mean_field_a_standard_deviation",
+            "_fake_agg_mean_field_a_Standard_Deviation",
             "_fake_agg_mean_field_b",
-            "_fake_agg_mean_field_b_standard_deviation",
+            "_fake_agg_mean_field_b_Standard_Deviation",
             "_fake_agg_cat_surface",
             "_fake_agg_cat_surface_primary",
             "_fake_agg_cat_surface_secondary",
@@ -74,7 +74,7 @@ class TestAggregateExternalVariables:
         np.testing.assert_allclose(result["_fake_agg_mean_field_a"], [5.0, 5.0])
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0, 2.0])
         # Constant field -> zero within-footprint standard deviation.
-        np.testing.assert_allclose(result["_fake_agg_mean_field_a_standard_deviation"], [0.0, 0.0], atol=1e-6)
+        np.testing.assert_allclose(result["_fake_agg_mean_field_a_Standard_Deviation"], [0.0, 0.0], atol=1e-6)
 
     def test_categorical_mode_and_ranked_scenes(self, fake_sources):
         result = aggregate_external_variables(OperationalMode.CAM, _footprints(), fake_sources)

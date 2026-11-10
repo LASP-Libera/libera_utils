@@ -669,21 +669,21 @@ class TestProductSpecPlaneMapping:
     """_map_product_specs must associate every product spec with a read plane."""
 
     def test_igbp_ranked_scenes_map_to_the_surface_type_plane(self):
-        igbp = ReaderRegistry.get("igbp")
+        igbp = ReaderRegistry.get("IGBP")
         mapping = dict(agg._map_product_specs(igbp))
         # IGBP reads a single plane (surface_type at index 0); every product spec
         # (surface_type + its ranked primary/secondary/tertiary extras) maps to it.
         by_name = {spec.name: idx for spec, idx in mapping.items()}
-        assert by_name["surface_type"] == 0
-        assert by_name["surface_type_primary"] == 0
-        assert by_name["surface_type_secondary"] == 0
-        assert by_name["surface_type_tertiary"] == 0
+        assert by_name["Surface_Type"] == 0
+        assert by_name["Surface_Type_Primary"] == 0
+        assert by_name["Surface_Type_Secondary"] == 0
+        assert by_name["Surface_Type_Tertiary"] == 0
 
     def test_std_companions_map_to_their_parent_plane(self):
-        era5 = ReaderRegistry.get("era5_surface")
+        era5 = ReaderRegistry.get("ERA5_Surface")
         mapping = {spec.name: idx for spec, idx in agg._map_product_specs(era5)}
         # wind_u10 is read plane 0, wind_v10 is read plane 1; each std companion
         # shares its parent's plane.
-        assert mapping["wind_u10"] == mapping["wind_u10_standard_deviation"]
-        assert mapping["wind_v10"] == mapping["wind_v10_standard_deviation"]
-        assert mapping["wind_u10"] != mapping["wind_v10"]
+        assert mapping["Wind_U10"] == mapping["Wind_U10_Standard_Deviation"]
+        assert mapping["Wind_V10"] == mapping["Wind_V10_Standard_Deviation"]
+        assert mapping["Wind_U10"] != mapping["Wind_V10"]
