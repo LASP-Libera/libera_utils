@@ -1385,7 +1385,7 @@ def _normalize_longitude(longitude_deg: float) -> float:
     return longitude_deg - 360.0 if longitude_deg > 180.0 else longitude_deg
 
 
-# Bit layout of the CF-CAM-CAMTIME ``psf_bbox_flags`` variable, set by the Camera Cloud Fraction
+# Bit layout of the CF-CAM-CAMTIME ``PSF_Bbox_Flags`` variable, set by the Camera Cloud Fraction
 # algorithm. These carry the BoundingBox flags that cannot be recovered from the stored bounds alone
 # (``is_polar`` depends on the boresight latitude and ``truncated`` on the limb-clipping history), so
 # FMATCH can rebuild the exact BoundingBox of each pseudo-footprint.
@@ -1395,28 +1395,28 @@ CAMTIME_BBOX_TRUNCATED_BIT: int = 0b100
 
 # Every CF-CAM-CAMTIME variable and coordinate :func:`pseudofootprints_from_camtime_dataset` reads to
 # rebuild the camera pseudo-footprints. The bounding-box longitudes are raw (they may exceed +/-180 for a
-# dateline-crossing box), ``altitude`` is in meters as in L1B, and ``q_flags`` holds only the
+# dateline-crossing box), ``Altitude`` is in meters as in L1B, and ``Quality_Flag`` holds only the
 # :class:`~libera_utils.footprint_matching.types.CameraFootprintQualityFlag` bits.
 CAMTIME_PSEUDOFOOTPRINT_VARIABLES: tuple[str, ...] = (
     "CAMERA_TIME",
-    "camera_pixel_x_min",
-    "camera_pixel_x_max",
-    "camera_pixel_y_min",
-    "camera_pixel_y_max",
-    "latitude",
-    "longitude",
-    "altitude",
-    "solar_zenith_angle",
-    "viewing_zenith_angle",
-    "relative_azimuth_angle",
-    "center_pixel_x",
-    "center_pixel_y",
-    "psf_bbox_lat_min",
-    "psf_bbox_lat_max",
-    "psf_bbox_lon_min",
-    "psf_bbox_lon_max",
-    "psf_bbox_flags",
-    "q_flags",
+    "Camera_Pixel_X_Min",
+    "Camera_Pixel_X_Max",
+    "Camera_Pixel_Y_Min",
+    "Camera_Pixel_Y_Max",
+    "Latitude",
+    "Longitude",
+    "Altitude",
+    "Solar_Zenith_Surface",
+    "Viewing_Zenith_Surface",
+    "Relative_Azimuth_Surface",
+    "Center_Pixel_X",
+    "Center_Pixel_Y",
+    "PSF_Bbox_Lat_Min",
+    "PSF_Bbox_Lat_Max",
+    "PSF_Bbox_Lon_Min",
+    "PSF_Bbox_Lon_Max",
+    "PSF_Bbox_Flags",
+    "Quality_Flag",
 )
 
 
@@ -1429,21 +1429,21 @@ def camtime_real_cell_mask(dataset: Dataset) -> np.ndarray:
 
     The camera-timescale grid is rectangular but ragged: images segmented into fewer subsections than
     the widest image leave padded trailing cells. A real footprint always has a finite center-pixel
-    latitude, so a finite ``latitude`` marks a real cell. The footprint reconstruction and any per-cell
-    variable read (e.g. ``cloud_fraction``) both use this mask, so they select the same cells in the
+    latitude, so a finite ``Latitude`` marks a real cell. The footprint reconstruction and any per-cell
+    variable read (e.g. ``Cloud_Fraction``) both use this mask, so they select the same cells in the
     same order.
 
     Parameters
     ----------
     dataset : xarray.Dataset
-        A camera-timescale dataset carrying a 2-D ``latitude`` variable.
+        A camera-timescale dataset carrying a 2-D ``Latitude`` variable.
 
     Returns
     -------
     numpy.ndarray
         Boolean array shaped ``(CAMERA_TIME, PSEUDOFOOTPRINT)``; ``True`` at real footprint cells.
     """
-    return np.isfinite(np.asarray(dataset["latitude"].values, dtype=float))
+    return np.isfinite(np.asarray(dataset["Latitude"].values, dtype=float))
 
 
 def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootprint]:
@@ -1486,16 +1486,16 @@ def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootpr
         return np.asarray(dataset[name].values, dtype=dtype)
 
     camera_time = dataset["CAMERA_TIME"].values
-    lat, lon, alt = values("latitude", float), values("longitude", float), values("altitude", float)
-    sza = values("solar_zenith_angle", float)
-    vza = values("viewing_zenith_angle", float)
-    raa = values("relative_azimuth_angle", float)
-    center_x, center_y = values("center_pixel_x"), values("center_pixel_y")
-    px_min, px_max = values("camera_pixel_x_min"), values("camera_pixel_x_max")
-    py_min, py_max = values("camera_pixel_y_min"), values("camera_pixel_y_max")
-    bbox_lat_min, bbox_lat_max = values("psf_bbox_lat_min", float), values("psf_bbox_lat_max", float)
-    bbox_lon_min, bbox_lon_max = values("psf_bbox_lon_min", float), values("psf_bbox_lon_max", float)
-    bbox_flags, q_flags = values("psf_bbox_flags"), values("q_flags")
+    lat, lon, alt = values("Latitude", float), values("Longitude", float), values("Altitude", float)
+    sza = values("Solar_Zenith_Surface", float)
+    vza = values("Viewing_Zenith_Surface", float)
+    raa = values("Relative_Azimuth_Surface", float)
+    center_x, center_y = values("Center_Pixel_X"), values("Center_Pixel_Y")
+    px_min, px_max = values("Camera_Pixel_X_Min"), values("Camera_Pixel_X_Max")
+    py_min, py_max = values("Camera_Pixel_Y_Min"), values("Camera_Pixel_Y_Max")
+    bbox_lat_min, bbox_lat_max = values("PSF_Bbox_Lat_Min", float), values("PSF_Bbox_Lat_Max", float)
+    bbox_lon_min, bbox_lon_max = values("PSF_Bbox_Lon_Min", float), values("PSF_Bbox_Lon_Max", float)
+    bbox_flags, q_flags = values("PSF_Bbox_Flags"), values("Quality_Flag")
 
     # np.nonzero is C-order (CAMERA_TIME ascending, then PSEUDOFOOTPRINT ascending), which is the order
     # that rebuilds this grid and the order a boolean-mask read of a per-cell variable returns.

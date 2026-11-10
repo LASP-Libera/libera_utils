@@ -834,8 +834,8 @@ class TestPseudofootprintsFromCamtime:
 
     def test_bbox_and_quality_flags_are_decoded(self):
         dataset = make_cf_cam_camtime_dataset(n_images=1, n_pixels_x=1, n_pixels_y=2)
-        dataset["psf_bbox_flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
-        dataset["q_flags"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
+        dataset["PSF_Bbox_Flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
+        dataset["Quality_Flag"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
 
         clean, flagged = pseudofootprints_from_camtime_dataset(dataset)
 
@@ -845,17 +845,17 @@ class TestPseudofootprintsFromCamtime:
         assert flagged.q_flags == CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
 
     def test_missing_variable_raises_naming_it(self):
-        dataset = make_cf_cam_camtime_dataset().drop_vars(["psf_bbox_flags", "camera_pixel_x_min"])
+        dataset = make_cf_cam_camtime_dataset().drop_vars(["PSF_Bbox_Flags", "Camera_Pixel_X_Min"])
 
-        with pytest.raises(MissingCamtimeVariablesError, match="camera_pixel_x_min, psf_bbox_flags"):
+        with pytest.raises(MissingCamtimeVariablesError, match="Camera_Pixel_X_Min, PSF_Bbox_Flags"):
             pseudofootprints_from_camtime_dataset(dataset)
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
     def test_every_required_name_is_one_the_fmatch_camtime_products_declare(self, mode):
         """FMATCH copies these straight into its camera-timescale products, so each must be declared there.
 
-        FMATCH carries them under these names internally; the product declares the product name of each.
+        CF-CAM-CAMTIME and the FMATCH camera-timescale products carry them under the same product names.
         """
-        definition = _internal_name_view(load_fmatch_definition(mode))
+        definition = load_fmatch_definition(mode)
         declared = {*definition.variables, *definition.coordinates}
-        assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"psf_bbox_flags"} == set()
+        assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"PSF_Bbox_Flags"} == set()

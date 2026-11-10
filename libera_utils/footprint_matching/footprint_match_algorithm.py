@@ -79,7 +79,6 @@ from cloudpathlib import AnyPath, S3Path
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.product import (
-    FMATCH_CONE_ANGLE_RATE_KEY,
     L1B_CONE_ANGLE_RATE_VARIABLE,
     L1B_PASSTHROUGH_VARIABLES,
     L1B_SCAN_REFERENCE_VARIABLES,
@@ -194,20 +193,20 @@ def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFoo
     MissingCamtimeVariablesError
         If the file lacks a variable needed to rebuild the pseudo-footprints.
     ValueError
-        If the file has no ``cloud_fraction`` variable.
+        If the file has no ``Cloud_Fraction`` variable.
     """
     with xr.open_dataset(local_input_path) as cf_dataset:
         cf_dataset = cf_dataset.load()
     footprints = pseudofootprints_from_camtime_dataset(cf_dataset)
-    if "cloud_fraction" not in cf_dataset:
+    if "Cloud_Fraction" not in cf_dataset:
         raise ValueError(
-            f"CF-CAM-CAMTIME input {local_input_path} has no cloud_fraction variable, which FMATCH-CAM-CAMTIME "
+            f"CF-CAM-CAMTIME input {local_input_path} has no Cloud_Fraction variable, which FMATCH-CAM-CAMTIME "
             "writes as cloud_fraction_camera. Regenerate the input with the Camera Cloud Fraction algorithm so it "
-            "carries cloud_fraction."
+            "carries Cloud_Fraction."
         )
     # Boolean-mask indexing returns row-major order, matching the reconstruction order.
     mask = camtime_real_cell_mask(cf_dataset)
-    cloud_fraction_camera = np.asarray(cf_dataset["cloud_fraction"].values, dtype=np.float32)[mask]
+    cloud_fraction_camera = np.asarray(cf_dataset["Cloud_Fraction"].values, dtype=np.float32)[mask]
     return footprints, cloud_fraction_camera
 
 
@@ -364,7 +363,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
         If the ``PROCESSING_PATH`` or ``FMATCH_ANCILLARY_PATH`` environment variable is not
         set, if the manifest references no input of ``config.input_product_id``, if an
         ancillary granule is staged in S3, if a FMATCH-CAM-CAMTIME input has no
-        ``cloud_fraction``, or if an L1B input has no usable footprints.
+        ``Cloud_Fraction``, or if an L1B input has no usable footprints.
     FileNotFoundError
         If the ancillary root or an active reader's directory under it is missing or empty.
     MissingCamtimeVariablesError
@@ -468,21 +467,21 @@ def resolve_ancillary_inputs(
     subdirectory per reader, named by the reader's registry key**::
 
         $FMATCH_ANCILLARY_PATH/
-            era5_surface/       ERA5 single-level granules
-            era5_pressure/      ERA5 pressure-level granules
-            igbp/               MCD12Q1 land-cover granules
-            nise/               NISE snow/ice granules
-            viirs_brdf/         VIIRS BRDF granules
-            viirs_cldprop_d3/   VIIRS daily L3 cloud-property granules
-            viirs_aod/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
-            cldpix/             CERES CLDPIX granules    (IMAGER-family modes)
-            flashflux/          CERES FLASHFlux granules (IMAGER-family modes)
+            ERA5_Surface/       ERA5 single-level granules
+            ERA5_Pressure/      ERA5 pressure-level granules
+            IGBP/               MCD12Q1 land-cover granules
+            NISE/               NISE snow/ice granules
+            VIIRS_BRDF/         VIIRS BRDF granules
+            VIIRS_CLDPROP_D3/   VIIRS daily L3 cloud-property granules
+            VIIRS_AOD/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
+            CLDPIX/             CERES CLDPIX granules    (IMAGER-family modes)
+            FLASHFlux/          CERES FLASHFlux granules (IMAGER-family modes)
 
     The active reader set comes from
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
     so this automatically tracks the mode's latency rank: FMATCH-CAM looks for five
-    readers, while FMATCH-IMAGER additionally looks for ``era5_pressure``,
-    ``viirs_aod``, and the RBSP ``cldpix``/``flashflux`` inputs. Using the registry keys as
+    readers, while FMATCH-IMAGER additionally looks for ``ERA5_Pressure``,
+    ``VIIRS_AOD``, and the RBSP ``CLDPIX``/``FLASHFlux`` inputs. Using the registry keys as
     directory names means the set of directories required for a run is *derived* from
     the registry rather than hard-coded here.
 
@@ -643,7 +642,7 @@ def run_footprint_matching(
     ------
     ValueError
         If a camera-timescale mode has no ``camera_footprint_loader`` configured, if a
-        FMATCH-CAM-CAMTIME input has no ``cloud_fraction``, or if a radiometer-timescale L1B
+        FMATCH-CAM-CAMTIME input has no ``Cloud_Fraction``, or if a radiometer-timescale L1B
         file has no usable footprints (raised by :func:`load_l1b_radiometer_inputs`).
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
@@ -895,13 +894,11 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     Returns
     -------
     dict[str, np.ndarray]
-        Mapping keyed by FMATCH variable name: ``"RADIOMETER_TIME"`` (datetime64[ns])
-        plus each key of ``L1B_PASSTHROUGH_VARIABLES``
-        (float32). It additionally carries the scan-reference geometry used to build
-        footprints (not product columns): each key of
-        ``L1B_SCAN_REFERENCE_VARIABLES`` and
-        ``FMATCH_CONE_ANGLE_RATE_KEY``
-        (float64). All arrays are 1-D and the same length.
+        Mapping keyed by L1B variable name: ``"RADIOMETER_TIME"`` (datetime64[ns]) plus
+        each name in ``L1B_PASSTHROUGH_VARIABLES`` (float32), which are also the FMATCH
+        product names. It additionally carries the scan-reference geometry used to build
+        footprints (not product columns): each name in ``L1B_SCAN_REFERENCE_VARIABLES``
+        and ``Cone_Angle_Rate`` (float64). All arrays are 1-D and the same length.
 
     Raises
     ------
@@ -914,14 +911,11 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     # (the L1B fills are -999 / -9999) are masked to NaN so the finite check below works.
     with xr.open_dataset(l1b_file) as l1b:
         radiometer_time = l1b[L1B_TIME_VARIABLE].values
-        # Read every pass-through variable, keyed by its FMATCH (output) name.
-        passthrough = {fmatch_name: l1b[l1b_name].values for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items()}
+        # Read every pass-through variable under its L1B name, which is also its product name.
+        passthrough = {name: l1b[name].values for name in L1B_PASSTHROUGH_VARIABLES}
         # Scan-reference geometry (subsatellite point + cone-angle rate), read at
         # float64 for the ray-trace. Not written to the product; feeds footprint build.
-        scan_reference = {
-            fmatch_name: np.asarray(l1b[l1b_name].values, dtype=np.float64)
-            for fmatch_name, l1b_name in L1B_SCAN_REFERENCE_VARIABLES.items()
-        }
+        scan_reference = {name: np.asarray(l1b[name].values, dtype=np.float64) for name in L1B_SCAN_REFERENCE_VARIABLES}
         cone_angle_rate = np.asarray(l1b[L1B_CONE_ANGLE_RATE_VARIABLE].values, dtype=np.float64)
 
     # Keep only footprints where every pass-through variable AND the subsatellite point
@@ -960,7 +954,7 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     }
     result.update({name: values.astype(np.float32) for name, values in passthrough.items()})
     result.update(scan_reference)
-    result[FMATCH_CONE_ANGLE_RATE_KEY] = cone_angle_rate
+    result[L1B_CONE_ANGLE_RATE_VARIABLE] = cone_angle_rate
     return result
 
 

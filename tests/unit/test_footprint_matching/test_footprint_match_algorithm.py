@@ -93,7 +93,7 @@ class TestCameraTimescaleInputs:
         footprints, cloud_fraction = _load_cam_camtime_footprints(cf_file)
 
         assert len(footprints) == 5
-        expected = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2)["cloud_fraction"].values
+        expected = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2)["Cloud_Fraction"].values
         np.testing.assert_allclose(cloud_fraction, expected.ravel()[:5])
 
     def test_imager_camtime_loader_reads_no_cloud_fraction(self, tmp_path):
@@ -107,7 +107,7 @@ class TestCameraTimescaleInputs:
     def test_cam_camtime_loader_raises_without_cloud_fraction(self, tmp_path):
         cf_file = make_cf_cam_camtime_fixture(tmp_path, with_cloud_fraction=False)
 
-        with pytest.raises(ValueError, match="cloud_fraction"):
+        with pytest.raises(ValueError, match="Cloud_Fraction"):
             _load_cam_camtime_footprints(cf_file)
 
     def test_camera_timescale_config_without_loader_raises(self, tmp_path):
@@ -129,11 +129,11 @@ class TestCameraTimescaleInputs:
             create_and_write_data_product(cf_file, tmp_path, config, ancillary_inputs)
 
     def test_input_missing_pseudofootprint_variables_fails_the_run(self, tmp_path):
-        dataset = make_cf_cam_camtime_dataset().drop_vars("psf_bbox_flags")
+        dataset = make_cf_cam_camtime_dataset().drop_vars("PSF_Bbox_Flags")
         cf_file = tmp_path / "cf.nc"
         dataset.to_netcdf(cf_file)
 
-        with pytest.raises(MissingCamtimeVariablesError, match="psf_bbox_flags"):
+        with pytest.raises(MissingCamtimeVariablesError, match="PSF_Bbox_Flags"):
             create_and_write_data_product(cf_file, tmp_path, RUNNER_CONFIGS["cam-camtime"], {})
 
 
@@ -154,11 +154,11 @@ class TestResolveAncillaryInputs:
     @pytest.mark.parametrize("problem", ["missing", "empty"])
     def test_unstaged_reader_directory_raises_naming_the_reader(self, tmp_path, problem):
         root = _stage_empty_tree(tmp_path, self.MODE)
-        (root / "nise" / "granule.nc").unlink()
+        (root / "NISE" / "granule.nc").unlink()
         if problem == "missing":
-            (root / "nise").rmdir()
+            (root / "NISE").rmdir()
 
-        with pytest.raises(FileNotFoundError, match="nise"):
+        with pytest.raises(FileNotFoundError, match="NISE"):
             resolve_ancillary_inputs(self.MODE, root)
 
     def test_staged_tree_maps_every_active_reader(self, tmp_path):
@@ -178,17 +178,17 @@ class TestAncillarySourceFilePaths:
             _ancillary_source_file_paths({})
 
     def test_reader_without_granule_raises(self):
-        with pytest.raises(ValueError, match="era5_surface"):
-            _ancillary_source_file_paths({"era5_surface": []})
+        with pytest.raises(ValueError, match="ERA5_Surface"):
+            _ancillary_source_file_paths({"ERA5_Surface": []})
 
     def test_s3_granule_raises(self):
         granule = S3Path("s3://bucket/igbp/tile.hdf")
-        with pytest.raises(ValueError, match="'igbp' is staged in S3"):
-            _ancillary_source_file_paths({"igbp": [granule]})
+        with pytest.raises(ValueError, match="'IGBP' is staged in S3"):
+            _ancillary_source_file_paths({"IGBP": [granule]})
 
     def test_local_granules_pass_through(self, tmp_path):
         granules = [tmp_path / "a.nc", tmp_path / "b.nc"]
-        assert _ancillary_source_file_paths({"era5_surface": granules}) == {"era5_surface": granules}
+        assert _ancillary_source_file_paths({"ERA5_Surface": granules}) == {"ERA5_Surface": granules}
 
 
 class TestRunAlgorithm:

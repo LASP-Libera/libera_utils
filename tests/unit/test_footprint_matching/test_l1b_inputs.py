@@ -15,7 +15,7 @@ from libera_utils.footprint_matching.footprint_match_algorithm import (
     load_l1b_radiometer_inputs,
 )
 from libera_utils.footprint_matching.product import (
-    FMATCH_CONE_ANGLE_RATE_KEY,
+    L1B_CONE_ANGLE_RATE_VARIABLE,
     L1B_PASSTHROUGH_VARIABLES,
     L1B_SCAN_REFERENCE_VARIABLES,
 )
@@ -34,7 +34,7 @@ class TestRadiometerPassthrough:
             FMATCH_RADIOMETER_TIME_COORDINATE,
             *L1B_PASSTHROUGH_VARIABLES,
             *L1B_SCAN_REFERENCE_VARIABLES,
-            FMATCH_CONE_ANGLE_RATE_KEY,
+            L1B_CONE_ANGLE_RATE_VARIABLE,
         }
 
     def test_dtypes_match_the_product_definition(self, tmp_path):
@@ -53,7 +53,7 @@ class TestRadiometerPassthrough:
 
         inputs = load_l1b_radiometer_inputs(l1b_file)
 
-        for name in (*L1B_SCAN_REFERENCE_VARIABLES, FMATCH_CONE_ANGLE_RATE_KEY):
+        for name in (*L1B_SCAN_REFERENCE_VARIABLES, L1B_CONE_ANGLE_RATE_VARIABLE):
             assert inputs[name].dtype == np.float64, name
             assert len(inputs[name]) == len(inputs[FMATCH_RADIOMETER_TIME_COORDINATE]), name
 
@@ -69,7 +69,7 @@ class TestRadiometerPassthrough:
 
         # All six footprints survive; the fill cone-angle rate is carried through as NaN.
         assert len(inputs[FMATCH_RADIOMETER_TIME_COORDINATE]) == 6
-        assert np.isnan(inputs[FMATCH_CONE_ANGLE_RATE_KEY][2])
+        assert np.isnan(inputs[L1B_CONE_ANGLE_RATE_VARIABLE][2])
 
     def test_all_arrays_share_one_length(self, tmp_path):
         l1b_file = make_l1b_radiometer_fixture(tmp_path, n_footprints=8)
@@ -105,7 +105,7 @@ class TestNonFiniteFootprints:
         with xr.open_dataset(l1b_file) as dataset:
             modified = dataset.load()
         # Corrupt only the viewing zenith angle; geolocation stays finite.
-        values = modified[L1B_PASSTHROUGH_VARIABLES["viewing_zenith_angle"]].values
+        values = modified["Viewing_Zenith_Surface"].values
         values[2] = np.nan
         modified.to_netcdf(tmp_path / "modified.nc")
 
