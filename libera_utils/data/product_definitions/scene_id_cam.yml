@@ -64,11 +64,13 @@ variables:
       long_name: >-
         Surface-type category mapped from the IGBP land-cover code (0 = ocean, 1 = hi_shrub, 2 = low_shrub,
         3 = dark_desert, 4 = bright_desert, 5 = snow)
+  # Cloud fraction is in percent in every Libera product that carries it (Data Product Definition Working Group,
+  # 2026-08-19).
   Cloud_Fraction:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      long_name: Total cloud fraction over the footprint, in percent as the L2 CF-CAM data product carries it
       units: percent
 
   ############

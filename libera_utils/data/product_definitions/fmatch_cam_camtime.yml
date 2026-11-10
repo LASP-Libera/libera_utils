@@ -390,6 +390,7 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       # Carried in percent [0, 100] matching the CF-CAM-CAMTIME input; SCENE-ID ingests it as-is.
+      # Percent in every product that carries cloud fraction (Data Product Definition Working Group, 2026-08-19).
       long_name: Cloud fraction (Libera WFOV)
       units: percent
 

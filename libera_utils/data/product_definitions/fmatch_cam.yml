@@ -322,6 +322,8 @@ variables:
       # aggregated to one value per footprint upstream, so it is attached
       # directly to the FMATCH record (no reader / PSF step here). Carried in
       # percent [0, 100] matching the CF-CAM input; SCENE-ID ingests it as-is.
+      # Percent in every product that carries cloud fraction (Data Product
+      # Definition Working Group, 2026-08-19).
       long_name: Cloud fraction (Libera WFOV)
       units: percent
   # ---------------------------------------------------------------------------

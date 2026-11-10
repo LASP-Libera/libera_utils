@@ -80,11 +80,13 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
+  # Cloud fraction is in percent in every Libera product that carries it (Data Product Definition Working Group,
+  # 2026-08-19).
   Cloud_Fraction:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      long_name: Total cloud fraction over the footprint, in percent as the L2 CF-CAM data product carries it
       units: percent
 
   ############
