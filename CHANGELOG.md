@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `aggregate_external_variables` runs the footprints on a process pool when the `FMATCH_WORKERS` configuration key (or environment variable) is above one: contiguous along-track chunks, forked after the sources are loaded so the workers share one copy of every static source, with the same output as the single-process run.
 - `AncillaryReader.preload()` loads whatever a reader holds for the whole run ahead of the first query: a `StaticReader` loads and indexes its whole source, raising as its first query would; other readers load nothing.
 
+### Changed
+
+- The `lasp-curryer` requirement is `>= 0.5.3, <1.0`: 0.5.2 lacks `curryer.compute.spatial.relative_azimuth`, the relative azimuth convention `Sunglint_Angle` follows.
+
 ## [5.24.0] - 2026-11-11
 
 ### Added
