@@ -681,7 +681,7 @@ def aggregate_sample_variables(
 
 
 @cache
-def _product_stacks(reader_cls: Any) -> tuple[ProductStack, ...]:
+def _product_stacks(reader_cls: type[AncillaryReader]) -> tuple[ProductStack, ...]:
     """Return ``reader_cls.product_stacks()``, computed once per reader class.
 
     The stacks are a static property of the reader, so :func:`stack_product_values`
@@ -690,7 +690,7 @@ def _product_stacks(reader_cls: Any) -> tuple[ProductStack, ...]:
     return reader_cls.product_stacks()
 
 
-def stack_product_values(reader_cls: Any, scalars: dict[str, float]) -> dict[str, float | np.ndarray]:
+def stack_product_values(reader_cls: type[AncillaryReader], scalars: dict[str, float]) -> dict[str, float | np.ndarray]:
     """Shape one footprint's per-spec scalars from one source into its product variables.
 
     Each of the reader's stacks (``reader_cls.product_stacks()``) becomes one 1-D array

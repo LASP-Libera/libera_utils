@@ -20,7 +20,7 @@ A reader's samples carry one value row per ``VariableSpec``, and each row is PSF
 and aggregated on its own. Each (variable, pressure level) pair is therefore its own
 spec -- e.g. ``Temperature_500hPa`` -- so every level is aggregated as the 2-D field it
 is. In the product, ``PRODUCT_STACKS`` collects each variable's levels back into one
-variable on ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` -- e.g. ``era5_pressure_temperature``
+variable on ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` -- e.g. ``ERA5_Pressure_Temperature``
 -- with the ``PRESSURE_LEVEL`` coordinate taken from ``_ERA5_PRESSURE_LEVELS``. That
 constant holds the full ERA5 set of 37 levels; changing the level list there changes
 the specs and the stacks, and the ``PRESSURE_LEVEL`` size in ``libera_dimensions.yml``
@@ -198,7 +198,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     READER_KEY: str = "ERA5_Pressure"
     # Same producing-center token as the single-level reader so the long_name
     # provenance tag stays uniform: "Air temperature on ERA5 pressure levels (ECMWF)" etc.
-    # Product variable names are era5_pressure_temperature etc. (no instrument token).
+    # Product variable names are ERA5_Pressure_Temperature etc. (no instrument token).
     INSTRUMENT: str = "ECMWF"
     # The 0.25 degree grid spacing at the equator. A sample covers a cell of this side in
     # the coverage measure, so the cells abut and a footprint inside the grid is complete.
