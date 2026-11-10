@@ -67,6 +67,32 @@ coordinates:
 
 variables:
   # ---------------------------------------------------------------------------
+  # Camera pixel-block provenance: computed here by camera segmentation.
+  #     Each pseudo-footprint is a contiguous block of L1B camera pixels
+  #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
+  #     on each pixel axis is carried by the Camera_Pixel_{X,Y}_{Min,Max}
+  #     COORDINATES declared just above under coordinates: (dims CAMERA_TIME x
+  #     PSEUDOFOOTPRINT). The center-pixel indices below point at the boresight
+  #     stand-in, after any nearest-valid substitution (see the
+  #     center_pixel_substituted Quality_Flag bit).
+  #     Center_Pixel_X/Y are FMATCH-only provenance: the boresight pixel is not needed
+  #     downstream, so SCENE-ID-CAM-CAMTIME does not carry it (unlike
+  #     Camera_Pixel_{X,Y}_{Min,Max}, which pass straight through).
+  # ---------------------------------------------------------------------------
+  Center_Pixel_X:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
+  Center_Pixel_Y:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
+
+  # ---------------------------------------------------------------------------
   # Geolocation and viewing angles: passed through unchanged from L1B Daily
   #     Camera at each pseudo-footprint's center pixel (the nearest valid pixel
   #     when the center_pixel_substituted Quality_Flag bit is set), not averaged.
@@ -420,28 +446,3 @@ variables:
       #                                    external variables left at fill)
       flag_masks: [1, 2, 4, 8, 16]
       flag_meanings: "partial_coverage center_pixel_substituted insufficient_coverage limb_truncated off_limb"
-
-  # ---------------------------------------------------------------------------
-  # Camera pixel-block provenance: computed here by camera segmentation.
-  #     Each pseudo-footprint is a contiguous block of L1B camera pixels
-  #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
-  #     on each pixel axis is carried by the Camera_Pixel_{X,Y}_{Min,Max}
-  #     COORDINATES declared above (dims CAMERA_TIME x PSEUDOFOOTPRINT). The
-  #     center-pixel indices below point at the boresight stand-in, after any
-  #     nearest-valid substitution (see the center_pixel_substituted Quality_Flag bit).
-  #     Center_Pixel_X/Y are FMATCH-only provenance: the boresight pixel is not needed
-  #     downstream, so SCENE-ID-CAM-CAMTIME does not carry it (unlike
-  #     Camera_Pixel_{X,Y}_{Min,Max}, which pass straight through).
-  # ---------------------------------------------------------------------------
-  Center_Pixel_X:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
-  Center_Pixel_Y:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
