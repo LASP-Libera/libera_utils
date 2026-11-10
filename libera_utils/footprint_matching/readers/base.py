@@ -476,8 +476,8 @@ class AncillaryReader(abc.ABC):
                     "standard-deviation companion, so its companion stack would have gaps. Stack specs that "
                     "aggregate the same way."
                 )
-            # A companion spec carries its parent's modes, so checking the declared members covers the
-            # companion stack too.
+            # A standard deviation companion spec carries its parent's modes, so checking the declared
+            # members covers the companion stack too.
             if len({product_specs[member].modes for member in stack.members}) > 1:
                 raise TypeError(
                     f"Reader {cls.__name__!r}: ProductStack {stack.name!r} stacks specs with different modes, so "
