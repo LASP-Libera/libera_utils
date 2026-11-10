@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [5.23.0] - 2026-11-05
+## [5.24.0] - 2026-11-10
 
 ### Added
 
@@ -1050,7 +1050,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...HEAD
+[5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
 [5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0
 [5.21.0]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...5.21.0
