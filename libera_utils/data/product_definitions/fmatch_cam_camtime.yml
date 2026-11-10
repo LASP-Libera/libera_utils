@@ -183,7 +183,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Sea ice concentration (fraction) (AMSR2)
+      long_name: Sea ice concentration over the footprint (fraction) (AMSR2)
   NISE_Sea_Ice_Concentration_Standard_Deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
