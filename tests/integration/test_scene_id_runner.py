@@ -19,7 +19,6 @@ from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, O
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.product_variable_names import product_variable_name
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
@@ -128,6 +127,21 @@ class TestSceneIdCamWrite:
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
 
+    def test_written_product_has_every_declared_variable(self, tmp_path):
+        """Every variable the definition declares is written, under its declared name.
+
+        FootprintData names the variables the product carries as the definition does (``Scene_ID_ERBE``,
+        ``Surface_Type``, ``Scene_Bin_ERBE_Cloud_Fraction_Min``), so a declared name the pipeline spells differently
+        would be dropped from the product rather than written.
+        """
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
+        footprint_data = run_scene_identification_cam(input_path)
+        output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
+
+        definition = LiberaDataProductDefinition.from_yaml(PRODUCT_DEFINITION_PATH)
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert set(definition.variables) <= set(reopened.variables)
+
 
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
@@ -163,7 +177,7 @@ class TestToTimeProduct:
 
     def test_missing_time_variable_raises(self):
         # Targets to_time_product's guard; asserts a missing time variable raises ValueError naming that variable.
-        footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
+        footprint_data = FootprintData(xr.Dataset({"Cloud_Fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
         with pytest.raises(ValueError, match="RADIOMETER_TIME"):
             footprint_data.to_time_product("RADIOMETER_TIME")
 
@@ -176,7 +190,7 @@ class TestFmatchReaders:
         footprint_data = FootprintData.from_fmatch_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
         dataset = footprint_data._data
 
-        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle", "RADIOMETER_TIME"):
+        for required in ("IGBP_Surface_Type", "Cloud_Fraction", "Solar_Zenith_Surface", "RADIOMETER_TIME"):
             assert required in dataset.variables
 
     def test_from_fmatch_cam_camtime_reads_records_on_camera_grid(self, tmp_path):
@@ -190,23 +204,23 @@ class TestFmatchReaders:
         assert "PSEUDOFOOTPRINT" in dataset.sizes
         assert dataset["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         # Classification inputs the pipeline consumes/derives from are present on the 2-D grid.
-        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle"):
+        for required in ("IGBP_Surface_Type", "Cloud_Fraction", "Solar_Zenith_Surface"):
             assert required in dataset.variables
             assert dataset[required].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         # The four camera pixel-block bounds pass through as 2-D coordinates; the boresight center pixel does not.
-        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+        for name in ("Camera_Pixel_X_Min", "Camera_Pixel_X_Max", "Camera_Pixel_Y_Min", "Camera_Pixel_Y_Max"):
             assert dataset[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
-        assert "center_pixel_x" not in dataset.variables
+        assert "Center_Pixel_X" not in dataset.variables
 
     def test_from_fmatch_imager_maps_inputs(self, tmp_path):
         """from_fmatch_imager maps the FLASHFlux/CLDPIX inputs, including a real (mapped) cloud_phase."""
         input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
         dataset = FootprintData.from_fmatch_imager(input_path)._data
 
-        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "cloud_phase"):
+        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Optical_Depth", "Cloud_Phase"):
             assert required in dataset.variables
         # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
-        assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+        assert set(np.unique(dataset["Cloud_Phase"].values).tolist()) <= {1.0, 2.0}
         _assert_imager_sources(dataset)
 
     def test_from_fmatch_imager_camtime_reads_inputs_on_camera_grid_with_passthrough(self, tmp_path):
@@ -220,24 +234,24 @@ class TestFmatchReaders:
         assert "PSEUDOFOOTPRINT" in dataset.sizes
         assert dataset["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         # The full IMAGER classification inputs (incl. a real, mapped cloud_phase) land on the 2-D grid.
-        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "cloud_phase"):
+        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Optical_Depth", "Cloud_Phase"):
             assert required in dataset.variables
             assert dataset[required].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
-        assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+        assert set(np.unique(dataset["Cloud_Phase"].values).tolist()) <= {1.0, 2.0}
         _assert_imager_sources(dataset)
         # The camtime provenance identifiers pass through on the 2-D grid; the FMATCH-only center pixel does not.
         for name in (
-            "latitude",
-            "longitude",
-            "altitude",
-            "psf_bbox_lat_min",
-            "camera_pixel_x_min",
-            "camera_pixel_x_max",
-            "camera_pixel_y_min",
-            "camera_pixel_y_max",
+            "Latitude",
+            "Longitude",
+            "Altitude",
+            "PSF_Bbox_Lat_Min",
+            "Camera_Pixel_X_Min",
+            "Camera_Pixel_X_Max",
+            "Camera_Pixel_Y_Min",
+            "Camera_Pixel_Y_Max",
         ):
             assert dataset[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
-        assert "center_pixel_x" not in dataset.variables
+        assert "Center_Pixel_X" not in dataset.variables
 
     @pytest.mark.parametrize(
         ("reader", "file_mode", "missing_product_name", "expected_input"),
@@ -304,7 +318,7 @@ class TestFmatchReaders:
         local_data = FootprintData.from_fmatch_cam(local_path)._data
         assert footprint_data._data.sizes["RADIOMETER_TIME"] == local_data.sizes["RADIOMETER_TIME"]
         np.testing.assert_array_equal(
-            footprint_data._data["igbp_surface_type"].values, local_data["igbp_surface_type"].values
+            footprint_data._data["IGBP_Surface_Type"].values, local_data["IGBP_Surface_Type"].values
         )
 
     @pytest.mark.parametrize(
@@ -323,7 +337,7 @@ class TestFmatchReaders:
         with caplog.at_level(logging.WARNING, logger="libera_utils.scene_identification.scene_id"):
             footprint_data = getattr(FootprintData, reader)(input_path)
 
-        assert not np.isfinite(footprint_data._data["cloud_fraction"].values).any()
+        assert not np.isfinite(footprint_data._data["Cloud_Fraction"].values).any()
         warnings = [
             record
             for record in caplog.records
@@ -354,7 +368,7 @@ def _assert_imager_sources(dataset: xr.Dataset) -> None:
     )
     np.testing.assert_array_equal(dataset["surface_wind_u"].values, 3.0)
     np.testing.assert_array_equal(dataset["surface_wind_v"].values, 4.0)
-    np.testing.assert_array_equal(dataset["optical_depth"].values, 7.0)
+    np.testing.assert_array_equal(dataset["Optical_Depth"].values, 7.0)
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
@@ -375,24 +389,24 @@ def _synthetic_camtime_footprint_data() -> FootprintData:
     longitude = np.array([[100.0, -50.0], [170.0, -179.0]], dtype=np.float32)
     dataset = xr.Dataset(
         {
-            "igbp_surface_type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
+            "IGBP_Surface_Type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
             # clear_area is an intermediate the pipeline inverts into cloud_fraction; it is dropped before writing.
             "clear_area": (grid_dims, np.array([[100.0, 40.0], [0.0, 75.0]], dtype=np.float32)),
-            "solar_zenith_angle": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
-            "viewing_zenith_angle": (grid_dims, np.array([[5.0, 20.0], [60.0, 15.0]], dtype=np.float32)),
-            "relative_azimuth_angle": (grid_dims, np.array([[30.0, 120.0], [200.0, 300.0]], dtype=np.float32)),
-            "latitude": (grid_dims, latitude),
-            "longitude": (grid_dims, longitude),
-            "altitude": (grid_dims, np.array([[0.0, 100.0], [500.0, 1200.0]], dtype=np.float32)),
-            "psf_bbox_lat_min": (grid_dims, (latitude - 1.0).astype(np.float32)),
-            "psf_bbox_lat_max": (grid_dims, (latitude + 1.0).astype(np.float32)),
-            "psf_bbox_lon_min": (grid_dims, (longitude - 1.0).astype(np.float32)),
-            "psf_bbox_lon_max": (grid_dims, (longitude + 1.0).astype(np.float32)),
+            "Solar_Zenith_Surface": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
+            "Viewing_Zenith_Surface": (grid_dims, np.array([[5.0, 20.0], [60.0, 15.0]], dtype=np.float32)),
+            "Relative_Azimuth_Surface": (grid_dims, np.array([[30.0, 120.0], [200.0, 300.0]], dtype=np.float32)),
+            "Latitude": (grid_dims, latitude),
+            "Longitude": (grid_dims, longitude),
+            "Altitude": (grid_dims, np.array([[0.0, 100.0], [500.0, 1200.0]], dtype=np.float32)),
+            "PSF_Bbox_Lat_Min": (grid_dims, (latitude - 1.0).astype(np.float32)),
+            "PSF_Bbox_Lat_Max": (grid_dims, (latitude + 1.0).astype(np.float32)),
+            "PSF_Bbox_Lon_Min": (grid_dims, (longitude - 1.0).astype(np.float32)),
+            "PSF_Bbox_Lon_Max": (grid_dims, (longitude + 1.0).astype(np.float32)),
             # Inclusive pixel-block bounds; blocks overlap within each image (x = 0..2000 overlaps 1000..2047).
-            "camera_pixel_x_min": (grid_dims, np.array([[0, 1000], [0, 1000]], dtype=np.int32)),
-            "camera_pixel_x_max": (grid_dims, np.array([[2000, 2047], [1024, 2047]], dtype=np.int32)),
-            "camera_pixel_y_min": (grid_dims, np.array([[0, 0], [0, 1000]], dtype=np.int32)),
-            "camera_pixel_y_max": (grid_dims, np.array([[2047, 2047], [1024, 2047]], dtype=np.int32)),
+            "Camera_Pixel_X_Min": (grid_dims, np.array([[0, 1000], [0, 1000]], dtype=np.int32)),
+            "Camera_Pixel_X_Max": (grid_dims, np.array([[2000, 2047], [1024, 2047]], dtype=np.int32)),
+            "Camera_Pixel_Y_Min": (grid_dims, np.array([[0, 0], [0, 1000]], dtype=np.int32)),
+            "Camera_Pixel_Y_Max": (grid_dims, np.array([[2047, 2047], [1024, 2047]], dtype=np.int32)),
             "CAMERA_TIME": ("CAMERA_TIME", camera_time),
         }
     )
@@ -432,18 +446,6 @@ class TestSceneIdCamCamtimeWrite:
         # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
         assert bool(np.all(reopened["Camera_Pixel_X_Max"].values >= reopened["Camera_Pixel_X_Min"].values))
         assert bool(np.all(reopened["Camera_Pixel_Y_Max"].values >= reopened["Camera_Pixel_Y_Min"].values))
-
-    def test_variable_under_both_names_raises(self, tmp_path):
-        """A declared variable held under both its internal and its product name is refused, not overwritten.
-
-        Renaming ``cloud_fraction`` onto an existing ``Cloud_Fraction`` would silently pick one of two arrays.
-        """
-        footprint_data = _synthetic_camtime_footprint_data()
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
-        footprint_data._data["Cloud_Fraction"] = footprint_data._data["cloud_fraction"]
-
-        with pytest.raises(ValueError, match="holds both 'cloud_fraction' and its product name 'Cloud_Fraction'"):
-            create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
 
     def test_write_drops_the_replaced_pixel_variables(self, tmp_path):
         """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
@@ -585,7 +587,7 @@ def _with_missing_igbp(fmatch_path, tmp_path, cell):
     """Copy an FMATCH fixture with FMATCH's integer fill written into ``igbp_surface_type`` at ``cell``."""
     with xr.open_dataset(fmatch_path) as opened:
         dataset = opened.load()
-    dataset[product_variable_name("igbp_surface_type")].values[cell] = FMATCH_INTEGER_FILL_VALUE
+    dataset["IGBP_Surface_Type"].values[cell] = FMATCH_INTEGER_FILL_VALUE
     edited_dir = tmp_path / "edited"
     edited_dir.mkdir()
     edited_path = edited_dir / fmatch_path.name
@@ -612,10 +614,10 @@ class TestMissingIgbpCode:
 
         dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
 
-        assert np.isnan(dataset["surface_type"].values[1])
+        assert np.isnan(dataset["Surface_Type"].values[1])
         for name in (n for n in dataset.data_vars if n.startswith("scene_id_")):
             assert dataset[name].values[1] == 0, name
-        assert (dataset["scene_id_erbe"].values[[0, 2, 3]] > 0).all()
+        assert (dataset["Scene_ID_ERBE"].values[[0, 2, 3]] > 0).all()
 
     @pytest.mark.parametrize(("mode", "variant"), [(OperationalMode.CAM_CAMTIME, "cam-camtime")])
     def test_padded_camera_cell_is_unmatched(self, tmp_path, mode, variant):
@@ -623,8 +625,8 @@ class TestMissingIgbpCode:
 
         dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
 
-        assert dataset["scene_id_erbe"].values[2, -1] == 0
-        assert (dataset["scene_id_erbe"].values[0] > 0).all()
+        assert dataset["Scene_ID_ERBE"].values[2, -1] == 0
+        assert (dataset["Scene_ID_ERBE"].values[0] > 0).all()
 
     def test_written_product_carries_the_fill_for_the_unmatched_footprint(self, tmp_path):
         """The surface-type columns carry their declared _FillValue 255 for the footprint, and scene_id 0 flags it."""

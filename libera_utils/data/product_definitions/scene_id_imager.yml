@@ -140,37 +140,37 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched ERBE scene
-  Scene_Bin_ERBE_Solar_Zenith_Angle_Min:
+  Scene_Bin_ERBE_Solar_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Solar_Zenith_Surface bin of the matched ERBE scene
       units: degrees
-  Scene_Bin_ERBE_Solar_Zenith_Angle_Max:
+  Scene_Bin_ERBE_Solar_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Solar_Zenith_Surface bin of the matched ERBE scene
       units: degrees
-  Scene_Bin_ERBE_Viewing_Zenith_Angle_Min:
+  Scene_Bin_ERBE_Viewing_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Viewing_Zenith_Surface bin of the matched ERBE scene
       units: degrees
-  Scene_Bin_ERBE_Viewing_Zenith_Angle_Max:
+  Scene_Bin_ERBE_Viewing_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Viewing_Zenith_Surface bin of the matched ERBE scene
       units: degrees
-  Scene_Bin_ERBE_Relative_Azimuth_Angle_Min:
+  Scene_Bin_ERBE_Relative_Azimuth_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Relative_Azimuth_Surface bin of the matched ERBE scene
       units: degrees
-  Scene_Bin_ERBE_Relative_Azimuth_Angle_Max:
+  Scene_Bin_ERBE_Relative_Azimuth_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -202,37 +202,37 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched unfiltering scene
-  Scene_Bin_Unfiltering_Solar_Zenith_Angle_Min:
+  Scene_Bin_Unfiltering_Solar_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Solar_Zenith_Surface bin of the matched unfiltering scene
       units: degrees
-  Scene_Bin_Unfiltering_Solar_Zenith_Angle_Max:
+  Scene_Bin_Unfiltering_Solar_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Solar_Zenith_Surface bin of the matched unfiltering scene
       units: degrees
-  Scene_Bin_Unfiltering_Viewing_Zenith_Angle_Min:
+  Scene_Bin_Unfiltering_Viewing_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Viewing_Zenith_Surface bin of the matched unfiltering scene
       units: degrees
-  Scene_Bin_Unfiltering_Viewing_Zenith_Angle_Max:
+  Scene_Bin_Unfiltering_Viewing_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Viewing_Zenith_Surface bin of the matched unfiltering scene
       units: degrees
-  Scene_Bin_Unfiltering_Relative_Azimuth_Angle_Min:
+  Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Relative_Azimuth_Surface bin of the matched unfiltering scene
       units: degrees
-  Scene_Bin_Unfiltering_Relative_Azimuth_Angle_Max:
+  Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -298,37 +298,37 @@ variables:
     attributes:
       long_name: Upper bound (exclusive) of the Optical_Depth bin of the matched TRMM scene
       units: "1"
-  Scene_Bin_TRMM_Solar_Zenith_Angle_Min:
+  Scene_Bin_TRMM_Solar_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Solar_Zenith_Surface bin of the matched TRMM scene
       units: degrees
-  Scene_Bin_TRMM_Solar_Zenith_Angle_Max:
+  Scene_Bin_TRMM_Solar_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Solar_Zenith_Surface bin of the matched TRMM scene
       units: degrees
-  Scene_Bin_TRMM_Viewing_Zenith_Angle_Min:
+  Scene_Bin_TRMM_Viewing_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Viewing_Zenith_Surface bin of the matched TRMM scene
       units: degrees
-  Scene_Bin_TRMM_Viewing_Zenith_Angle_Max:
+  Scene_Bin_TRMM_Viewing_Zenith_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Viewing_Zenith_Surface bin of the matched TRMM scene
       units: degrees
-  Scene_Bin_TRMM_Relative_Azimuth_Angle_Min:
+  Scene_Bin_TRMM_Relative_Azimuth_Surface_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the Relative_Azimuth_Surface bin of the matched TRMM scene
       units: degrees
-  Scene_Bin_TRMM_Relative_Azimuth_Angle_Max:
+  Scene_Bin_TRMM_Relative_Azimuth_Surface_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:

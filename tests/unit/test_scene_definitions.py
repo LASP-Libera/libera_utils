@@ -103,7 +103,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def valid_scene_csv(self):
         """Create a temporary CSV file with valid scene definitions."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -119,7 +119,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def overlapping_scene_csv(self):
         """Create a temporary CSV file with overlapping scene definitions."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
     1,0.0,60.0,0.0,10.0
     2,40.0,100.0,0.0,10.0
     """
@@ -133,7 +133,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def gap_scene_csv(self):
         """Create a temporary CSV file with gaps in coverage."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
     1,0.0,40.0,0.0,10.0
     2,60.0,100.0,0.0,10.0
     """
@@ -147,7 +147,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def touching_boundaries_csv(self):
         """Create CSV where scenes touch exactly at boundaries (no overlap)."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -163,20 +163,20 @@ class TestSceneDefinition:
     def test_point_in_scene_inside(self):
         """Test point inside scene bounds."""
 
-        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
-        point = {"Cloud_Fraction": 25.0, "optical_depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Optical_Depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 25.0, "Optical_Depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "optical_depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Optical_Depth"])
 
         assert result is True
 
     def test_point_in_scene_outside(self):
         """Test point outside scene bounds."""
 
-        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "optical_depth": (0.0, 10.0)})
-        point = {"Cloud_Fraction": 75.0, "optical_depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Optical_Depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 75.0, "Optical_Depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "optical_depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Optical_Depth"])
 
         assert result is False
 
@@ -294,7 +294,7 @@ class TestPropertyBins:
     def scene_definition(self, tmp_path):
         """Create a fully-covering 4-scene definition over two variables."""
         csv_content = (
-            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max\n"
+            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max\n"
             "1,0.0,50.0,0.0,10.0\n"
             "2,50.0,100.0,0.0,10.0\n"
             "3,0.0,50.0,10.0,20.0\n"
@@ -307,7 +307,7 @@ class TestPropertyBins:
     def test_get_bin_bounds_for_scene_id(self, scene_definition):
         """Test looking up bin bounds for a known scene ID."""
         bounds = scene_definition.get_bin_bounds_for_scene_id(4)
-        assert bounds == {"Cloud_Fraction": (50.0, 100.0), "optical_depth": (10.0, 20.0)}
+        assert bounds == {"Cloud_Fraction": (50.0, 100.0), "Optical_Depth": (10.0, 20.0)}
 
     def test_get_bin_bounds_for_unknown_scene_id_raises(self, scene_definition):
         """Test that an unknown scene ID (including 0) raises KeyError."""
@@ -321,8 +321,8 @@ class TestPropertyBins:
 
         np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Min"], [0.0, 50.0, np.nan])
         np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Max"], [50.0, 100.0, np.nan])
-        np.testing.assert_array_equal(bins["Scene_Bin_bins_optical_depth_Min"], [0.0, 10.0, np.nan])
-        np.testing.assert_array_equal(bins["Scene_Bin_bins_optical_depth_Max"], [10.0, 20.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Optical_Depth_Min"], [0.0, 10.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Optical_Depth_Max"], [10.0, 20.0, np.nan])
 
     def test_compute_property_bins_unbounded_side_is_nan(self, tmp_path):
         """Test that an unbounded bin side is reported as NaN."""
@@ -342,11 +342,11 @@ class TestPropertyBins:
     def test_continuous_bin_bounds_are_float32(self, scene_definition):
         """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
         # What: continuous bin bounds are stored as compact float32 (not float64).
-        # How: compute the bins and assert the reported cloud_fraction/optical_depth bounds carry np.float32 dtype.
+        # How: compute the bins and assert the reported cloud_fraction/Optical_Depth bounds carry np.float32 dtype.
         bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
-        # cloud_fraction / optical_depth are continuous, so they use the default float32 storage dtype.
+        # cloud_fraction / Optical_Depth are continuous, so they use the default float32 storage dtype.
         assert bins["Scene_Bin_bins_Cloud_Fraction_Min"].dtype == np.float32
-        assert bins["Scene_Bin_bins_optical_depth_Max"].dtype == np.float32
+        assert bins["Scene_Bin_bins_Optical_Depth_Max"].dtype == np.float32
 
     def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
         """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
@@ -399,7 +399,7 @@ class TestIdentifyAndUpdateGrid:
             {
                 "Cloud_Fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
                 # Pixel-block bound passthrough on the same grid; classification must carry it through untouched.
-                "camera_pixel_x_min": (grid_dims, np.array([[0, 6], [10, 3]], dtype=np.int32)),
+                "Camera_Pixel_X_Min": (grid_dims, np.array([[0, 6], [10, 3]], dtype=np.int32)),
             }
         )
 
@@ -410,7 +410,7 @@ class TestIdentifyAndUpdateGrid:
         assert scene_ids.dims == grid_dims
         np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
         # The passthrough variable is carried through untouched.
-        assert updated["camera_pixel_x_min"].dims == grid_dims
+        assert updated["Camera_Pixel_X_Min"].dims == grid_dims
 
 
 class TestSceneDefinitionValidation:
@@ -419,7 +419,7 @@ class TestSceneDefinitionValidation:
     def test_overlapping_scenes_detection(self, tmp_path):
         """Test detection of overlapping scene definitions."""
         # Create overlapping scene definitions
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
 1,0.0,60.0,0.0,10.0
 2,40.0,100.0,0.0,10.0
 3,0.0,50.0,5.0,15.0
@@ -435,7 +435,7 @@ class TestSceneDefinitionValidation:
     def test_gap_in_coverage_detection(self, tmp_path):
         """Test detection of gaps in scene definition coverage."""
         # Create scene definitions with gaps
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
 1,0.0,30.0,0.0,10.0
 2,70.0,100.0,0.0,10.0
 3,0.0,30.0,20.0,50.0
@@ -474,7 +474,7 @@ class TestSceneDefinitionValidation:
     def test_unbounded_scene_definitions(self, tmp_path):
         """Test scene definitions with unbounded ranges."""
         # Create scenes with unbounded min/max values using very large numbers
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,optical_depth_Min,optical_depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
 1,0.0,50.0,0.0,10.0
 2,50.0,100.0,0.0,10.0
 3,0.0,50.0,10.0,9999999.0
@@ -513,7 +513,7 @@ class TestWideSceneDefinitionDtype:
     Regression guard for the TRMM definition, which enumerates 644 scenes with IDs up to 650. ``_identify_vectorized``
     used to hardcode a ``uint8`` label array; under NumPy 2.0 NEP 50 promotion, assigning a scene ID > 255 into it
     raises ``OverflowError: Python integer 256 out of bounds for uint8`` (older NumPy silently upcast, which is why this
-    only surfaced in CI). The array must widen to ``uint16`` -- matching the ``scene_id_trmm`` product-definition
+    only surfaced in CI). The array must widen to ``uint16`` -- matching the ``Scene_ID_TRMM`` product-definition
     dtype -- when the definition needs it, while narrower definitions keep the compact ``uint8``.
     """
 
@@ -523,9 +523,9 @@ class TestWideSceneDefinitionDtype:
 
         Scene ``k`` covers ``cloud_fraction`` in ``[k - 1, k)``, so the definition tiles ``[0, num_scenes)`` with no
         gaps or overlaps and the maximum scene ID equals ``num_scenes``. The filename stem becomes the definition type,
-        so scene IDs are written to ``scene_id_wide_{num_scenes}``.
+        so scene IDs are written to ``Scene_ID_wide_{num_scenes}``.
         """
-        lines = ["scene_id,cloud_fraction_min,cloud_fraction_max"]
+        lines = ["scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max"]
         lines += [f"{k},{k - 1}.0,{k}.0" for k in range(1, num_scenes + 1)]
         csv_file = tmp_path / f"wide_{num_scenes}.csv"
         csv_file.write_text("\n".join(lines) + "\n")
@@ -538,12 +538,12 @@ class TestWideSceneDefinitionDtype:
         scene_definition = self._contiguous_definition(tmp_path, num_scenes=260)
 
         # Footprints landing in the first bin, the bin whose ID is exactly 256 (one past uint8's max), and the last bin.
-        data = xr.Dataset({"cloud_fraction": ("footprint", np.array([0.5, 255.5, 259.5], dtype=np.float32))})
+        data = xr.Dataset({"Cloud_Fraction": ("footprint", np.array([0.5, 255.5, 259.5], dtype=np.float32))})
 
         updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
 
-        scene_ids = updated["scene_id_wide_260"]
-        # The label array widened past uint8 so IDs > 255 fit (and match the uint16 scene_id_trmm product dtype).
+        scene_ids = updated["Scene_ID_wide_260"]
+        # The label array widened past uint8 so IDs > 255 fit (and match the uint16 Scene_ID_TRMM product dtype).
         assert scene_ids.dtype == np.uint16
         # Scene k covers [k - 1, k), so value v maps to scene floor(v) + 1 -- including the IDs above 255.
         np.testing.assert_array_equal(scene_ids.values, np.array([1, 256, 260], dtype=np.uint16))
@@ -554,10 +554,10 @@ class TestWideSceneDefinitionDtype:
         # How: classify footprints against a 3-scene definition and assert the scene_id dtype is uint8 with expected IDs.
         scene_definition = self._contiguous_definition(tmp_path, num_scenes=3)
 
-        data = xr.Dataset({"cloud_fraction": ("footprint", np.array([0.5, 1.5, 2.5], dtype=np.float32))})
+        data = xr.Dataset({"Cloud_Fraction": ("footprint", np.array([0.5, 1.5, 2.5], dtype=np.float32))})
 
         updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
 
-        scene_ids = updated["scene_id_wide_3"]
+        scene_ids = updated["Scene_ID_wide_3"]
         assert scene_ids.dtype == np.uint8
         np.testing.assert_array_equal(scene_ids.values, np.array([1, 2, 3], dtype=np.uint8))
