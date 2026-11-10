@@ -44,13 +44,13 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Footprint boresight latitude
+      long_name: Geodetic latitude. Coordinate Reference System WGS84
       units: degrees_north
   Longitude:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Footprint boresight longitude
+      long_name: Longitude. Coordinate Reference System WGS84
       units: degrees_east
   Altitude:
     dtype: float32
@@ -58,25 +58,25 @@ variables:
     attributes:
       # This value is the L1B RAD `Altitude` field: the height above the WGS84 ellipsoid
       # (EPSG:4979) of the boresight's geolocated point -- NOT the ~835 km spacecraft altitude.
-      long_name: Footprint boresight surface height above the WGS84 ellipsoid
+      long_name: Height above the WGS84 ellipsoid. EPSG:4979
       units: meters
   Solar_Zenith_Surface:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Solar zenith angle
+      long_name: Geodetic zenith angle at the Earth point of the Sun
       units: degrees
   Viewing_Zenith_Surface:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Viewing zenith angle
+      long_name: Geodetic angle at the Earth point to the satellite
       units: degrees
   Relative_Azimuth_Surface:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Relative azimuth angle between Sun and sensor
+      long_name: Geodetic azimuth angle at the Earth point of the satellite relative to the solar plane (measured clockwise in the plane normal to the geodetic zenith)
       units: degrees
 
   # ---------------------------------------------------------------------------
