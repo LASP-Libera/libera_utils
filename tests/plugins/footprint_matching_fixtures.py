@@ -1803,7 +1803,6 @@ def make_fmatch_product_fixture(
         load_fmatch_definition,
     )
     from libera_utils.io.netcdf import write_libera_data_product  # noqa: PLC0415
-    from libera_utils.io.product_variable_names import product_variable_name  # noqa: PLC0415
 
     runner_config = next(config for config in RUNNER_CONFIGS.values() if config.mode is mode)
     camtime = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
@@ -1829,18 +1828,18 @@ def make_fmatch_product_fixture(
     )
 
     def _set(name: str, values: np.ndarray) -> None:
-        column = dataset[product_variable_name(name)]
+        column = dataset[name]
         column.values[...] = np.reshape(values, column.shape)
 
-    n_cells = dataset[product_variable_name("igbp_surface_type")].size
-    _set("igbp_surface_type", np.arange(n_cells) % 17 + 1)
+    n_cells = dataset["IGBP_Surface_Type"].size
+    _set("IGBP_Surface_Type", np.arange(n_cells) % 17 + 1)
     if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
-        _set("flashflux_clear_coverage", np.linspace(0.0, 100.0, n_cells))
-        _set("cldpix_cloud_particle_phase", np.arange(n_cells) % 2 + 1)
+        _set("FLASHFlux_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
+        _set("CLDPIX_Cloud_Particle_Phase", np.arange(n_cells) % 2 + 1)
         # A distinct constant per source, so a reader that reads the wrong source variable is caught.
-        _set("era5_surface_wind_u10", np.full(n_cells, 3.0))
-        _set("era5_surface_wind_v10", np.full(n_cells, 4.0))
-        _set("cldpix_cloud_optical_depth", np.full(n_cells, 7.0))
+        _set("ERA5_Surface_Wind_U10", np.full(n_cells, 3.0))
+        _set("ERA5_Surface_Wind_V10", np.full(n_cells, 4.0))
+        _set("CLDPIX_Cloud_Optical_Depth", np.full(n_cells, 7.0))
 
     written = write_libera_data_product(
         data_product_definition=definition,
