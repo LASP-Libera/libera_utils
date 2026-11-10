@@ -66,17 +66,17 @@ class TestForkedPool:
 
 class TestWorkerCount:
     def test_default_comes_from_config(self, fake_sources, monkeypatch):
-        monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, "1")
+        # 120 footprints is enough for two workers, so a configured count of 2 reaches the pool.
+        monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, "2")
         seen = []
-        original = product._aggregate_footprints
 
-        def spy(*args, **kwargs):
-            seen.append(True)
-            return original(*args, **kwargs)
+        def spy(mode, footprints, sources, source_file_paths, weigher, return_coverage, n_workers):
+            seen.append(n_workers)
+            return {}
 
-        monkeypatch.setattr(product, "_aggregate_footprints", spy)
-        aggregate_external_variables(OperationalMode.CAM, _footprints(6), fake_sources)
-        assert seen == [True]
+        monkeypatch.setattr(product, "_aggregate_in_parallel", spy)
+        aggregate_external_variables(OperationalMode.CAM, _footprints(120), fake_sources)
+        assert seen == [2]
 
     def test_few_footprints_stay_in_process(self, fake_sources, monkeypatch):
         called = []
