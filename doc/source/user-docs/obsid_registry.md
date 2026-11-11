@@ -179,7 +179,8 @@ That tuple, **plus the combiner's own TRIMMED product**, is what its node's `inp
 should list in libera_cdk's `processing_system_dag.json`. A combiner takes its NOM-HK already
 trimmed, so `required_inputs` normally omits the full-day `NOM-HK-DECODED` granule — listing it
 would stage a second, redundant NOM-HK input. The lunar, VIIRS lunar and camera combiners, whose
-dependency sets are still undecided, return an empty tuple.
+dependency sets are still undecided (LIBSDC-811; the camera combiners with LIBSDC-901), return an
+empty tuple.
 
 ## Coverage
 

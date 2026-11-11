@@ -25,6 +25,7 @@ from libera_utils.obsids import (
     iter_trim_eligible,
 )
 
+# TODO[LIBSDC-811]: settle the lunar, VIIRS lunar and camera combiner inputs (camera with LIBSDC-901).
 #: TRIMMED products whose combiner input dependency set is still undecided: the radiometer lunar and
 #: VIIRS lunar ObsIDs and every camera calibration ObsID.
 UNDECIDED_INPUTS = {
