@@ -378,7 +378,7 @@ def _synthetic_camtime_footprint_data() -> FootprintData:
     longitude = np.array([[100.0, -50.0], [170.0, -179.0]], dtype=np.float32)
     dataset = xr.Dataset(
         {
-            "IGBP_Surface_Type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
+            "IGBP_Surface_Type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.int8)),
             # clear_area is an intermediate the pipeline inverts into cloud_fraction; it is dropped before writing.
             "clear_area": (grid_dims, np.array([[100.0, 40.0], [0.0, 75.0]], dtype=np.float32)),
             "Solar_Zenith_Surface": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
@@ -618,8 +618,8 @@ class TestMissingIgbpCode:
         assert dataset["Scene_ID_ERBE"].values[2, -1] == 0
         assert (dataset["Scene_ID_ERBE"].values[0] > 0).all()
 
-    def test_written_product_carries_the_fill_for_the_unmatched_footprint(self, tmp_path):
-        """The surface-type columns carry their declared _FillValue 255 for the footprint, and scene_id 0 flags it."""
+    def test_written_product_carries_minus_one_for_the_unmatched_footprint(self, tmp_path):
+        """The surface-type columns carry -1, with no _FillValue, for the footprint, and scene_id 0 flags it."""
         input_path = _with_missing_igbp(
             make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, n_footprints=4), tmp_path, 1
         )
@@ -631,9 +631,9 @@ class TestMissingIgbpCode:
 
         with xr.open_dataset(written.path, mask_and_scale=False) as product:
             for name in ("IGBP_Surface_Type", "Surface_Type"):
-                assert product[name].dtype == np.uint8
-                assert product[name].attrs["_FillValue"] == 255
-                assert product[name].values[1] == 255
+                assert product[name].dtype == np.int8
+                assert "_FillValue" not in product[name].attrs
+                assert product[name].values[1] == -1
             assert product["Scene_ID_TRMM"].values[1] == 0
             assert (product["IGBP_Surface_Type"].values[[0, 2, 3]] > 0).all()
 

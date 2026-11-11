@@ -9,11 +9,15 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
+#: Value an integer SCENE-ID column, such as ``Surface_Type`` or its bin bounds, holds where it has no value. The
+#: SCENE-ID products declare no ``_FillValue``; a float column holds NaN where it has no value.
+SCENE_ID_INTEGER_FILL_VALUE = -1
+
 # Storage dtype for each classification variable's property-bin bounds (the Scene_Bin_{type}_{variable}_Min/_Max
-# variables from _compute_property_bins). Surface_Type is a categorical code, stored as uint8; other (continuous)
-# variables use float32. There is no fill value: unbounded/unmatched sides are NaN for floats and 0 for ints, and
-# scene_id == 0 is the authoritative unmatched flag consumers key off.
-_BIN_BOUND_DTYPES: dict[str, type] = {"Surface_Type": np.uint8}
+# variables from _compute_property_bins). Surface_Type is a categorical code, stored as int8; other (continuous)
+# variables use float32. An unmatched footprint's bounds are NaN for floats and SCENE_ID_INTEGER_FILL_VALUE for ints,
+# and scene_id == 0 flags the footprint as unmatched.
+_BIN_BOUND_DTYPES: dict[str, type] = {"Surface_Type": np.int8}
 _DEFAULT_BIN_BOUND_DTYPE: type = np.float32
 
 
@@ -404,8 +408,9 @@ class SceneDefinition:
             Mapping of output variable name (``Scene_Bin_{type}_{variable}_Min``
             / ``_Max``) to an array the same shape as ``scene_ids``. Continuous
             variables use ``float32`` with ``NaN`` marking an unbounded bin side
-            or an unmatched footprint; ``Surface_Type`` uses a compact ``uint8``
-            left at ``0`` for those cases (scene_id 0 flags the unmatched case).
+            or an unmatched footprint; ``Surface_Type`` uses a compact ``int8``
+            holding ``SCENE_ID_INTEGER_FILL_VALUE`` for those cases (scene_id 0
+            flags the unmatched case).
         """
         bin_arrays: dict[str, np.ndarray] = {}
 
@@ -420,18 +425,19 @@ class SceneDefinition:
 
             # Float bounds use NaN for an unbounded side. Integer bounds can't hold NaN, so an unbounded side of a
             # matched scene is filled with the outermost bin edge any scene in this definition uses for the variable
-            # (0 if no scene bounds that side), which is unambiguous for a categorical code.
-            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, 0 for ints.
+            # (SCENE_ID_INTEGER_FILL_VALUE if no scene bounds that side), which is unambiguous for a categorical code.
+            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, SCENE_ID_INTEGER_FILL_VALUE for
+            # ints.
             if is_float:
                 min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
                 max_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
                 unbounded_min = unbounded_max = np.nan
             else:
-                min_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
-                max_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                min_by_id = np.full(max_scene_id + 1, SCENE_ID_INTEGER_FILL_VALUE, dtype=dtype)
+                max_by_id = np.full(max_scene_id + 1, SCENE_ID_INTEGER_FILL_VALUE, dtype=dtype)
                 global_min, global_max = self._compute_global_bounds([var_name])[var_name]
-                unbounded_min = 0 if global_min is None else global_min
-                unbounded_max = 0 if global_max is None else global_max
+                unbounded_min = SCENE_ID_INTEGER_FILL_VALUE if global_min is None else global_min
+                unbounded_max = SCENE_ID_INTEGER_FILL_VALUE if global_max is None else global_max
 
             for scene in self.scenes:
                 min_val, max_val = scene.get_bin_bounds(var_name)

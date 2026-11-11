@@ -369,12 +369,12 @@ class TestPropertyBins:
         min_bounds = bins["Scene_Bin_surface_Surface_Type_Min"]
         max_bounds = bins["Scene_Bin_surface_Surface_Type_Max"]
 
-        # Bounds are stored as compact unsigned bytes.
-        assert min_bounds.dtype == np.uint8
-        assert max_bounds.dtype == np.uint8
-        # Matched footprints report their bounds; the unmatched footprint gets 0 (disambiguated by scene_id 0).
-        np.testing.assert_array_equal(min_bounds, np.array([0, 3, 0], dtype=np.uint8))
-        np.testing.assert_array_equal(max_bounds, np.array([3, 6, 0], dtype=np.uint8))
+        # Bounds are stored as compact signed bytes.
+        assert min_bounds.dtype == np.int8
+        assert max_bounds.dtype == np.int8
+        # Matched footprints report their bounds; the unmatched footprint gets -1.
+        np.testing.assert_array_equal(min_bounds, np.array([0, 3, -1], dtype=np.int8))
+        np.testing.assert_array_equal(max_bounds, np.array([3, 6, -1], dtype=np.int8))
 
 
 class TestIdentifyAndUpdateGrid:

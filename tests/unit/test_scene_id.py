@@ -10,7 +10,8 @@ import xarray as xr
 from libera_utils.config import config
 from libera_utils.footprint_matching.product import load_fmatch_definition
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.scene_identification.scene_definitions import SceneDefinition
+from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.scene_identification.scene_definitions import SCENE_ID_INTEGER_FILL_VALUE, SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
     _FMATCH_CAM_COLUMN_MAP,
@@ -31,6 +32,7 @@ from libera_utils.scene_identification.scene_id import (
     calculate_trmm_surface_type,
     map_cldpix_phase_to_trmm,
 )
+from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS
 
 
 class TestIGBPSurfaceType:
@@ -696,13 +698,11 @@ class TestSceneIdCamProductDtypes:
         )
         return LiberaDataProductDefinition.from_yaml(definition_path)
 
-    def test_surface_type_variables_are_uint8(self):
-        """The categorical surface_type / scene_id variables are declared as compact uint8."""
-        # What: categorical surface_type / scene_id product variables are declared as compact uint8.
-        # How: load the SCENE-ID-CAM definition and assert each variable's declared dtype string equals "uint8".
+    def test_categorical_variables_are_single_byte(self):
+        """The surface-type variables are int8, so they can hold -1, and the scene IDs are uint8."""
         definition = self._scene_id_cam_definition()
-        assert definition.variables["Surface_Type"].dtype == "uint8"
-        assert definition.variables["IGBP_Surface_Type"].dtype == "uint8"
+        assert definition.variables["Surface_Type"].dtype == "int8"
+        assert definition.variables["IGBP_Surface_Type"].dtype == "int8"
         assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
         assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
 
@@ -714,36 +714,33 @@ class TestSceneIdCamProductDtypes:
         assert definition.variables["Scene_Bin_ERBE_Cloud_Fraction_Min"].dtype == "float32"
         assert definition.variables["Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Max"].dtype == "float32"
 
-    def test_surface_type_bin_bounds_are_uint8(self):
-        """surface_type bin bounds are declared as compact uint8.
+    def test_surface_type_bin_bounds_are_int8(self):
+        """surface_type bin bounds are declared as compact int8.
 
-        surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
-        (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
+        surface_type is categorical, so its bounds are a single signed byte; an unmatched footprint carries -1. The
+        continuous bin bounds remain float32 with NaN.
         """
-        # What: categorical surface_type bin bounds are declared uint8, and only the two surface-type columns declare a
-        # _FillValue, 255, outside their codes.
-        # How: assert the surface_type bin dtypes equal "uint8" and collect every variable whose attributes declare one.
         definition = self._scene_id_cam_definition()
-        assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "uint8"
-        assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "uint8"
-        declared_fills = {
-            name: var.attributes["_FillValue"]
-            for name, var in definition.variables.items()
-            if "_FillValue" in var.attributes
-        }
-        assert declared_fills == {"IGBP_Surface_Type": 255, "Surface_Type": 255}
+        assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "int8"
+        assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "int8"
+
+    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
+    def test_no_variable_declares_a_fill_value(self, variant):
+        """No SCENE-ID product definition declares a _FillValue on any variable or coordinate."""
+        definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS[variant].product_definition_path)
+        declared = {**definition.coordinates, **definition.variables}
+        assert [name for name, var in declared.items() if "_FillValue" in var.attributes] == []
 
 
 def _absent_bin_mask(array):
     """Return a boolean mask of "no bound present" entries in a bin-bound or value array.
 
-    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN. Integer bounds (surface_type)
-    and integer value arrays carry no missing marker (an unmatched footprint is flagged separately by scene_id 0),
-    so they report all-present.
+    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN, and integer bounds
+    (surface_type) and integer value arrays mark a missing value with SCENE_ID_INTEGER_FILL_VALUE (-1).
     """
     if np.issubdtype(array.dtype, np.floating):
         return np.isnan(array)
-    return np.zeros(array.shape, dtype=bool)
+    return array == SCENE_ID_INTEGER_FILL_VALUE
 
 
 def assert_property_bins_consistent(dataset, scene_type, variables):
@@ -768,11 +765,9 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
         bin_max = dataset[max_name].values
         values = dataset[variable].values
 
-        # Float bounds mark unmatched footprints as NaN; integer (surface_type) bounds instead carry 0 and rely on
-        # scene_id 0 to flag "unmatched", so we only assert the NaN convention for the float bounds.
-        if np.issubdtype(bin_min.dtype, np.floating):
-            assert np.all(np.isnan(bin_min[~matched]))
-            assert np.all(np.isnan(bin_max[~matched]))
+        # Unmatched footprints carry NaN in float bounds and -1 in integer (surface_type) bounds.
+        assert np.all(_absent_bin_mask(bin_min[~matched]))
+        assert np.all(_absent_bin_mask(bin_max[~matched]))
 
         # For matched footprints, where a value and a bound are both present, the value must lie in-bin.
         min_present = ~_absent_bin_mask(bin_min)
@@ -1058,7 +1053,7 @@ class TestSceneIdImagerProductDtypes:
         definition = self._load(definition_filename)
         for name in ("Surface_Wind", "Cloud_Phase", "Optical_Depth"):
             assert name in definition.variables
-        assert definition.variables["Scene_Bin_TRMM_Surface_Type_Min"].dtype == "uint8"
+        assert definition.variables["Scene_Bin_TRMM_Surface_Type_Min"].dtype == "int8"
         assert definition.variables["Scene_Bin_TRMM_Cloud_Phase_Max"].dtype == "float32"
 
 
