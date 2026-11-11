@@ -345,7 +345,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: LiberaDataProductDefinition) -> xr.Dataset:
     """Cast float-held integer variables to their declared dtype, writing the declared fill where they are NaN.
 
-    Classification carries integer categories such as ``surface_type`` as float so a footprint with a missing input
+    Classification carries integer categories such as ``Surface_Type`` as float so a footprint with a missing input
     can hold NaN, and such a footprint is unmatched. A variable that declares a ``_FillValue`` takes it where it is
     NaN: ``Surface_Type`` and ``IGBP_Surface_Type`` declare 255, outside their codes, so a missing code is not read
     as ocean. A variable that declares none, such as a ``uint8`` bin bound, takes 0, and ``scene_id == 0`` flags the
