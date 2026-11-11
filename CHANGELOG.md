@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises `ValueError` for any other code outside 1-20, infinite or not a whole number.
 - **BREAKING:** The TRMM classification variables are named as SCENE-ID-IMAGER writes them: `FootprintVariables.SURFACE_WIND`, `CLOUD_PHASE` and `OPTICAL_DEPTH` are `Surface_Wind`, `Cloud_Phase` and `Optical_Depth`, `TRMM.csv` bounds them with `Surface_Wind_Min`/`_Max`, `Cloud_Phase_Min`/`_Max` and `Optical_Depth_Min`/`_Max`, and their bins are `Scene_Bin_TRMM_Surface_Wind_Min` and so on. A custom scene definition that bounds these variables renames its columns the same way.
 
+### Removed
+
+- **BREAKING:** `FootprintData.from_ceres_ssf`, the CERES SSF reader for scene identification. Read a FMATCH product with `FootprintData.from_fmatch_cam`, `from_fmatch_cam_camtime`, `from_fmatch_imager` or `from_fmatch_imager_camtime` instead.
+
 ## [5.25.0] - 2026-11-11
 
 ### Added

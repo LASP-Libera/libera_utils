@@ -1,7 +1,7 @@
 """Unit tests for scene identification module."""
 
 import pathlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -386,56 +386,6 @@ class TestFootprintDataInstanceMethods:
         assert fp2._data[FootprintVariables.CLEAR_AREA].values[0] == 60.0
         assert fp1._data[FootprintVariables.CLEAR_AREA].values[0] == 999.0
 
-    def test_convert_missing_values_with_nan(self, footprint_with_data):
-        """Test converting missing values when input missing value is NaN."""
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, np.nan, 3.0])})
-        footprint_with_data._convert_missing_values(np.nan)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_convert_missing_values_with_numeric(self, footprint_with_data):
-        """Test converting missing values when input missing value is numeric."""
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, -999.0, 3.0])})
-        footprint_with_data._convert_missing_values(-999.0)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_convert_missing_values_large_fill_value(self, footprint_with_data):
-        """Test converting missing values with large fill value like 9.96921e+36."""
-        large_fill = 9.96921e36
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, large_fill, 3.0])})
-        footprint_with_data._convert_missing_values(large_fill)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_fill_column_above_max_value(self, footprint_with_data):
-        """Test filling values above threshold."""
-        footprint_with_data._data = xr.Dataset({"col1": (["x"], [1.0, 50.0, 100.0, 200.0])})
-        footprint_with_data._fill_column_above_max_value("col1", 100.0)
-
-        assert footprint_with_data._data["col1"][0] == 1.0
-        assert footprint_with_data._data["col1"][1] == 50.0
-        assert footprint_with_data._data["col1"][2] == 100.0  # Boundary value is kept
-        assert np.isnan(footprint_with_data._data["col1"][3])  # Above threshold
-
-    def test_fill_column_above_max_value_custom_fill(self, footprint_with_data):
-        """Test filling with custom fill value."""
-        footprint_with_data._data = xr.Dataset({"col1": (["x"], [1.0, 50.0, 150.0])})
-        footprint_with_data._fill_column_above_max_value("col1", 100.0, fill_value=-999.0)
-
-        assert footprint_with_data._data["col1"][2] == -999.0
-
-    def test_fill_column_missing_column_error(self, footprint_with_data):
-        """Test error when column not found."""
-        with pytest.raises(ValueError, match="Column nonexistent not found"):
-            footprint_with_data._fill_column_above_max_value("nonexistent", 100.0)
-
     def test_calculate_required_fields_single_field(self, footprint_with_data):
         """Test calculating a single field."""
         footprint_with_data._calculate_required_fields([FootprintVariables.CLOUD_FRACTION])
@@ -554,91 +504,6 @@ class TestFootprintDataInstanceMethods:
 
         with pytest.raises(ValueError, match="Cannot calculate fields - missing dependencies"):
             fp._calculate_single_field_from_spec(spec, calculated)
-
-
-class TestFootprintDataExtraction:
-    """Test cases for data extraction methods."""
-
-    @pytest.fixture
-    def mock_netcdf_dataset(self):
-        """Create a mock NetCDF dataset."""
-        mock_dataset = MagicMock()
-
-        # Mock the groups and variables structure
-        mock_dataset.groups = {
-            "Cloudy_Footprint_Area": MagicMock(),
-            "Surface_Map": MagicMock(),
-            "Full_Footprint_Area": MagicMock(),
-            "Clear_Footprint_Area": MagicMock(),
-        }
-
-        # Mock 2D arrays
-        cloud_frac_data = np.array([[0.0, 10.0, 20.0], [0.0, 30.0, 40.0], [0.0, 50.0, 60.0]])
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables = {
-            "layers_coverages": MagicMock(),
-            "cloud_particle_phase_37um_mean": MagicMock(),
-            "cloud_optical_depth_mean": MagicMock(),
-        }
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"].__getitem__ = lambda x: (
-            cloud_frac_data
-        )
-
-        cloud_phase_data = np.array([[1.0, 2.0], [1.5, 1.8], [2.0, 1.0]])
-        cloud_phase_var = mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_particle_phase_37um_mean"]
-        cloud_phase_var.__getitem__ = lambda x: cloud_phase_data
-        cloud_phase_var._FillValue = -999.0  # Set fill value
-
-        optical_depth_data = np.array([[5.0, 10.0], [15.0, 20.0], [25.0, 30.0]])
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"].__getitem__ = lambda x: (
-            optical_depth_data
-        )
-
-        igbp_data = np.array([[1], [17], [15]])
-        mock_dataset.groups["Surface_Map"].variables = {"surface_igbp_type": MagicMock()}
-        mock_dataset.groups["Surface_Map"].variables["surface_igbp_type"].__getitem__ = lambda x: igbp_data
-
-        # Mock 1D arrays
-        mock_dataset.groups["Full_Footprint_Area"].variables = {
-            "surface_wind_u_vector": MagicMock(),
-            "surface_wind_v_vector": MagicMock(),
-        }
-        mock_dataset.groups["Full_Footprint_Area"].variables["surface_wind_u_vector"].__getitem__ = lambda x: np.array(
-            [3.0, 4.0, 5.0]
-        )
-        mock_dataset.groups["Full_Footprint_Area"].variables["surface_wind_v_vector"].__getitem__ = lambda x: np.array(
-            [4.0, 3.0, 12.0]
-        )
-
-        mock_dataset.groups["Clear_Footprint_Area"].variables = {"clear_coverage": MagicMock()}
-        mock_dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"].__getitem__ = lambda x: np.array(
-            [80.0, 50.0, 20.0]
-        )
-
-        return mock_dataset
-
-    def test_extract_data_missing_group_error(self):
-        """Test error handling when required group is missing."""
-        mock_dataset = MagicMock()
-        mock_dataset.groups = {}  # Empty groups
-
-        with pytest.raises(ValueError, match="Required variable or group not found"):
-            FootprintData._extract_data_from_CeresSSFNOAA20FM6Ed1C(mock_dataset)
-
-    def test_extract_data_missing_variable_error(self):
-        """Test error handling when required variable is missing."""
-        mock_dataset = MagicMock()
-        mock_dataset.groups = {
-            "Cloudy_Footprint_Area": MagicMock(),
-            "Surface_Map": MagicMock(),
-            "Full_Footprint_Area": MagicMock(),
-            "Clear_Footprint_Area": MagicMock(),
-        }
-
-        # Mock incomplete variables
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables = {}  # Missing variables
-
-        with pytest.raises(ValueError, match="Required variable or group not found"):
-            FootprintData._extract_data_from_CeresSSFNOAA20FM6Ed1C(mock_dataset)
 
 
 class TestIdentifyScenes:
@@ -921,39 +786,6 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
 
 class TestEndToEndSceneIdentification:
     """Tests for complete scene identification workflow."""
-
-    def test_from_ceres_ssf(self, scene_id_test_data_path):
-        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
-        expected_file_path = (
-            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
-        )
-        fp = FootprintData.from_ceres_ssf(input_file_path)
-        fp.identify_scenes()
-        expected = xr.open_dataset(expected_file_path)
-        xr.testing.assert_equal(fp._data, expected)
-        geometry_variables = ["Solar_Zenith_Surface", "Viewing_Zenith_Surface", "Relative_Azimuth_Surface"]
-        assert_property_bins_consistent(fp._data, "TRMM", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
-        assert_property_bins_consistent(fp._data, "ERBE", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
-        for geometry_variable in geometry_variables:
-            assert geometry_variable in fp._data.data_vars
-
-    @pytest.mark.parametrize(
-        "scene_definition",
-        [
-            SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
-            SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
-        ],
-    )
-    def test_from_ceres_ssf_single_scene_definition(self, scene_definition, scene_id_test_data_path):
-        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
-        fp = FootprintData.from_ceres_ssf(input_file_path)
-        fp.identify_scenes(scene_definitions=[scene_definition])
-        expected_file_path = (
-            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
-        )
-        expected = xr.open_dataset(expected_file_path)
-        scene_id_col = f"Scene_ID_{scene_definition.type}"
-        np.testing.assert_array_equal(fp._data[scene_id_col].values, expected[scene_id_col].values)
 
     @pytest.mark.parametrize(
         ("input_file_name", "scene_definition", "expected_file_name"),
