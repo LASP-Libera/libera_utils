@@ -46,10 +46,11 @@ variables:
   # Input scene properties
   ########################
   IGBP_Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   # Viewing geometry at the pseudo-footprint's center pixel, passed through unchanged from L1B CAM via
   # FMATCH-CAM-CAMTIME; long_names are the L1B ones. Relative azimuth is referenced to the Sun: 0 degrees means the
   # viewing azimuth is aligned with the Sun's azimuth.
@@ -76,9 +77,10 @@ variables:
   # Derived scene properties
   ##########################
   Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
   # Cloud fraction is in percent in every Libera product that carries it (Data Product Definition Working Group,
   # 2026-08-19).
@@ -119,14 +121,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched ERBE scene
       units: percent
   Scene_Bin_ERBE_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Solar_Zenith_Surface_Min:
     dtype: float32
@@ -181,14 +185,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched unfiltering scene
       units: percent
   Scene_Bin_Unfiltering_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Solar_Zenith_Surface_Min:
     dtype: float32

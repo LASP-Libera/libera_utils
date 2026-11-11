@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `libera_utils.footprint_matching.footprint_match_algorithm`, the manifest-driven runners for the four FMATCH products, run by the `libera-utils fmatch <manifest>` command and the `libera-utils-fmatch` Docker target; the `LIBERA_FMATCH_VARIANT` environment variable selects the product. The radiometer-timescale runners read L1B RAD-4CH. Both camera-timescale runners, FMATCH-CAM-CAMTIME and FMATCH-IMAGER-CAMTIME, read their pseudo-footprints from the CF-CAM-CAMTIME product written by the Camera Cloud Fraction algorithm, and raise `MissingCamtimeVariablesError` when it lacks a variable they need (`CAMTIME_PSEUDOFOOTPRINT_VARIABLES`). A runner raises when `FMATCH_ANCILLARY_PATH` is unset, an active reader's directory under it is missing or empty, or an ancillary granule is staged in S3. Until CF-CAM-CAMTIME carries the camera ephemeris, both camera-timescale runners raise `ValueError` when they aggregate. FMATCH-CAM requires a CF-CAM input: it reads every CF-CAM file in the manifest once and writes each L1B footprint's CF-CAM `Cloud_Fraction` (percent) as `Cloud_Fraction_Camera`, matched by exact `radiometer_time`, with fill for footprints CF-CAM does not cover. Both Camera Cloud Fraction products carry the cloud fraction as `Cloud_Fraction` (`CF_CAM_CLOUD_FRACTION_VARIABLE`). A runner raises `MissingCloudFractionInputError` when a FMATCH-CAM manifest lists no CF-CAM product or a CF-CAM or CF-CAM-CAMTIME input lacks `Cloud_Fraction`, and `CloudFractionTimeMismatchError` when two CF-CAM rows share a time, a CF-CAM value inside an L1B granule's time span matches none of its footprints, or none of the granule's footprints match a CF-CAM row; both subclass `ValueError`.
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (`LIBERA_SCENE_ID_VARIANT=imager` / `imager-camtime`), with product definitions and `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. Both run the TRMM classification as well as ERBE and unfiltering.
+
+### Changed
+
+- **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of CERES SSF files, so its processing step must declare FMATCH-CAM as its input product. `SceneIdRunnerConfig.input_product_id` and `collect_input_files`'s `input_product_id` no longer accept `None`.
+- The SCENE-ID FMATCH readers read FMATCH variables by their product names, through `smart_open` for local or S3 paths. A footprint with a missing `IGBP_Surface_Type` is left unmatched (scene ID 0) instead of failing the granule.
+- SCENE-ID integer columns (`Surface_Type`, `IGBP_Surface_Type` and the `Scene_Bin_*_Surface_Type_Min`/`_Max` bounds) are `int8` with -1 for a missing value (`SCENE_ID_INTEGER_FILL_VALUE`), and the SCENE-ID product definitions declare no `_FillValue`.
+- `calculate_trmm_surface_type` returns float and passes NaN through.
+- **BREAKING:** The TRMM classification variables are renamed `Surface_Wind`, `Cloud_Phase` and `Optical_Depth`, and their `TRMM.csv` bounds and scene bins follow (`Surface_Wind_Min`, `Scene_Bin_TRMM_Surface_Wind_Min` and so on). A custom scene definition that bounds these variables renames its columns the same way.
+
+### Removed
+
+- **BREAKING:** `FootprintData.from_ceres_ssf`. Read a FMATCH product with one of the `FootprintData.from_fmatch_*` readers instead.
 
 ## [5.25.0] - 2026-11-11
 

@@ -9,11 +9,15 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
+#: Value an integer SCENE-ID column, such as ``Surface_Type`` or its bin bounds, holds where it has no value. The
+#: SCENE-ID products declare no ``_FillValue``; a float column holds NaN where it has no value.
+SCENE_ID_INTEGER_FILL_VALUE = -1
+
 # Storage dtype for each classification variable's property-bin bounds (the Scene_Bin_{type}_{variable}_Min/_Max
-# variables from _compute_property_bins). Surface_Type is a categorical code, stored as uint8; other (continuous)
-# variables use float32. There is no fill value: unbounded/unmatched sides are NaN for floats and 0 for ints, and
-# scene_id == 0 is the authoritative unmatched flag consumers key off.
-_BIN_BOUND_DTYPES: dict[str, type] = {"Surface_Type": np.uint8}
+# variables from _compute_property_bins). Surface_Type is a categorical code, stored as int8; other (continuous)
+# variables use float32. An unmatched footprint's bounds are NaN for floats and SCENE_ID_INTEGER_FILL_VALUE for ints,
+# and scene_id == 0 flags the footprint as unmatched.
+_BIN_BOUND_DTYPES: dict[str, type] = {"Surface_Type": np.int8}
 _DEFAULT_BIN_BOUND_DTYPE: type = np.float32
 
 
@@ -40,12 +44,12 @@ class Scene:
     ...     scene_id=1,
     ...     variable_ranges={
     ...         "Cloud_Fraction": (0.0, 50.0),
-    ...         "optical_depth": (0.0, 10.0)
+    ...         "Optical_Depth": (0.0, 10.0)
     ...     }
     ... )
-    >>> scene.matches({"Cloud_Fraction": 30.0, "optical_depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 30.0, "Optical_Depth": 5.0})
     True
-    >>> scene.matches({"Cloud_Fraction": 60.0, "optical_depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 60.0, "Optical_Depth": 5.0})
     False
     """
 
@@ -404,8 +408,9 @@ class SceneDefinition:
             Mapping of output variable name (``Scene_Bin_{type}_{variable}_Min``
             / ``_Max``) to an array the same shape as ``scene_ids``. Continuous
             variables use ``float32`` with ``NaN`` marking an unbounded bin side
-            or an unmatched footprint; ``Surface_Type`` uses a compact ``uint8``
-            left at ``0`` for those cases (scene_id 0 flags the unmatched case).
+            or an unmatched footprint; ``Surface_Type`` uses a compact ``int8``
+            holding ``SCENE_ID_INTEGER_FILL_VALUE`` for those cases (scene_id 0
+            flags the unmatched case).
         """
         bin_arrays: dict[str, np.ndarray] = {}
 
@@ -420,18 +425,19 @@ class SceneDefinition:
 
             # Float bounds use NaN for an unbounded side. Integer bounds can't hold NaN, so an unbounded side of a
             # matched scene is filled with the outermost bin edge any scene in this definition uses for the variable
-            # (0 if no scene bounds that side), which is unambiguous for a categorical code.
-            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, 0 for ints.
+            # (SCENE_ID_INTEGER_FILL_VALUE if no scene bounds that side), which is unambiguous for a categorical code.
+            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, SCENE_ID_INTEGER_FILL_VALUE for
+            # ints.
             if is_float:
                 min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
                 max_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
                 unbounded_min = unbounded_max = np.nan
             else:
-                min_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
-                max_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                min_by_id = np.full(max_scene_id + 1, SCENE_ID_INTEGER_FILL_VALUE, dtype=dtype)
+                max_by_id = np.full(max_scene_id + 1, SCENE_ID_INTEGER_FILL_VALUE, dtype=dtype)
                 global_min, global_max = self._compute_global_bounds([var_name])[var_name]
-                unbounded_min = 0 if global_min is None else global_min
-                unbounded_max = 0 if global_max is None else global_max
+                unbounded_min = SCENE_ID_INTEGER_FILL_VALUE if global_min is None else global_min
+                unbounded_max = SCENE_ID_INTEGER_FILL_VALUE if global_max is None else global_max
 
             for scene in self.scenes:
                 min_val, max_val = scene.get_bin_bounds(var_name)
@@ -445,10 +451,13 @@ class SceneDefinition:
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""
-        # scene_ids: 0 = unmatched, positive = a scene. Sized to the narrowest unsigned int holding this
-        # definition's largest scene_id (uint8 for ERBE/unfiltering IDs 1-11; uint16 for TRMM's IDs up to 650).
-        # Sizing to the data avoids OverflowError under NEP 50, where np.where's scalar adopts the array dtype. The
-        # values are only small labels, widened to np.intp before indexing in _compute_property_bins, so this is safe.
+        # Initialize scene_ids with zeros. Scene IDs are small non-negative codes (0 = unmatched). ERBE/unfiltering top
+        # out at 11, but the TRMM definition enumerates 644 scenes with IDs up to 650, so a single unsigned byte is not
+        # always wide enough. Size the label array to the widest scene ID present -- uint8 for the small definitions,
+        # uint16 for TRMM -- which matches the scene_id_* dtypes in the product definitions and, under NumPy 2.0 NEP 50
+        # promotion, keeps the np.where() scalar assignment below from raising OverflowError. This array is only ever
+        # used as a set of small labels and is widened to np.intp before being used as an index (see
+        # _compute_property_bins), so the narrow dtype is safe.
         max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
         scene_ids = np.zeros(shape, dtype=np.min_scalar_type(max_scene_id))
 
@@ -557,10 +566,10 @@ class SceneDefinition:
         Examples
         --------
         >>> scene_def = SceneDefinition(Path("scenes.csv"))
-        >>> scene_def.required_columns = ['Cloud_Fraction', 'optical_depth']
+        >>> scene_def.required_columns = ['Cloud_Fraction', 'Optical_Depth']
         >>> data = xr.Dataset({'Cloud_Fraction': [10, 20]})
         >>> scene_def.validate_input_data_columns(data)
-        ValueError: Required columns ['optical_depth'] not in input data for TRMM scene identification.
+        ValueError: Required columns ['Optical_Depth'] not in input data for TRMM scene identification.
         """
         missing_columns = []
         for column in self.required_columns:

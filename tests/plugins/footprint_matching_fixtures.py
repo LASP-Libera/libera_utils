@@ -1451,6 +1451,25 @@ def fake_sources(tmp_path: Path, set_mode_readers) -> dict[str, AncillaryReader]
     }
 
 
+@pytest.fixture
+def fake_aggregation(monkeypatch: pytest.MonkeyPatch, fake_sources: dict[str, AncillaryReader]) -> None:
+    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
+
+    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
+    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column.
+    """
+    import functools  # noqa: PLC0415
+
+    from libera_utils.footprint_matching import footprint_match_algorithm, product  # noqa: PLC0415
+
+    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
+    monkeypatch.setattr(
+        footprint_match_algorithm,
+        "write_fmatch_product",
+        functools.partial(product.write_fmatch_product, allow_placeholders=True),
+    )
+
+
 def make_l1b_radiometer_fixture(
     directory: Path,
     n_footprints: int = 8,
@@ -1736,6 +1755,100 @@ def make_cf_cam_camtime_fixture(directory: Path, **dataset_kwargs: Any) -> Path:
     out_path = Path(directory) / filename
     dataset.to_netcdf(out_path)
     return out_path
+
+
+def make_fmatch_product_fixture(
+    directory: Path,
+    mode: OperationalMode = OperationalMode.CAM,
+    n_footprints: int = 8,
+) -> Path:
+    """Write a conformant FMATCH product NetCDF file (input to the SCENE-ID runners) through FMATCH's own code.
+
+    Writes the mode's upstream input (an L1B RAD-4CH file, or a CF-CAM-CAMTIME file for the camera-timescale modes),
+    reads it with the mode's FMATCH runner config, assembles the product with
+    :func:`~libera_utils.footprint_matching.product.assemble_fmatch_dataset` (``allow_placeholders=True``, so no
+    ancillary data is needed), sets the classification inputs SCENE-ID reads to valid values, and writes it with
+    :func:`~libera_utils.io.netcdf.write_libera_data_product` under the product definition, so the file has FMATCH's
+    exact layout and product variable names:
+
+    * ``IGBP_Surface_Type`` cycles through the IGBP codes 1..17;
+    * for the IMAGER modes, ``FLASHFlux_Clear_Coverage`` spans 0..100 percent, ``CLDPIX_Cloud_Particle_Phase``
+      alternates liquid (1) and ice (2), ``ERA5_Surface_Wind_U10`` is 3.0, ``ERA5_Surface_Wind_V10`` is 4.0 and
+      ``CLDPIX_Cloud_Optical_Depth`` is 7.0;
+    * for ``CAM``, ``Cloud_Fraction_Camera`` spans 0..100 percent (the camera-timescale CAM mode takes the
+      CF-CAM-CAMTIME file's own cloud fraction).
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the upstream input (under ``upstream/``) and the product into (e.g. pytest ``tmp_path``).
+    mode : OperationalMode, optional
+        The FMATCH operational mode to write. Defaults to ``OperationalMode.CAM``.
+    n_footprints : int, optional
+        Radiometer timescale: the number of footprints. Camera timescale: the number of images, each segmented into
+        two pseudo-footprints, so every image has the same count and no grid cell is padded. Defaults to 8.
+
+    Returns
+    -------
+    Path
+        Path to the written FMATCH product NetCDF file.
+    """
+    from libera_utils.footprint_matching.footprint_match_algorithm import (  # noqa: PLC0415
+        RUNNER_CONFIGS,
+        run_footprint_matching,
+    )
+    from libera_utils.footprint_matching.product import (  # noqa: PLC0415
+        assemble_fmatch_dataset,
+        fmatch_time_variable,
+        load_fmatch_definition,
+    )
+    from libera_utils.io.netcdf import write_libera_data_product  # noqa: PLC0415
+
+    runner_config = next(config for config in RUNNER_CONFIGS.values() if config.mode is mode)
+    camtime = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
+    upstream = Path(directory) / "upstream"
+    upstream.mkdir(parents=True, exist_ok=True)
+    if camtime:
+        upstream_file = make_cf_cam_camtime_fixture(upstream, n_images=n_footprints, n_pixels_x=2, n_pixels_y=1)
+    else:
+        upstream_file = make_l1b_radiometer_fixture(upstream, n_footprints=n_footprints)
+    inputs, cloud_fraction_camera = run_footprint_matching(upstream_file, runner_config)
+    if mode is OperationalMode.CAM:
+        cloud_fraction_camera = np.linspace(0.0, 100.0, n_footprints)
+
+    definition = load_fmatch_definition(mode)
+    dataset = assemble_fmatch_dataset(
+        mode,
+        inputs,
+        definition=definition,
+        algorithm_version="1.0.0",
+        input_files=upstream_file.name,
+        cloud_fraction_camera=cloud_fraction_camera,
+        allow_placeholders=True,
+    )
+
+    def _set(name: str, values: np.ndarray) -> None:
+        column = dataset[name]
+        column.values[...] = np.reshape(values, column.shape)
+
+    n_cells = dataset["IGBP_Surface_Type"].size
+    _set("IGBP_Surface_Type", np.arange(n_cells) % 17 + 1)
+    if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
+        _set("FLASHFlux_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
+        _set("CLDPIX_Cloud_Particle_Phase", np.arange(n_cells) % 2 + 1)
+        # A distinct constant per source, so a reader that reads the wrong source variable is caught.
+        _set("ERA5_Surface_Wind_U10", np.full(n_cells, 3.0))
+        _set("ERA5_Surface_Wind_V10", np.full(n_cells, 4.0))
+        _set("CLDPIX_Cloud_Optical_Depth", np.full(n_cells, 7.0))
+
+    written = write_libera_data_product(
+        data_product_definition=definition,
+        data=dataset,
+        output_path=Path(directory),
+        time_variable=fmatch_time_variable(mode),
+        strict=True,
+    )
+    return Path(str(written.path))
 
 
 def _as_utc_datetime(value: np.datetime64) -> datetime:

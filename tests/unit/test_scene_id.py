@@ -1,18 +1,25 @@
 """Unit tests for scene identification module."""
 
 import pathlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 import xarray as xr
 
 from libera_utils.config import config
-from libera_utils.scene_identification.scene_definitions import SceneDefinition
+from libera_utils.footprint_matching.product import load_fmatch_definition
+from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.scene_identification.scene_definitions import SCENE_ID_INTEGER_FILL_VALUE, SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
+    _FMATCH_CAM_COLUMN_MAP,
+    _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+    _FMATCH_IMAGER_COLUMN_MAP,
     RADIOMETER_TIME_DIMENSION,
     CalculationSpec,
+    CLDPIXCloudPhase,
     FootprintData,
     FootprintVariables,
     IGBPSurfaceType,
@@ -23,7 +30,9 @@ from libera_utils.scene_identification.scene_id import (
     calculate_cloud_phase,
     calculate_surface_wind,
     calculate_trmm_surface_type,
+    map_cldpix_phase_to_trmm,
 )
+from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS
 
 
 class TestIGBPSurfaceType:
@@ -41,6 +50,21 @@ class TestIGBPSurfaceType:
         assert IGBPSurfaceType.PERMANENT_SNOW_ICE.trmm_surface_type == TRMMSurfaceType.SNOW
         assert IGBPSurfaceType.BARE_SOIL_ROCKS.trmm_surface_type == TRMMSurfaceType.BRIGHT_DESERT
         assert IGBPSurfaceType.OPEN_SHRUBLANDS.trmm_surface_type == TRMMSurfaceType.DARK_DESERT
+
+
+class TestMapCldpixPhaseToTrmm:
+    """CLDPIX water_cloud/ice_cloud map to 1/2; no_cloud_retrieval, clear and fill map to NaN."""
+
+    def test_recognized_codes_map_to_one_and_two(self):
+        """The recognized liquid/ice codes map to the classifier's 1/2; unknown codes and NaN map to NaN."""
+        codes = np.array([CLDPIXCloudPhase.LIQUID, CLDPIXCloudPhase.ICE, 3, 0, np.nan], dtype=np.float32)
+        result = map_cldpix_phase_to_trmm(codes)
+        np.testing.assert_array_equal(result, np.array([1.0, 2.0, np.nan, np.nan, np.nan], dtype=np.float32))
+
+    def test_result_is_float32(self):
+        """The result is float32 so the unknown-phase NaN sentinel is representable."""
+        result = map_cldpix_phase_to_trmm(np.array([1, 2], dtype=np.int16))
+        assert result.dtype == np.float32
 
 
 class TestTRMMSurfaceType:
@@ -179,6 +203,18 @@ class TestFootprintDataCalculations:
         result = calculate_trmm_surface_type(igbp_types)
         np.testing.assert_array_equal(result, expected)
 
+    def test_calculate_trmm_surface_type_passes_missing_codes_through(self):
+        """A missing IGBP code (NaN) gives a missing surface type rather than failing the granule."""
+        result = calculate_trmm_surface_type(np.array([1.0, np.nan, 17.0]))
+
+        np.testing.assert_array_equal(result[[0, 2]], [TRMMSurfaceType.HI_SHRUB, TRMMSurfaceType.OCEAN])
+        assert np.isnan(result[1])
+
+    def test_calculate_trmm_surface_type_error_names_the_raw_code(self):
+        """An invalid code next to a missing one is still rejected, and the error names the code as read."""
+        with pytest.raises(ValueError, match=r"TRMM surface type: \[99\]"):
+            calculate_trmm_surface_type(np.array([1.0, np.nan, 99.0]))
+
     def test_calculate_trmm_surface_type_invalid_values(self):
         """Test TRMM surface type conversion with invalid values."""
         # Test invalid scalar
@@ -194,6 +230,12 @@ class TestFootprintDataCalculations:
 
         with pytest.raises(ValueError, match="Cannot convert IGBP surface type value to TRMM surface type"):
             calculate_trmm_surface_type(np.array([1, 25, 17]))  # Contains invalid value 25
+
+        with pytest.raises(ValueError, match="Cannot convert IGBP surface type value to TRMM surface type"):
+            calculate_trmm_surface_type(np.array([1.0, np.inf]))  # Infinite code
+
+        with pytest.raises(ValueError, match=r"TRMM surface type: \[1\.5\]"):
+            calculate_trmm_surface_type(1.5)  # Not a whole number
 
     def test_calculate_cloud_fraction_weighted_optical_depth_calculation(self):
         """Test optical depth calculation."""
@@ -346,56 +388,6 @@ class TestFootprintDataInstanceMethods:
         assert fp2._data[FootprintVariables.CLEAR_AREA].values[0] == 60.0
         assert fp1._data[FootprintVariables.CLEAR_AREA].values[0] == 999.0
 
-    def test_convert_missing_values_with_nan(self, footprint_with_data):
-        """Test converting missing values when input missing value is NaN."""
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, np.nan, 3.0])})
-        footprint_with_data._convert_missing_values(np.nan)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_convert_missing_values_with_numeric(self, footprint_with_data):
-        """Test converting missing values when input missing value is numeric."""
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, -999.0, 3.0])})
-        footprint_with_data._convert_missing_values(-999.0)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_convert_missing_values_large_fill_value(self, footprint_with_data):
-        """Test converting missing values with large fill value like 9.96921e+36."""
-        large_fill = 9.96921e36
-        footprint_with_data._data = xr.Dataset({"test_var": (["record"], [1.0, large_fill, 3.0])})
-        footprint_with_data._convert_missing_values(large_fill)
-
-        assert footprint_with_data._data["test_var"][0] == 1.0
-        assert np.isnan(footprint_with_data._data["test_var"][1])
-        assert footprint_with_data._data["test_var"][2] == 3.0
-
-    def test_fill_column_above_max_value(self, footprint_with_data):
-        """Test filling values above threshold."""
-        footprint_with_data._data = xr.Dataset({"col1": (["x"], [1.0, 50.0, 100.0, 200.0])})
-        footprint_with_data._fill_column_above_max_value("col1", 100.0)
-
-        assert footprint_with_data._data["col1"][0] == 1.0
-        assert footprint_with_data._data["col1"][1] == 50.0
-        assert footprint_with_data._data["col1"][2] == 100.0  # Boundary value is kept
-        assert np.isnan(footprint_with_data._data["col1"][3])  # Above threshold
-
-    def test_fill_column_above_max_value_custom_fill(self, footprint_with_data):
-        """Test filling with custom fill value."""
-        footprint_with_data._data = xr.Dataset({"col1": (["x"], [1.0, 50.0, 150.0])})
-        footprint_with_data._fill_column_above_max_value("col1", 100.0, fill_value=-999.0)
-
-        assert footprint_with_data._data["col1"][2] == -999.0
-
-    def test_fill_column_missing_column_error(self, footprint_with_data):
-        """Test error when column not found."""
-        with pytest.raises(ValueError, match="Column nonexistent not found"):
-            footprint_with_data._fill_column_above_max_value("nonexistent", 100.0)
-
     def test_calculate_required_fields_single_field(self, footprint_with_data):
         """Test calculating a single field."""
         footprint_with_data._calculate_required_fields([FootprintVariables.CLOUD_FRACTION])
@@ -516,91 +508,6 @@ class TestFootprintDataInstanceMethods:
             fp._calculate_single_field_from_spec(spec, calculated)
 
 
-class TestFootprintDataExtraction:
-    """Test cases for data extraction methods."""
-
-    @pytest.fixture
-    def mock_netcdf_dataset(self):
-        """Create a mock NetCDF dataset."""
-        mock_dataset = MagicMock()
-
-        # Mock the groups and variables structure
-        mock_dataset.groups = {
-            "Cloudy_Footprint_Area": MagicMock(),
-            "Surface_Map": MagicMock(),
-            "Full_Footprint_Area": MagicMock(),
-            "Clear_Footprint_Area": MagicMock(),
-        }
-
-        # Mock 2D arrays
-        cloud_frac_data = np.array([[0.0, 10.0, 20.0], [0.0, 30.0, 40.0], [0.0, 50.0, 60.0]])
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables = {
-            "layers_coverages": MagicMock(),
-            "cloud_particle_phase_37um_mean": MagicMock(),
-            "cloud_optical_depth_mean": MagicMock(),
-        }
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"].__getitem__ = lambda x: (
-            cloud_frac_data
-        )
-
-        cloud_phase_data = np.array([[1.0, 2.0], [1.5, 1.8], [2.0, 1.0]])
-        cloud_phase_var = mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_particle_phase_37um_mean"]
-        cloud_phase_var.__getitem__ = lambda x: cloud_phase_data
-        cloud_phase_var._FillValue = -999.0  # Set fill value
-
-        optical_depth_data = np.array([[5.0, 10.0], [15.0, 20.0], [25.0, 30.0]])
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"].__getitem__ = lambda x: (
-            optical_depth_data
-        )
-
-        igbp_data = np.array([[1], [17], [15]])
-        mock_dataset.groups["Surface_Map"].variables = {"surface_igbp_type": MagicMock()}
-        mock_dataset.groups["Surface_Map"].variables["surface_igbp_type"].__getitem__ = lambda x: igbp_data
-
-        # Mock 1D arrays
-        mock_dataset.groups["Full_Footprint_Area"].variables = {
-            "surface_wind_u_vector": MagicMock(),
-            "surface_wind_v_vector": MagicMock(),
-        }
-        mock_dataset.groups["Full_Footprint_Area"].variables["surface_wind_u_vector"].__getitem__ = lambda x: np.array(
-            [3.0, 4.0, 5.0]
-        )
-        mock_dataset.groups["Full_Footprint_Area"].variables["surface_wind_v_vector"].__getitem__ = lambda x: np.array(
-            [4.0, 3.0, 12.0]
-        )
-
-        mock_dataset.groups["Clear_Footprint_Area"].variables = {"clear_coverage": MagicMock()}
-        mock_dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"].__getitem__ = lambda x: np.array(
-            [80.0, 50.0, 20.0]
-        )
-
-        return mock_dataset
-
-    def test_extract_data_missing_group_error(self):
-        """Test error handling when required group is missing."""
-        mock_dataset = MagicMock()
-        mock_dataset.groups = {}  # Empty groups
-
-        with pytest.raises(ValueError, match="Required variable or group not found"):
-            FootprintData._extract_data_from_CeresSSFNOAA20FM6Ed1C(mock_dataset)
-
-    def test_extract_data_missing_variable_error(self):
-        """Test error handling when required variable is missing."""
-        mock_dataset = MagicMock()
-        mock_dataset.groups = {
-            "Cloudy_Footprint_Area": MagicMock(),
-            "Surface_Map": MagicMock(),
-            "Full_Footprint_Area": MagicMock(),
-            "Clear_Footprint_Area": MagicMock(),
-        }
-
-        # Mock incomplete variables
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables = {}  # Missing variables
-
-        with pytest.raises(ValueError, match="Required variable or group not found"):
-            FootprintData._extract_data_from_CeresSSFNOAA20FM6Ed1C(mock_dataset)
-
-
 class TestIdentifyScenes:
     """Test cases for identify_scenes functionality."""
 
@@ -704,6 +611,8 @@ class TestIdentifyScenes:
         self, sample_footprint_data, simple_scene_definition_csv
     ):
         """Scene identification keeps footprint data on the RADIOMETER_TIME dimension."""
+        # What: scene identification keeps output on the RADIOMETER_TIME dimension (not a generic footprint axis).
+        # How: run identify_scenes and assert the produced scene_id variable's dims are (RADIOMETER_TIME_DIMENSION,).
         scene_def = SceneDefinition(simple_scene_definition_csv)
         sample_footprint_data.identify_scenes([scene_def])
 
@@ -727,6 +636,8 @@ class TestToRadiometerTimeProduct:
 
     def test_promotes_radiometer_time_to_coordinate(self, footprint_data_with_time):
         """RADIOMETER_TIME is a coordinate on the (unchanged) RADIOMETER_TIME dimension of the product."""
+        # What: to_radiometer_time_product promotes RADIOMETER_TIME to a coordinate on the unchanged time dimension.
+        # How: assert it appears in both product.dims and product.coords, and the added Quality_Flag never leaks to source.
         product = footprint_data_with_time.to_radiometer_time_product()
 
         assert RADIOMETER_TIME_DIMENSION in product.dims
@@ -736,6 +647,8 @@ class TestToRadiometerTimeProduct:
 
     def test_missing_radiometer_time_raises(self):
         """A dataset without a RADIOMETER_TIME variable cannot be turned into a product."""
+        # What: to_radiometer_time_product refuses a dataset lacking a RADIOMETER_TIME variable.
+        # How: assert it raises ValueError whose message mentions RADIOMETER_TIME.
         data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
         with pytest.raises(ValueError, match=RADIOMETER_TIME_DIMENSION):
             FootprintData(data).to_radiometer_time_product()
@@ -785,43 +698,49 @@ class TestSceneIdCamProductDtypes:
         )
         return LiberaDataProductDefinition.from_yaml(definition_path)
 
-    def test_surface_type_variables_are_uint8(self):
-        """The categorical surface_type / scene_id variables are declared as compact uint8."""
+    def test_categorical_variables_are_single_byte(self):
+        """The surface-type variables are int8, so they can hold -1, and the scene IDs are uint8."""
         definition = self._scene_id_cam_definition()
-        assert definition.variables["Surface_Type"].dtype == "uint8"
-        assert definition.variables["IGBP_Surface_Type"].dtype == "uint8"
+        assert definition.variables["Surface_Type"].dtype == "int8"
+        assert definition.variables["IGBP_Surface_Type"].dtype == "int8"
         assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
         assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
 
     def test_continuous_bin_bounds_are_float32(self):
         """The continuous scene-bin bounds are declared as float32 rather than float64."""
+        # What: continuous scene-bin bounds are declared float32 (not float64) in the product definition.
+        # How: assert the cloud_fraction and relative_azimuth_angle bin variable dtypes equal "float32".
         definition = self._scene_id_cam_definition()
         assert definition.variables["Scene_Bin_ERBE_Cloud_Fraction_Min"].dtype == "float32"
         assert definition.variables["Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Max"].dtype == "float32"
 
-    def test_surface_type_bin_bounds_are_uint8(self):
-        """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
+    def test_surface_type_bin_bounds_are_int8(self):
+        """surface_type bin bounds are declared as compact int8.
 
-        surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
-        (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
+        surface_type is categorical, so its bounds are a single signed byte; an unmatched footprint carries -1. The
+        continuous bin bounds remain float32 with NaN.
         """
         definition = self._scene_id_cam_definition()
-        assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "uint8"
-        assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "uint8"
-        # And no variable in the definition declares a _FillValue.
-        assert not any("_FillValue" in var.encoding for var in definition.variables.values())
+        assert definition.variables["Scene_Bin_ERBE_Surface_Type_Min"].dtype == "int8"
+        assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "int8"
+
+    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
+    def test_no_variable_declares_a_fill_value(self, variant):
+        """No SCENE-ID product definition declares a _FillValue on any variable or coordinate."""
+        definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS[variant].product_definition_path)
+        declared = {**definition.coordinates, **definition.variables}
+        assert [name for name, var in declared.items() if "_FillValue" in var.attributes] == []
 
 
 def _absent_bin_mask(array):
     """Return a boolean mask of "no bound present" entries in a bin-bound or value array.
 
-    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN. Integer bounds (surface_type)
-    and integer value arrays carry no missing marker (an unmatched footprint is flagged separately by scene_id 0),
-    so they report all-present.
+    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN, and integer bounds
+    (surface_type) and integer value arrays mark a missing value with SCENE_ID_INTEGER_FILL_VALUE (-1).
     """
     if np.issubdtype(array.dtype, np.floating):
         return np.isnan(array)
-    return np.zeros(array.shape, dtype=bool)
+    return array == SCENE_ID_INTEGER_FILL_VALUE
 
 
 def assert_property_bins_consistent(dataset, scene_type, variables):
@@ -846,11 +765,9 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
         bin_max = dataset[max_name].values
         values = dataset[variable].values
 
-        # Float bounds mark unmatched footprints as NaN; integer (surface_type) bounds instead carry 0 and rely on
-        # scene_id 0 to flag "unmatched", so we only assert the NaN convention for the float bounds.
-        if np.issubdtype(bin_min.dtype, np.floating):
-            assert np.all(np.isnan(bin_min[~matched]))
-            assert np.all(np.isnan(bin_max[~matched]))
+        # Unmatched footprints carry NaN in float bounds and -1 in integer (surface_type) bounds.
+        assert np.all(_absent_bin_mask(bin_min[~matched]))
+        assert np.all(_absent_bin_mask(bin_max[~matched]))
 
         # For matched footprints, where a value and a bound are both present, the value must lie in-bin.
         min_present = ~_absent_bin_mask(bin_min)
@@ -864,39 +781,6 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
 
 class TestEndToEndSceneIdentification:
     """Tests for complete scene identification workflow."""
-
-    def test_from_ceres_ssf(self, scene_id_test_data_path):
-        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
-        expected_file_path = (
-            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
-        )
-        fp = FootprintData.from_ceres_ssf(input_file_path)
-        fp.identify_scenes()
-        expected = xr.open_dataset(expected_file_path)
-        xr.testing.assert_equal(fp._data, expected)
-        geometry_variables = ["Solar_Zenith_Surface", "Viewing_Zenith_Surface", "Relative_Azimuth_Surface"]
-        assert_property_bins_consistent(fp._data, "TRMM", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
-        assert_property_bins_consistent(fp._data, "ERBE", ["Surface_Type", "Cloud_Fraction", *geometry_variables])
-        for geometry_variable in geometry_variables:
-            assert geometry_variable in fp._data.data_vars
-
-    @pytest.mark.parametrize(
-        "scene_definition",
-        [
-            SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
-            SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
-        ],
-    )
-    def test_from_ceres_ssf_single_scene_definition(self, scene_definition, scene_id_test_data_path):
-        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
-        fp = FootprintData.from_ceres_ssf(input_file_path)
-        fp.identify_scenes(scene_definitions=[scene_definition])
-        expected_file_path = (
-            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
-        )
-        expected = xr.open_dataset(expected_file_path)
-        scene_id_col = f"Scene_ID_{scene_definition.type}"
-        np.testing.assert_array_equal(fp._data[scene_id_col].values, expected[scene_id_col].values)
 
     @pytest.mark.parametrize(
         ("input_file_name", "scene_definition", "expected_file_name"),
@@ -1085,3 +969,128 @@ class TestErrorHandling:
         # Should raise error when trying to calculate optical depth without required inputs
         with pytest.raises(ValueError, match="Cannot calculate fields"):
             footprint_data._calculate_required_fields([FootprintVariables.OPTICAL_DEPTH])
+
+
+class TestFmatchCamCloudFractionPassthrough:
+    """from_fmatch_cam carries the percent [0, 100] WFOV camera cloud fraction through unchanged."""
+
+    @staticmethod
+    def _write_minimal_fmatch_cam(path, cloud_fraction_camera):
+        """Write a minimal FMATCH-CAM-shaped NetCDF carrying just the CAM classification source variables.
+
+        The variables are written under their product names, as FMATCH writes them.
+        """
+        n = len(cloud_fraction_camera)
+        columns = {
+            "IGBP_Surface_Type": np.arange(1, n + 1, dtype=np.int16),
+            "Cloud_Fraction_Camera": np.asarray(cloud_fraction_camera, np.float32),
+            "Solar_Zenith_Surface": np.zeros(n, np.float32),
+            "Viewing_Zenith_Surface": np.zeros(n, np.float32),
+            "Relative_Azimuth_Surface": np.zeros(n, np.float32),
+        }
+        dataset = xr.Dataset(
+            {name: (RADIOMETER_TIME_DIMENSION, values) for name, values in columns.items()},
+            coords={RADIOMETER_TIME_DIMENSION: np.arange(n).astype("datetime64[ns]")},
+        )
+        dataset.to_netcdf(path)
+
+    def test_cloud_fraction_camera_carried_through_in_percent(self, tmp_path):
+        """A percent [0, 100] camera cloud fraction passes through unchanged as cloud_fraction (float32)."""
+        path = tmp_path / "fmatch_cam.nc"
+        self._write_minimal_fmatch_cam(path, [0.0, 50.0, 100.0])
+
+        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["Cloud_Fraction"]
+
+        assert cloud_fraction.dtype == np.float32
+        np.testing.assert_array_almost_equal(cloud_fraction.values, [0.0, 50.0, 100.0])
+
+    def test_nan_camera_cloud_fraction_propagates(self, tmp_path):
+        """A NaN camera cloud fraction stays NaN (leaving the footprint unmatched downstream)."""
+        path = tmp_path / "fmatch_cam_nan.nc"
+        self._write_minimal_fmatch_cam(path, [np.nan, 25.0])
+
+        cloud_fraction = FootprintData.from_fmatch_cam(path)._data["Cloud_Fraction"].values
+
+        assert np.isnan(cloud_fraction[0])
+        np.testing.assert_array_almost_equal(cloud_fraction[1:], [25.0])
+
+
+class TestSceneIdImagerProductDtypes:
+    """Verify the SCENE-ID-IMAGER product definitions declare the TRMM outputs with the intended dtypes."""
+
+    @staticmethod
+    def _load(definition_filename):
+        import pathlib
+
+        from libera_utils.io.product_definition import LiberaDataProductDefinition
+
+        definition_path = (
+            pathlib.Path(__import__("libera_utils").__file__).parent
+            / "data"
+            / "product_definitions"
+            / definition_filename
+        )
+        return LiberaDataProductDefinition.from_yaml(definition_path)
+
+    @pytest.mark.parametrize(
+        "definition_filename",
+        ["scene_id_imager.yml", "scene_id_imager_camtime.yml"],
+    )
+    def test_scene_id_trmm_is_uint16(self, definition_filename):
+        """Scene_ID_TRMM is uint16 (not uint8): the TRMM definition assigns IDs up to 650, which overflows a byte."""
+        definition = self._load(definition_filename)
+        assert definition.variables["Scene_ID_TRMM"].dtype == "uint16"
+        # ERBE/unfiltering IDs stay within a byte.
+        assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
+        assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
+
+    @pytest.mark.parametrize(
+        "definition_filename",
+        ["scene_id_imager.yml", "scene_id_imager_camtime.yml"],
+    )
+    def test_trmm_input_and_bin_variables_present(self, definition_filename):
+        """The extra TRMM inputs and their bin bounds are declared."""
+        definition = self._load(definition_filename)
+        for name in ("Surface_Wind", "Cloud_Phase", "Optical_Depth"):
+            assert name in definition.variables
+        assert definition.variables["Scene_Bin_TRMM_Surface_Type_Min"].dtype == "int8"
+        assert definition.variables["Scene_Bin_TRMM_Cloud_Phase_Max"].dtype == "float32"
+
+
+def _fmatch_variable_names(mode: OperationalMode) -> set[str]:
+    """The names of every variable and non-dimension coordinate an FMATCH product declares."""
+    definition = load_fmatch_definition(mode)
+    coordinates = [name for name, coordinate in definition.coordinates.items() if coordinate.dimensions != [name]]
+    return {*definition.variables, *coordinates}
+
+
+class TestFmatchSourceNames:
+    """Every FMATCH variable a SCENE-ID reader reads is one the FMATCH products feeding it declare.
+
+    The readers name their sources by FMATCH's product variable names; a name FMATCH does not declare would make every read
+    of a real FMATCH file fail with a missing-variable error.
+    """
+
+    @pytest.mark.parametrize(
+        ("source_names", "modes"),
+        [
+            pytest.param(
+                [column.source_name for column in _FMATCH_CAM_COLUMN_MAP.values()],
+                (OperationalMode.CAM, OperationalMode.CAM_CAMTIME),
+                id="cam-columns",
+            ),
+            pytest.param(
+                [column.source_name for column in _FMATCH_IMAGER_COLUMN_MAP.values()],
+                (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME),
+                id="imager-columns",
+            ),
+            pytest.param(
+                list(_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES),
+                (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME),
+                id="camtime-passthrough",
+            ),
+        ],
+    )
+    def test_source_names_are_declared_by_fmatch(self, source_names, modes):
+        for mode in modes:
+            assert set(source_names) - _fmatch_variable_names(mode) == set(), mode.value

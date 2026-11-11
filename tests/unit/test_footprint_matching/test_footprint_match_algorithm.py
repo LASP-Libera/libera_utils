@@ -2,7 +2,6 @@
 camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
-import functools
 import shutil
 from pathlib import Path
 
@@ -13,7 +12,6 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching import footprint_match_algorithm, product
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
     CAM_CAMTIME_CONFIG,
@@ -52,21 +50,6 @@ def _stage_empty_tree(root: Path, mode: OperationalMode) -> Path:
         (root / reader_key).mkdir(parents=True)
         (root / reader_key / "granule.nc").touch()
     return root
-
-
-@pytest.fixture
-def fake_aggregation(monkeypatch, fake_sources):
-    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
-
-    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
-    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column.
-    """
-    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
-    monkeypatch.setattr(
-        footprint_match_algorithm,
-        "write_fmatch_product",
-        functools.partial(product.write_fmatch_product, allow_placeholders=True),
-    )
 
 
 def _write_input_manifest(directory: Path, *files: Path) -> Path:
