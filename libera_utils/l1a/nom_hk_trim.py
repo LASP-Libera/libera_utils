@@ -2,10 +2,10 @@
 
 One file is written per contiguous ObsID run that starts on the requested UTC day, stamped with that
 ObsID's own TRIMMED ProductID (see :mod:`libera_utils.obsids`). A run is a stretch of one ObsID: it
-ends where the ObsID changes, and packets lost inside it do not end it but are counted on its file. A
-run is never split at midnight: the day it starts on writes it whole, which is why a caller decodes
+ends where the ObsID changes, and packets lost inside it do not end it. A run is never split at midnight: the day it starts on writes it whole, which is why a caller decodes
 NOM-HK :data:`CALIBRATION_TRIM_PADDING` past the end of the day. Files of one ProductID are told apart
-by their filename time ranges.
+by their filename time ranges. A run at a gap is written and its gaps are logged; the file carries no
+record of them.
 """
 
 from __future__ import annotations
@@ -44,17 +44,6 @@ DEFAULT_TIME_VARIABLE = "PACKET_ICIE_TIME"
 #: confirming it, and 2 hours is one L0 PDS file. A run longer than this fails its day rather than being split.
 CALIBRATION_TRIM_PADDING = timedelta(hours=2)
 
-#: TRIMMED global attribute: 1 when packets just before the run are missing, so the run's first packet may
-#: not be its event's start; 0 when the packet before it is present and its ObsID differs.
-RUN_START_AFTER_GAP_ATTRIBUTE = "run_start_after_gap"
-#: TRIMMED global attribute: 1 when packets just after the run are missing, so the run's last packet may
-#: not be its event's end; 0 when the packet after it is present and its ObsID differs.
-RUN_END_BEFORE_GAP_ATTRIBUTE = "run_end_before_gap"
-#: TRIMMED global attribute: the number of packets missing between the run's first and last packet, from
-#: ``SRC_SEQ_CTR`` steps other than 1, counted modulo 16384 so a lower bound; 0 when none are missing. Two
-#: events of one ObsID whose boundary fell in the gap are counted as one run.
-RUN_MISSING_PACKETS_ATTRIBUTE = "run_missing_packets"
-
 
 def get_trimmed_nom_hk_product_definition(
     trimmed_product: DataProductIdentifier,
@@ -69,9 +58,7 @@ def get_trimmed_nom_hk_product_definition(
     Returns
     -------
     LiberaDataProductDefinition
-        Fresh product definition identical to ``NOM-HK-DECODED`` except for ``ProductID`` and the
-        dynamic :data:`RUN_START_AFTER_GAP_ATTRIBUTE`, :data:`RUN_END_BEFORE_GAP_ATTRIBUTE` and
-        :data:`RUN_MISSING_PACKETS_ATTRIBUTE`.
+        Fresh product definition identical to ``NOM-HK-DECODED`` except for ``ProductID``.
 
     Raises
     ------
@@ -87,13 +74,7 @@ def get_trimmed_nom_hk_product_definition(
         ) from exc
 
     base = LiberaDataProductDefinition.from_yaml(get_l1a_product_definition_path(LiberaApid.icie_nom_hk.value))
-    updated_attrs = {
-        **base.attributes,
-        "ProductID": trimmed_product.value,
-        RUN_START_AFTER_GAP_ATTRIBUTE: None,
-        RUN_END_BEFORE_GAP_ATTRIBUTE: None,
-        RUN_MISSING_PACKETS_ATTRIBUTE: None,
-    }
+    updated_attrs = {**base.attributes, "ProductID": trimmed_product.value}
     return base.model_copy(update={"attributes": updated_attrs})
 
 
@@ -107,7 +88,10 @@ def _contiguous_run_slices(mask: np.ndarray) -> list[slice]:
 
 
 def _missing_packets(counters: np.ndarray) -> int:
-    """Return how many packets are missing between the first and last of ``counters``, modulo 16384 per step."""
+    """Return how many packets are missing between the first and last of ``counters``, modulo 16384 per step.
+
+    A lower bound: a gap of a multiple of 16384 packets steps the counter by 1 and is not counted.
+    """
     return int(((np.diff(counters.astype(np.int64)) - 1) % SEQUENCE_COUNTER_MODULUS).sum())
 
 
@@ -258,17 +242,13 @@ def _prepare_trimmed_attrs(
     trimmed_product: DataProductIdentifier,
     source_attrs: dict[str, Any],
     source_product_filename: str | PathType,
-    *,
-    start_after_gap: bool,
-    end_before_gap: bool,
 ) -> xr.Dataset:
     """Stamp ProductID and refresh dynamic attributes on a trimmed Dataset.
 
     ``input_files`` is set to the single NOM-HK-DECODED granule this product was trimmed from,
     replacing the parent's own L0 packet-file provenance, and ``algorithm_version`` is restamped
     with the running libera_utils version. The parent's ``date_created`` is dropped, since
-    ``write_libera_data_product`` sets it for the trimmed file. The edge gap flags are 1 or 0, and
-    the missing-packet count is taken from ``trimmed``'s ``SRC_SEQ_CTR``.
+    ``write_libera_data_product`` sets it for the trimmed file.
     """
     out = trimmed.copy(deep=False)
     # Drop source-file encodings so conformance enforce does not warn on leftovers
@@ -279,9 +259,6 @@ def _prepare_trimmed_attrs(
     out.attrs["ProductID"] = trimmed_product.value
     out.attrs["input_files"] = [Path(str(source_product_filename)).name]
     out.attrs[ALGORITHM_VERSION_ATTRIBUTE] = libera_utils_version()
-    out.attrs[RUN_START_AFTER_GAP_ATTRIBUTE] = int(start_after_gap)
-    out.attrs[RUN_END_BEFORE_GAP_ATTRIBUTE] = int(end_before_gap)
-    out.attrs[RUN_MISSING_PACKETS_ATTRIBUTE] = _missing_packets(trimmed[SEQUENCE_COUNTER_VAR].values)
     return out
 
 
@@ -300,15 +277,16 @@ def write_trimmed_nom_hk_products(
 
     Each file is stamped with its run's ObsID's TRIMMED ProductID and spans the run, from its
     first packet to its last. An ObsID may recur within a day; each run is its own file. A run ends
-    at an ObsID change, not at a ``SRC_SEQ_CTR`` gap (see :func:`find_obsid_runs`). Each file says in
-    :data:`RUN_START_AFTER_GAP_ATTRIBUTE` and :data:`RUN_END_BEFORE_GAP_ATTRIBUTE` whether its start
-    or end is at a gap rather than an observed ObsID change, and in
-    :data:`RUN_MISSING_PACKETS_ATTRIBUTE` how many packets are missing inside it. Missing packets that
+    at an ObsID change, not at a ``SRC_SEQ_CTR`` gap (see :func:`find_obsid_runs`). A run whose start
+    or end is at a gap rather than an observed ObsID change, or with packets missing inside it, is
+    written all the same; the INFO line logged for each file says which edges are at a gap and how
+    many packets are missing inside, and the file itself carries no record of it. Missing packets that
     later arrive can change a file's range: an end before a gap moves later in the next revision,
     under the same start time; a start after a gap moves earlier, so the next revision files the run
     under a new start time and the earlier file is not replaced; and a gap that hid the boundary
-    between two events of one ObsID makes two files where there was one. Runs that start before or after ``day`` are left out. Every run is checked before
-    any file is written, so a rejected day writes nothing.
+    between two events of one ObsID makes two files where there was one. Runs that start before or
+    after ``day`` are left out. Every run is checked before any file is written, so a rejected day
+    writes nothing.
 
     Parameters
     ----------
@@ -316,7 +294,7 @@ def write_trimmed_nom_hk_products(
         Decoded ``NOM-HK-DECODED`` Dataset, as :func:`~libera_utils.l1a.packets.parse_packets_to_l1a_dataset`
         returns it. To see each run that starts on ``day`` end, it reaches at least
         :data:`CALIBRATION_TRIM_PADDING` past the end of ``day``; a run still going there raises.
-        Data that stops earlier ends a run at its last packet, flagged as a gap.
+        Data that stops earlier ends a run at its last packet, logged as a gap.
     output_path : str or PathType
         Directory (or S3 prefix) for output files.
     day : datetime.date
@@ -357,14 +335,8 @@ def write_trimmed_nom_hk_products(
     for spec, pkt_slice, start_after_gap, end_before_gap in runs:
         trimmed_product = spec.trimmed_product
         trimmed = select_packets(nom_hk, pkt_slice)
-        trimmed = _prepare_trimmed_attrs(
-            trimmed,
-            trimmed_product,
-            source_attrs,
-            source_product_filename,
-            start_after_gap=start_after_gap,
-            end_before_gap=end_before_gap,
-        )
+        missing_packets = _missing_packets(trimmed[SEQUENCE_COUNTER_VAR].values)
+        trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs, source_product_filename)
         filename = write_libera_data_product(
             definitions[trimmed_product],
             trimmed,
@@ -373,6 +345,7 @@ def write_trimmed_nom_hk_products(
             strict=strict,
             add_archive_path_prefix=add_archive_path_prefix,
         )
+        # TODO[LIBSDC-930]: report these gaps where Dagster shows them, not only in this log line.
         logger.info(
             "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s as %s, start after gap %s, "
             "end before gap %s, %d packets missing inside",
@@ -383,7 +356,7 @@ def write_trimmed_nom_hk_products(
             trimmed_product.value,
             start_after_gap,
             end_before_gap,
-            trimmed.attrs[RUN_MISSING_PACKETS_ATTRIBUTE],
+            missing_packets,
         )
         written.append(filename)
     return written

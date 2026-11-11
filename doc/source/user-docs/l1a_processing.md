@@ -890,21 +890,21 @@ dated by the UTC day its run started.
 
 Only runs that start on `day` are written, and each is written whole, so a run that crosses
 midnight belongs to the day it started and the next day leaves it out. Decode NOM-HK from at least
-one packet before the day's first run (the L1A Preprocessor starts 10 minutes before the day)
+one packet before the day's first run (`day_window.day_bounds` gives a window starting `day_window.DAY_BUFFER` before the day)
 through at least `nom_hk_trim.CALIBRATION_TRIM_PADDING` past the end of the day, so that every run
 starting on the day is seen to start and end. An ObsID may recur within a day; each run is its
 own file.
 
 A run is a stretch of one ObsID: it ends where the ObsID changes. Packets lost inside it do not
-end it, so the run stays one file, and `run_missing_packets` counts the packets missing between
-its first and last packet (0 when none are; counted modulo 16384, so a lower bound). Two events
-of one ObsID whose boundary fell inside a gap are one run until the missing packets arrive.
+end it, so the run stays one file. Two events of one ObsID whose boundary fell inside a gap are
+one run until the missing packets arrive.
 
-Each file also records whether its run's edges are at a gap, in the global attributes
-`run_start_after_gap` and `run_end_before_gap` (1 or 0). An edge is at a gap when the packets
+A run whose start or end is at a gap is written all the same. An edge is at a gap when the packets
 beyond it are missing or the data stops there, so the file may not hold its event's true start or
-end. A consumer that needs whole events checks all three attributes. When missing packets arrive
-later, the next revision of the day writes the run again:
+end. The TRIMMED file carries no record of its gaps: the INFO line `write_trimmed_nom_hk_products`
+logs for each file says whether its start and end are at a gap and how many packets are missing
+inside it (counted modulo 16384, so a lower bound). When missing packets arrive later, the next
+revision of the day writes the run again:
 
 - an end that was at a gap moves later, under the same start time, so the new revision replaces
   the file;

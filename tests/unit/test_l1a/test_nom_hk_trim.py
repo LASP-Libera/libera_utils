@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from unittest.mock import MagicMock, patch
 
@@ -12,9 +13,6 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.l1a.nom_hk_trim import (
-    RUN_END_BEFORE_GAP_ATTRIBUTE,
-    RUN_MISSING_PACKETS_ATTRIBUTE,
-    RUN_START_AFTER_GAP_ATTRIBUTE,
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
     write_trimmed_nom_hk_products,
@@ -67,12 +65,6 @@ class TestGetTrimmedNomHkProductDefinition:
     def test_overrides_product_id(self):
         definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
         assert definition.attributes["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
-
-    def test_declares_the_gap_flags_as_dynamic_attributes(self):
-        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
-        assert definition.attributes[RUN_START_AFTER_GAP_ATTRIBUTE] is None
-        assert definition.attributes[RUN_END_BEFORE_GAP_ATTRIBUTE] is None
-        assert definition.attributes[RUN_MISSING_PACKETS_ATTRIBUTE] is None
 
     def test_rejects_non_trimmed_product(self):
         with pytest.raises(ValueError, match="is not a TRIMMED NOM-HK product in the ObsID registry"):
@@ -292,8 +284,17 @@ def _write_runs(ds: xr.Dataset, tmp_path, *, day: date = _DAY) -> tuple[list, Ma
     return written, mock_write
 
 
+def _logged_gaps(caplog) -> dict[str, tuple[bool, bool, int]]:
+    """Map each written TRIMMED ProductID to the (start after gap, end before gap, missing packets) it was logged with."""
+    return {
+        record.args[4]: (record.args[5], record.args[6], record.args[7])
+        for record in caplog.records
+        if record.name == "libera_utils.l1a.nom_hk_trim" and record.msg.startswith("Wrote TRIMMED NOM-HK product")
+    }
+
+
 class TestDaySelection:
-    """Only runs that start on the day are written, each flagged at an edge that follows a gap."""
+    """Only runs that start on the day are written, each logged with its gaps."""
 
     def test_run_crossing_midnight_is_written_whole_by_its_start_day(self, tmp_path):
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], start="2028-02-13T23:59:58")
@@ -377,49 +378,38 @@ class TestDaySelection:
             pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 5, 6, 8], 0, 1, id="gap-after-end"),
         ],
     )
-    def test_run_edge_at_a_gap_is_written_and_flagged(
-        self, tmp_path, rad_obsids, sequence_counter, start_after_gap, end_before_gap
+    def test_run_edge_at_a_gap_is_written_and_logged(
+        self, tmp_path, caplog, rad_obsids, sequence_counter, start_after_gap, end_before_gap
     ):
-        """The 257 run is written with its gap edge flagged; the whole 256 run carries no flag."""
+        """The 257 run is written and logged with its gap edge; the whole 256 run is logged with none."""
+        caplog.set_level(logging.INFO, logger="libera_utils.l1a.nom_hk_trim")
         ds = _synthetic_nom_hk(rad_obsids=rad_obsids, sequence_counter=sequence_counter)
-        _, mock_write = _write_runs(ds, tmp_path)
+        written, _ = _write_runs(ds, tmp_path)
 
-        flags = {
-            call.args[1].attrs["ProductID"]: (
-                call.args[1].attrs[RUN_START_AFTER_GAP_ATTRIBUTE],
-                call.args[1].attrs[RUN_END_BEFORE_GAP_ATTRIBUTE],
-            )
-            for call in mock_write.call_args_list
-        }
-        assert flags == {
-            "NOM-HK-SWC-365NM-TRIMMED": (0, 0),
-            "NOM-HK-SWC-405NM-TRIMMED": (start_after_gap, end_before_gap),
+        assert len(written) == 2
+        assert _logged_gaps(caplog) == {
+            "NOM-HK-SWC-365NM-TRIMMED": (False, False, 0),
+            "NOM-HK-SWC-405NM-TRIMMED": (bool(start_after_gap), bool(end_before_gap), 0),
         }
 
-    def test_gaps_inside_a_run_are_one_run_counting_the_missing_packets(self, tmp_path):
-        """Packets lost inside one ObsID's stretch leave it one run, with its edges unflagged and the losses counted."""
+    def test_gaps_inside_a_run_are_one_run_logging_the_missing_packets(self, tmp_path, caplog):
+        """Packets lost inside one ObsID's stretch leave it one run; the losses are logged, not stored on the file."""
+        caplog.set_level(logging.INFO, logger="libera_utils.l1a.nom_hk_trim")
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], sequence_counter=[1, 2, 3, 5, 9, 10])
         written, mock_write = _write_runs(ds, tmp_path)
 
         assert len(written) == 1
         run = mock_write.call_args.args[1]
         assert run.sizes["PACKET"] == 4
-        assert run.attrs[RUN_START_AFTER_GAP_ATTRIBUTE] == 0
-        assert run.attrs[RUN_END_BEFORE_GAP_ATTRIBUTE] == 0
-        assert run.attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 4
+        assert _logged_gaps(caplog) == {"NOM-HK-SWC-405NM-TRIMMED": (False, False, 4)}
 
-    def test_whole_run_counts_no_missing_packets(self, tmp_path):
-        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128], sequence_counter=[1, 2, 3, 4])
-        _, mock_write = _write_runs(ds, tmp_path)
-
-        assert mock_write.call_args.args[1].attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 0
-
-    def test_gap_across_the_counter_wrap_is_counted(self, tmp_path):
+    def test_gap_across_the_counter_wrap_is_counted(self, tmp_path, caplog):
+        caplog.set_level(logging.INFO, logger="libera_utils.l1a.nom_hk_trim")
         top = SEQUENCE_COUNTER_MODULUS - 1
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128], sequence_counter=[top - 1, top, 2, 3])
-        _, mock_write = _write_runs(ds, tmp_path)
+        _write_runs(ds, tmp_path)
 
-        assert mock_write.call_args.args[1].attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 2
+        assert _logged_gaps(caplog) == {"NOM-HK-SWC-405NM-TRIMMED": (False, False, 2)}
 
     def test_find_obsid_runs_does_not_split_at_a_counter_gap(self):
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 128], sequence_counter=[1, 2, 3, 5, 6])
@@ -432,7 +422,7 @@ class TestDaySelection:
             pytest.param("2028-02-14T01:49:59", False, id="data-stops-before-the-padding"),
         ],
     )
-    def test_run_still_going_at_the_padding_raises(self, tmp_path, last_time, raises):
+    def test_run_still_going_at_the_padding_raises(self, tmp_path, caplog, last_time, raises):
         """Data within DAY_BUFFER of 2 h past the day reaches the padding, so a run still going there outlasts it."""
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257])
         times = np.array(
@@ -444,8 +434,9 @@ class TestDaySelection:
             with pytest.raises(ValueError, match="the run lasts longer than CALIBRATION_TRIM_PADDING"):
                 _write_runs(ds, tmp_path)
         else:
-            _, mock_write = _write_runs(ds, tmp_path)
-            assert mock_write.call_args.args[1].attrs[RUN_END_BEFORE_GAP_ATTRIBUTE] == 1
+            caplog.set_level(logging.INFO, logger="libera_utils.l1a.nom_hk_trim")
+            _write_runs(ds, tmp_path)
+            assert _logged_gaps(caplog) == {"NOM-HK-SWC-405NM-TRIMMED": (False, True, 0)}
 
     def test_rejected_day_calls_no_write(self, tmp_path):
         """The whole 256 run is not written when the 257 run on the same day outlasts the padding."""
