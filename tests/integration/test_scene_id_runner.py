@@ -4,6 +4,7 @@ These exercise the manifest/dropbox plumbing in
 ``libera_utils.scene_identification.scene_id_algorithm`` and its concrete runner configs, including the actual product
 write (which is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular
 is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
+``TestSceneIdContainerRun`` runs each variant the way its container does, through the ``libera-utils scene-id`` CLI.
 """
 
 import logging
@@ -14,7 +15,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils import cli
 from libera_utils.constants import DataProductIdentifier
+from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS
 from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
@@ -23,6 +26,7 @@ from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
+    SCENE_ID_VARIANT_ENV,
     collect_input_files,
     create_and_write_data_product,
     run_scene_identification,
@@ -632,3 +636,60 @@ class TestMissingIgbpCode:
                 assert product[name].values[1] == 255
             assert product["Scene_ID_TRMM"].values[1] == 0
             assert (product["IGBP_Surface_Type"].values[[0, 2, 3]] > 0).all()
+
+
+class TestSceneIdContainerRun:
+    """Each SCENE-ID variant runs end to end the way its container does.
+
+    The ``libera-utils-scene-id`` image's entrypoint is ``libera-utils scene-id <manifest>``, with the processing step
+    setting ``LIBERA_SCENE_ID_VARIANT`` and ``PROCESSING_PATH``. Each case writes the variant's FMATCH product, lists it
+    on an input manifest, runs the CLI with that environment, and checks the dropbox holds exactly the SCENE-ID product
+    and an output manifest registering it.
+    """
+
+    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
+    def test_cli_writes_product_and_output_manifest(self, tmp_path, monkeypatch, variant):
+        runner_config = RUNNER_CONFIGS[variant]
+        input_dir = tmp_path / "inputs"
+        input_dir.mkdir()
+        dropbox = tmp_path / "dropbox"
+        dropbox.mkdir()
+
+        # FMATCH and SCENE-ID share variant names, so the FMATCH variant of the same name writes this variant's input.
+        fmatch_path = make_fmatch_product_fixture(input_dir, FMATCH_RUNNER_CONFIGS[variant].mode, n_footprints=4)
+        assert LiberaDataProductFilename.from_file_path(fmatch_path).data_product_id is runner_config.input_product_id
+        input_manifest = Manifest(manifest_type=ManifestType.INPUT)
+        input_manifest.add_files(fmatch_path)
+        input_manifest_path = input_manifest.write(input_dir)
+
+        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, variant)
+        monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
+        cli.main(["scene-id", str(input_manifest_path)])
+
+        output_manifest_paths = list(dropbox.glob("*.json"))
+        product_paths = list(dropbox.glob("*.nc"))
+        assert len(output_manifest_paths) == 1
+        assert len(product_paths) == 1
+        assert sorted(dropbox.iterdir()) == sorted(output_manifest_paths + product_paths)
+
+        output_manifest = Manifest.from_file(output_manifest_paths[0])
+        assert output_manifest.manifest_type is ManifestType.OUTPUT
+        assert output_manifest.ulid_code == input_manifest.ulid_code
+        assert output_manifest.files == [str(product_paths[0])]
+
+        product_filename = LiberaDataProductFilename.from_file_path(product_paths[0])
+        assert product_filename.data_product_id is runner_config.output_product_id
+
+        with (
+            xr.open_dataset(fmatch_path) as fmatch_product,
+            xr.open_dataset(product_paths[0], mask_and_scale=False) as product,
+        ):
+            assert product.attrs["InputGranules"] == fmatch_path.name
+            assert product.attrs["algorithm_version"] == version()
+            time_variable = runner_config.time_variable
+            assert time_variable in product.coords
+            assert product.sizes[time_variable] == fmatch_product.sizes[time_variable]
+            # The fixture gives every footprint valid classification inputs, so every footprint is matched.
+            for scene_definition in standard_scene_definitions(runner_config.scene_types):
+                scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
+                assert (scene_ids > 0).all(), scene_definition.type
