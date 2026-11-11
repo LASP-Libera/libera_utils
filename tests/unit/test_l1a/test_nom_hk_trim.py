@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -15,8 +16,11 @@ from libera_utils.l1a.nom_hk_trim import (
     get_trimmed_nom_hk_product_definition,
     write_trimmed_nom_hk_products,
 )
+from libera_utils.l1a.packet_ordering import SEQUENCE_COUNTER_MODULUS
 from libera_utils.obsids import NomHkObsidSource
 from libera_utils.version import version as libera_utils_version
+
+_DAY = date(2028, 2, 13)
 
 _PARENT_GRANULE = (
     "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R20280213T120000000000.nc"
@@ -140,9 +144,9 @@ class TestFindObsidRuns:
 class TestWriteTrimmedNomHkProducts:
     """High-level writer orchestration (write_libera_data_product mocked)."""
 
-    def test_multi_run_same_obsid_warns_and_writes_twice(self, tmp_path, caplog):
-        # Two disjoint 257 runs
-        ds = _synthetic_nom_hk(rad_obsids=[257, 257, 128, 257, 257])
+    def test_recurring_obsid_writes_each_run_without_warning(self, tmp_path, caplog):
+        """An ObsID may recur within a day; each run is its own file, and recurrence is not warned about."""
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128, 257, 257, 128])
         mock_filename = MagicMock()
         mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-405NM-TRIMMED_fake.nc"
 
@@ -153,16 +157,18 @@ class TestWriteTrimmedNomHkProducts:
             ) as mock_write,
             caplog.at_level("WARNING"),
         ):
-            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            written = write_trimmed_nom_hk_products(
+                ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False
+            )
 
         assert len(written) == 2
         assert mock_write.call_count == 2
-        assert any("appears in 2 disjoint runs" in r.message for r in caplog.records)
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
     def test_writes_distinct_products_for_rad_and_wfov(self, tmp_path):
         ds = _synthetic_nom_hk(
-            rad_obsids=[257, 257],
-            wfov_obsids=[256, 256],
+            rad_obsids=[128, 257, 257, 128],
+            wfov_obsids=[0, 256, 256, 0],
         )
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
@@ -170,21 +176,23 @@ class TestWriteTrimmedNomHkProducts:
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False)
 
         product_ids = {call.args[1].attrs["ProductID"] for call in mock_write.call_args_list}
         assert product_ids == {"NOM-HK-SWC-405NM-TRIMMED", "NOM-HK-DARKS-OF-DARKS-TRIMMED"}
 
     def test_two_obsids_get_two_product_ids(self, tmp_path):
         """Two ObsIDs whose combiners take the same inputs still write their own ProductIDs."""
-        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
+        ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128, 257, 257, 128])
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
         with patch(
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            written = write_trimmed_nom_hk_products(
+                ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False
+            )
 
         assert len(written) == 2
         product_ids = [call.args[1].attrs["ProductID"] for call in mock_write.call_args_list]
@@ -195,32 +203,16 @@ class TestWriteTrimmedNomHkProducts:
         ]
         assert obsids_per_file == [[256], [257]]
 
-    def test_different_obsids_do_not_warn_about_disjoint_runs(self, tmp_path, caplog):
-        """Different ObsIDs are not the same ObsID appearing twice."""
-        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
-        mock_filename = MagicMock()
-        mock_filename.path.name = "fake.nc"
-        with (
-            patch(
-                "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
-                return_value=mock_filename,
-            ),
-            caplog.at_level("WARNING"),
-        ):
-            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
-
-        assert not any("disjoint runs" in r.message for r in caplog.records)
-
     def test_input_files_names_the_parent_granule(self, tmp_path):
         """input_files must list the parent NOM-HK-DECODED granule, not the L0 packet files."""
-        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128])
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
         with patch(
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False)
 
         written_attrs = mock_write.call_args_list[0].args[1].attrs
         assert written_attrs["input_files"] == [
@@ -231,7 +223,7 @@ class TestWriteTrimmedNomHkProducts:
 
     def test_parent_date_created_is_dropped(self, tmp_path):
         """The parent's date_created is not handed to the writer, which sets the trimmed file's own."""
-        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128])
         assert DATE_CREATED_ATTRIBUTE in ds.attrs
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
@@ -239,26 +231,26 @@ class TestWriteTrimmedNomHkProducts:
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False)
 
         assert DATE_CREATED_ATTRIBUTE not in mock_write.call_args_list[0].args[1].attrs
 
     def test_algorithm_version_is_restamped(self, tmp_path):
-        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128])
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
         with patch(
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False)
 
         assert mock_write.call_args_list[0].args[1].attrs["algorithm_version"] == libera_utils_version()
 
     def test_definition_is_built_once_per_product_not_once_per_run(self, tmp_path):
         """Three runs of two ObsIDs cost two definitions, not three."""
         # 256 twice (disjoint runs) and 512 once
-        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 512, 128, 256])
+        ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128, 512, 128, 256, 128])
         mock_filename = MagicMock()
         mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-365NM-TRIMMED_fake.nc"
 
@@ -273,8 +265,123 @@ class TestWriteTrimmedNomHkProducts:
                 wraps=LiberaDataProductDefinition.from_yaml,
             ) as mock_from_yaml,
         ):
-            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+            written = write_trimmed_nom_hk_products(
+                ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, strict=False
+            )
 
         assert len(written) == 3, "one file per contiguous ObsID run"
         assert mock_definition.call_count == 2, "definition built once per ProductID, not once per run"
         assert mock_from_yaml.call_count == 2, "definition YAML parsed once per ProductID, not once per run"
+
+
+def _write_runs(ds: xr.Dataset, tmp_path, *, day: date = _DAY) -> tuple[list, MagicMock]:
+    """Run the writer on ``ds`` with the file write mocked; return what it returned and the mock."""
+    mock_filename = MagicMock()
+    mock_filename.path.name = "fake.nc"
+    with patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename) as mock_write:
+        written = write_trimmed_nom_hk_products(ds, tmp_path, day=day, source_product_filename=_PARENT_GRANULE)
+    return written, mock_write
+
+
+class TestDaySelection:
+    """Only runs that start on the day are written, and only when both of their edges are in the data."""
+
+    def test_run_crossing_midnight_is_written_whole_by_its_start_day(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], start="2028-02-13T23:59:58")
+        written, mock_write = _write_runs(ds, tmp_path)
+
+        assert len(written) == 1
+        run = mock_write.call_args.args[1]
+        assert run.attrs["ProductID"] == "NOM-HK-SWC-405NM-TRIMMED"
+        assert run["PACKET_ICIE_TIME"].values.min() == np.datetime64("2028-02-13T23:59:59")
+        assert run["PACKET_ICIE_TIME"].values.max() == np.datetime64("2028-02-14T00:00:02")
+
+    def test_next_day_does_not_write_a_run_that_started_the_day_before(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], start="2028-02-13T23:59:58")
+        written, mock_write = _write_runs(ds, tmp_path, day=date(2028, 2, 14))
+
+        assert written == []
+        mock_write.assert_not_called()
+
+    def test_run_from_the_day_before_at_the_first_packet_is_left_out_without_error(self, tmp_path):
+        """Its start is not in the data, but it started before the day, so it is not this day's run."""
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257, 128, 256, 256, 128], start="2028-02-13T23:59:58")
+        written, mock_write = _write_runs(ds, tmp_path, day=date(2028, 2, 14))
+
+        assert len(written) == 1
+        assert mock_write.call_args.args[1].attrs["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
+
+    def test_run_starting_after_the_day_is_left_out_even_when_cut_off(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128, 257, 257], start="2028-02-13T23:59:57")
+        written, mock_write = _write_runs(ds, tmp_path)
+
+        assert len(written) == 1
+        assert mock_write.call_args.args[1].attrs["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
+
+    def test_no_calibration_obsid_writes_nothing_without_error(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 136, 136, 128])
+        written, mock_write = _write_runs(ds, tmp_path)
+
+        assert written == []
+        mock_write.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("rad_obsids", "start"),
+        [
+            pytest.param([128, 256, 256, 128], "2028-02-12T23:59:59", id="run-at-the-day-start-is-kept"),
+            pytest.param([128, 256, 257, 257, 128], "2028-02-13T23:59:58", id="run-at-the-next-day-start-is-left-out"),
+        ],
+    )
+    def test_day_is_half_open(self, tmp_path, rad_obsids, start):
+        """Packets are 1 s apart, so the 256 run starts at 00:00:00 of the day, or the 257 run at 00:00:00 of the next."""
+        ds = _synthetic_nom_hk(rad_obsids=rad_obsids, start=start)
+        _, mock_write = _write_runs(ds, tmp_path)
+
+        assert [call.args[1].attrs["ProductID"] for call in mock_write.call_args_list] == ["NOM-HK-SWC-365NM-TRIMMED"]
+
+    def test_missing_time_variable_raises_before_writing(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128])
+        with (
+            patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product") as mock_write,
+            pytest.raises(ValueError, match="missing time variable 'NO_SUCH_TIME'"),
+        ):
+            write_trimmed_nom_hk_products(
+                ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE, time_variable="NO_SUCH_TIME"
+            )
+
+        mock_write.assert_not_called()
+
+    def test_counter_steps_by_one_across_the_wrap(self, tmp_path):
+        """A run edge where the 14-bit counter wraps to 0 is a step of one, not a gap."""
+        top = SEQUENCE_COUNTER_MODULUS - 1
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128], sequence_counter=[top - 1, top, 0, 1])
+        written, _ = _write_runs(ds, tmp_path)
+
+        assert len(written) == 1
+
+    @pytest.mark.parametrize(
+        ("rad_obsids", "sequence_counter", "edge"),
+        [
+            pytest.param([257, 257, 128, 256, 256, 128], None, "start", id="start-at-first-packet"),
+            pytest.param([128, 256, 256, 128, 257, 257], None, "end", id="end-at-last-packet"),
+            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 6, 7, 8], "start", id="gap-before-start"),
+            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 5, 6, 8], "end", id="gap-after-end"),
+        ],
+    )
+    def test_run_on_the_day_with_an_edge_not_in_the_data_raises(self, tmp_path, rad_obsids, sequence_counter, edge):
+        """The 257 run's edge is missing; the whole 256 run in the same data does not save the day."""
+        ds = _synthetic_nom_hk(rad_obsids=rad_obsids, sequence_counter=sequence_counter)
+
+        with pytest.raises(ValueError, match=rf"for 2028-02-13: its {edge} is not in the NOM-HK data"):
+            _write_runs(ds, tmp_path)
+
+    def test_rejected_day_calls_no_write(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128, 257, 257])
+        mock_filename = MagicMock()
+        with (
+            patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename) as mock_write,
+            pytest.raises(ValueError, match="its end is not in the NOM-HK data"),
+        ):
+            write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE)
+
+        mock_write.assert_not_called()

@@ -119,7 +119,7 @@ archived under its start day. Every other product is dated by the midpoint of it
 `libera_utils.l1a.nom_hk_trim` is the first real consumer. After a daily `NOM-HK-DECODED` product
 is produced, calibration pipelines need a per-ObsID subset of it. `find_obsid_runs` scans the
 Dataset for contiguous runs of each trim-eligible ObsID (using `spec.source.value` to pick the
-right NOM-HK field), and `write_trimmed_nom_hk_products` writes one NetCDF per run, stamped with
+right NOM-HK field), and `write_trimmed_nom_hk_products` writes one NetCDF per run that starts on the requested day, stamped with
 that ObsID's TRIMMED ProductID:
 
 ```python
@@ -129,6 +129,8 @@ from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
 trimmed_paths = write_trimmed_nom_hk_products(
     nom_hk_ds,
     output_dir,
+    day=applicable_date,  # UTC day whose runs are written
+    source_product_filename=daily_nom_hk_filename,  # the NOM-HK-DECODED granule for that day
     time_variable="PACKET_ICIE_TIME",
     add_archive_path_prefix=True,  # L1A preprocessor / ingest dropbox
 )
@@ -138,8 +140,17 @@ TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (a
 filename product token) changes. A trimmed file also still carries the `ICIE__SW_OBSID_RAD` /
 `ICIE__SW_OBSID_WFOV` variable it was cut on.
 
-If the same `(source, obsid)` appears in multiple disjoint runs of one Dataset, each run is
-written as a separate file and a warning is logged.
+Only runs that start on `day` are written, and each is written whole, so a run that crosses
+midnight belongs to the day it started and the next day leaves it out. Decode NOM-HK from at least
+one packet before the day's first run (the L1A Preprocessor starts 10 minutes before the day)
+through at least `nom_hk_trim.CALIBRATION_TRIM_PADDING` past the end of the day, so that every run
+starting on the day is seen to start and end. An ObsID may recur within a day; each run is its
+own file.
+
+A run that starts on `day` is written only when both of its edges are in the data: the packet
+before it and the packet after it are present, and `SRC_SEQ_CTR` steps by exactly 1 across each.
+Otherwise its true start or end, and so its filename time range, is not known, and
+`write_trimmed_nom_hk_products` raises `ValueError` before writing any file for the day.
 
 ## Consumer 2: downstream combiners
 
