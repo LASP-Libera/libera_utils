@@ -59,10 +59,10 @@ variables:
   # Input scene properties
   ########################
   IGBP_Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      _FillValue: 255
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
       long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   Solar_Zenith_Surface:
     dtype: float32
@@ -87,10 +87,10 @@ variables:
   # Derived scene properties
   ##########################
   Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      _FillValue: 255
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
   Cloud_Fraction:
     dtype: float32
@@ -154,14 +154,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched ERBE scene
       units: percent
   Scene_Bin_ERBE_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Solar_Zenith_Surface_Min:
     dtype: float32
@@ -216,14 +218,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched unfiltering scene
       units: percent
   Scene_Bin_Unfiltering_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Solar_Zenith_Surface_Min:
     dtype: float32
@@ -266,14 +270,16 @@ variables:
   # TRMM scene property-bin bounds
   ##############################
   Scene_Bin_TRMM_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched TRMM scene
   Scene_Bin_TRMM_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched TRMM scene
   Scene_Bin_TRMM_Surface_Wind_Min:
     dtype: float32
