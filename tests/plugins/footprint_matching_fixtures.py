@@ -1552,6 +1552,64 @@ def make_l1b_radiometer_fixture(
     return out_path
 
 
+def make_cf_cam_fixture(
+    directory: Path,
+    radiometer_time: np.ndarray,
+    cloud_fraction: np.ndarray | None = None,
+    *,
+    cloud_fraction_variable: str = "Cloud_Fraction",
+) -> Path:
+    """Write a synthetic CF-CAM NetCDF file (the Camera Cloud Fraction input to FMATCH-CAM).
+
+    Carries the two variables FMATCH-CAM reads: the CF-encoded ``radiometer_time`` coordinate, which CF-CAM passes
+    through from L1B RAD-4CH, and ``Cloud_Fraction`` in percent with a ``-999`` ``_FillValue``. The file is written
+    under a proper Libera ``CF-CAM`` filename so the runner selects it from a manifest.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the file into (e.g. pytest ``tmp_path``).
+    radiometer_time : numpy.ndarray
+        ``datetime64[ns]`` radiometer times of the CF-CAM rows, usually a subset of an L1B fixture's times.
+    cloud_fraction : numpy.ndarray, optional
+        Cloud fraction in percent, one per row; ``NaN`` is written as fill. Defaults to evenly spaced values in
+        ``[0, 100]``.
+    cloud_fraction_variable : str, optional
+        Name the cloud fraction is written under, so a test can write a file that lacks ``Cloud_Fraction``.
+        Defaults to ``"Cloud_Fraction"``.
+
+    Returns
+    -------
+    Path
+        Path to the written CF-CAM NetCDF file.
+    """
+    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
+    from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
+
+    radiometer_time = np.asarray(radiometer_time, dtype="datetime64[ns]")
+    if cloud_fraction is None:
+        cloud_fraction = np.linspace(0.0, 100.0, radiometer_time.size)
+    dataset = xr.Dataset(
+        {cloud_fraction_variable: (("RADIOMETER_TIME",), np.asarray(cloud_fraction, dtype=np.float32))},
+        coords={"radiometer_time": (("RADIOMETER_TIME",), radiometer_time)},
+    )
+    dataset[cloud_fraction_variable].encoding = {"_FillValue": np.float32(-999.0)}
+    dataset["radiometer_time"].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l2_cf_cam,
+        version="V1-0-0",
+        utc_start=_as_utc_datetime(radiometer_time.min()),
+        utc_end=_as_utc_datetime(radiometer_time.max()),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
 def make_cf_cam_camtime_dataset(
     n_images: int = 2,
     n_pixels_x: int = 3,
