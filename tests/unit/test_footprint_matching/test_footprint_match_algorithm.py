@@ -3,8 +3,10 @@ camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
 import functools
+import shutil
 from pathlib import Path
 
+import netCDF4
 import numpy as np
 import pytest
 import xarray as xr
@@ -380,6 +382,76 @@ class TestRadiometerCloudFractionValuesFor:
 
         with pytest.raises(CloudFractionTimeMismatchError, match="do not cover it"):
             cloud_fraction.values_for(self.FOOTPRINTS)
+
+
+# The shortened real CF-CAM granule under tests/test_data/footprint_matching; its README says what was kept.
+REAL_CF_CAM_FILE = "LIBERA_L2_CF-CAM_V0-1-0_20260712T032817_20260712T032827_R26294210139_subset.nc"
+
+
+class TestRealCfCamFile:
+    """The CF-CAM read on a real CF-CAM granule's layout: its time encoding, fill values and variable names."""
+
+    @pytest.fixture
+    def real_cf_cam(self, fmatch_real_data_path) -> Path:
+        return fmatch_real_data_path / REAL_CF_CAM_FILE
+
+    @pytest.fixture
+    def renamed_cf_cam(self, real_cf_cam, tmp_path) -> Path:
+        """A copy of the real granule with ``cam_cloud_fraction`` renamed ``Cloud_Fraction`` and nothing else changed."""
+        copy = Path(shutil.copy(real_cf_cam, tmp_path / real_cf_cam.name))
+        with netCDF4.Dataset(copy, "a") as dataset:
+            dataset.renameVariable("cam_cloud_fraction", "Cloud_Fraction")
+        return copy
+
+    @staticmethod
+    def _raw(path: Path, name: str) -> np.ndarray:
+        """Read a variable's stored values, with no fill masking or time decoding."""
+        with netCDF4.Dataset(path) as dataset:
+            dataset.set_auto_maskandscale(False)
+            return dataset[name][:]
+
+    def test_granule_naming_its_cloud_fraction_cam_cloud_fraction_is_rejected(self, real_cf_cam):
+        with pytest.raises(MissingCloudFractionInputError, match="no Cloud_Fraction variable"):
+            load_cf_cam_cloud_fraction([real_cf_cam])
+
+    def test_times_decode_from_nanoseconds_since_the_ccsds_epoch(self, renamed_cf_cam):
+        stored = self._raw(renamed_cf_cam, "radiometer_time")
+
+        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+
+        expected = np.datetime64("1958-01-01T00:00:00", "ns") + stored.astype("timedelta64[ns]")
+        np.testing.assert_array_equal(cloud_fraction.radiometer_time, expected)
+        np.testing.assert_array_equal(cloud_fraction.cloud_fraction, self._raw(renamed_cf_cam, "Cloud_Fraction"))
+        assert cloud_fraction.cloud_fraction.dtype == np.float32
+
+    def test_fill_value_reads_as_nan(self, renamed_cf_cam):
+        fill = np.float32(-999.0)
+        with netCDF4.Dataset(renamed_cf_cam, "a") as dataset:
+            assert dataset["Cloud_Fraction"].getncattr("_FillValue") == fill
+            dataset["Cloud_Fraction"][2] = fill
+
+        values = load_cf_cam_cloud_fraction([renamed_cf_cam]).cloud_fraction
+
+        assert np.isnan(values[2])
+        assert np.isfinite(np.delete(values, 2)).all()
+
+    def test_rows_match_footprints_by_exact_time(self, renamed_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+        cf_times = cloud_fraction.radiometer_time
+        # L1B footprints at every CF-CAM time plus one 5 ms later, which CF-CAM does not cover.
+        footprint_time = np.sort(np.concatenate([cf_times, cf_times + np.timedelta64(5, "ms")]))
+
+        values = cloud_fraction.values_for(footprint_time)
+
+        covered = np.isin(footprint_time, cf_times)
+        np.testing.assert_array_equal(values[covered], cloud_fraction.cloud_fraction)
+        assert np.isnan(values[~covered]).all()
+
+    def test_row_with_no_footprint_at_its_time_raises(self, renamed_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+
+        with pytest.raises(CloudFractionTimeMismatchError, match="match no usable L1B footprint time"):
+            cloud_fraction.values_for(np.delete(cloud_fraction.radiometer_time, 6))
 
 
 class TestCreateAndWriteCloudFractionInput:
