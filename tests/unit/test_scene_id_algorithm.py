@@ -7,14 +7,18 @@ The full manifest-in / product-out behavior is covered by the integration tests 
 
 from datetime import UTC, datetime
 
+import numpy as np
 import pytest
+import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
     SCENE_ID_VARIANT_ENV,
+    _fill_missing_integer_values,
     collect_input_files,
     resolve_runner_config_from_env,
 )
@@ -91,3 +95,28 @@ class TestRunnerDispatch:
 
         with pytest.raises(ValueError, match="'not-a-variant' is not a SCENE-ID variant"):
             resolve_runner_config_from_env()
+
+
+class TestFillMissingIntegerValues:
+    """_fill_missing_integer_values writes -1 into a NaN integer cell and refuses a dtype that cannot hold it."""
+
+    @staticmethod
+    def _definition(surface_type_dtype: str) -> LiberaDataProductDefinition:
+        """The shipped SCENE-ID-IMAGER definition, with Surface_Type declared as ``surface_type_dtype``."""
+        definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS["imager"].product_definition_path)
+        surface_type = definition.variables["Surface_Type"].model_copy(update={"dtype": surface_type_dtype})
+        return definition.model_copy(update={"variables": {"Surface_Type": surface_type}})
+
+    def test_nan_becomes_minus_one_in_the_declared_dtype(self):
+        dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, np.nan], dtype=np.float32))})
+
+        filled = _fill_missing_integer_values(dataset, self._definition("int8"))
+
+        assert filled["Surface_Type"].dtype == np.int8
+        np.testing.assert_array_equal(filled["Surface_Type"].values, [2, -1])
+
+    def test_unsigned_dtype_with_a_missing_value_raises(self):
+        dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, np.nan], dtype=np.float32))})
+
+        with pytest.raises(ValueError, match="Surface_Type has missing values.*signed integer dtype"):
+            _fill_missing_integer_values(dataset, self._definition("uint8"))
