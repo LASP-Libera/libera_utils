@@ -20,7 +20,6 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
     FMATCH_VARIANT_ENV,
-    _collect_cloud_fraction_files,
     fmatch_cli_handler,
     select_manifest_files_by_product_id,
 )
@@ -45,6 +44,7 @@ from libera_utils.scene_identification.scene_id_algorithm import (
 from tests.plugins.footprint_matching_fixtures import (
     FakeCatReader,
     FakeMeanReader,
+    make_cf_cam_fixture,
     make_era5_pressure_netcdf_fixture,
     make_fmatch_product_fixture,
     make_l1b_radiometer_fixture,
@@ -74,6 +74,18 @@ def _libera_product_name(product_id: DataProductIdentifier) -> str:
         utc_start=datetime(2026, 6, 11, tzinfo=UTC),
         utc_end=datetime(2026, 6, 11, 23, 59, 59, tzinfo=UTC),
     ).path.name
+
+
+def _stage_cam_inputs(directory, n_footprints: int, n_invalid: int = 0) -> tuple:
+    """Write an L1B RAD-4CH file and the CF-CAM file FMATCH-CAM requires, covering every footprint L1B keeps.
+
+    The fixture's first ``n_invalid`` footprints cannot be geolocated and are dropped, so CF-CAM carries no row for
+    them; a CF-CAM row that matches no kept footprint fails the run.
+    """
+    l1b_file = make_l1b_radiometer_fixture(directory, n_footprints=n_footprints, n_invalid=n_invalid)
+    with xr.open_dataset(l1b_file) as l1b:
+        kept_times = l1b["radiometer_time"].values[n_invalid:]
+    return l1b_file, make_cf_cam_fixture(directory, kept_times)
 
 
 def _write_input_manifest(directory, *file_paths) -> str:
@@ -142,8 +154,8 @@ class TestRadiometerRunnerWorkflow:
         """The pass-through columns must survive the whole runner path, not just assembly."""
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=8)
-        manifest_path = _write_input_manifest(inputs, l1b_file)
+        l1b_file, cf_cam_file = _stage_cam_inputs(inputs, n_footprints=8)
+        manifest_path = _write_input_manifest(inputs, l1b_file, cf_cam_file)
 
         output_manifest = Manifest.from_file(_run_cli("cam", manifest_path, monkeypatch))
 
@@ -154,8 +166,7 @@ class TestRadiometerRunnerWorkflow:
     def test_non_finite_l1b_footprints_are_excluded(self, tmp_path, dropbox, staged_ancillary, monkeypatch):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=10, n_invalid=4)
-        manifest_path = _write_input_manifest(inputs, l1b_file)
+        manifest_path = _write_input_manifest(inputs, *_stage_cam_inputs(inputs, n_footprints=10, n_invalid=4))
 
         output_manifest = Manifest.from_file(_run_cli("cam", manifest_path, monkeypatch))
 
@@ -219,23 +230,13 @@ class TestManifestInputSelection:
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
     def test_cam_runner_also_selects_the_cloud_fraction_product(self):
-        """FMATCH-CAM takes an optional CF-CAM input alongside its L1B input."""
+        """FMATCH-CAM takes a CF-CAM input alongside its L1B input."""
         cloud_fraction = _libera_product_name(DataProductIdentifier.l2_cf_cam)
         manifest = self._manifest(_libera_product_name(DataProductIdentifier.l1b_rad), cloud_fraction)
 
-        selected = _collect_cloud_fraction_files(manifest, CAM_CONFIG)
+        selected = select_manifest_files_by_product_id(manifest, CAM_CONFIG.cloud_fraction_product_id)
 
         assert selected == [f"{self._INPUT_DIR}/{cloud_fraction}"]
-
-    def test_imager_runners_take_no_cloud_fraction_input(self):
-        """The IMAGER products do not declare Cloud_Fraction_Camera, so no cloud-fraction product is selected."""
-        manifest = self._manifest(
-            _libera_product_name(DataProductIdentifier.l1b_rad),
-            _libera_product_name(DataProductIdentifier.l2_cf_cam),
-        )
-
-        for config in (IMAGER_CONFIG, IMAGER_CAMTIME_CONFIG):
-            assert _collect_cloud_fraction_files(manifest, config) == []
 
     def test_fmatch_product_in_manifest_is_not_mistaken_for_an_input(self, tmp_path):
         """A FMATCH product staged alongside the inputs must not be re-ingested as one."""
@@ -288,7 +289,12 @@ class TestRunnerOutputThroughSceneId:
     def test_runner_product_writes_a_scene_id_product(self, variant, tmp_path, monkeypatch):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        manifest_path = _write_input_manifest(inputs, make_l1b_radiometer_fixture(inputs, n_footprints=8))
+        input_files = (
+            _stage_cam_inputs(inputs, n_footprints=8)
+            if FMATCH_RUNNER_CONFIGS[variant].cloud_fraction_product_id is not None
+            else (make_l1b_radiometer_fixture(inputs, n_footprints=8),)
+        )
+        manifest_path = _write_input_manifest(inputs, *input_files)
         fmatch_product_path = Manifest.from_file(_run_cli(variant, manifest_path, monkeypatch)).files[0]
 
         scene_id_config = SCENE_ID_RUNNER_CONFIGS[variant]
