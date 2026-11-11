@@ -147,10 +147,28 @@ through at least `nom_hk_trim.CALIBRATION_TRIM_PADDING` past the end of the day,
 starting on the day is seen to start and end. An ObsID may recur within a day; each run is its
 own file.
 
-A run that starts on `day` is written only when both of its edges are in the data: the packet
-before it and the packet after it are present, and `SRC_SEQ_CTR` steps by exactly 1 across each.
-Otherwise its true start or end, and so its filename time range, is not known, and
-`write_trimmed_nom_hk_products` raises `ValueError` before writing any file for the day.
+A run is a stretch of one ObsID: it ends where the ObsID changes. Packets lost inside it do not
+end it, so the run stays one file, and `run_missing_packets` counts the packets missing between
+its first and last packet (0 when none are; counted modulo 16384, so a lower bound). Two events
+of one ObsID whose boundary fell inside a gap are one run until the missing packets arrive.
+
+Each file also records whether its run's edges are at a gap, in the global attributes
+`run_start_after_gap` and `run_end_before_gap` (1 or 0). An edge is at a gap when the packets
+beyond it are missing or the data stops there, so the file may not hold its event's true start or
+end. A consumer that needs whole events checks all three attributes. When missing packets arrive
+later, the next revision of the day writes the run again:
+
+- an end that was at a gap moves later, under the same start time, so the new revision replaces
+  the file;
+- a start that was at a gap moves earlier, so the run is filed under a new start time and the
+  earlier file stays archived with nothing replacing it;
+- a gap that hid the boundary between two events of one ObsID becomes two files: the first keeps
+  the start time and the second is new.
+
+A run still going at the last packet of the data, when that packet is within 10 minutes of
+`CALIBRATION_TRIM_PADDING` past the end of the day, lasts longer than the padding:
+`write_trimmed_nom_hk_products` raises `ValueError` before writing any file for the day, and the
+padding must be raised.
 
 ## Consumer 2: downstream combiners
 

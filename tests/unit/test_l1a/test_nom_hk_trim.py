@@ -12,6 +12,9 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.l1a.nom_hk_trim import (
+    RUN_END_BEFORE_GAP_ATTRIBUTE,
+    RUN_MISSING_PACKETS_ATTRIBUTE,
+    RUN_START_AFTER_GAP_ATTRIBUTE,
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
     write_trimmed_nom_hk_products,
@@ -64,6 +67,12 @@ class TestGetTrimmedNomHkProductDefinition:
     def test_overrides_product_id(self):
         definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
         assert definition.attributes["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
+
+    def test_declares_the_gap_flags_as_dynamic_attributes(self):
+        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
+        assert definition.attributes[RUN_START_AFTER_GAP_ATTRIBUTE] is None
+        assert definition.attributes[RUN_END_BEFORE_GAP_ATTRIBUTE] is None
+        assert definition.attributes[RUN_MISSING_PACKETS_ATTRIBUTE] is None
 
     def test_rejects_non_trimmed_product(self):
         with pytest.raises(ValueError, match="is not a TRIMMED NOM-HK product in the ObsID registry"):
@@ -284,7 +293,7 @@ def _write_runs(ds: xr.Dataset, tmp_path, *, day: date = _DAY) -> tuple[list, Ma
 
 
 class TestDaySelection:
-    """Only runs that start on the day are written, and only when both of their edges are in the data."""
+    """Only runs that start on the day are written, each flagged at an edge that follows a gap."""
 
     def test_run_crossing_midnight_is_written_whole_by_its_start_day(self, tmp_path):
         ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], start="2028-02-13T23:59:58")
@@ -360,27 +369,94 @@ class TestDaySelection:
         assert len(written) == 1
 
     @pytest.mark.parametrize(
-        ("rad_obsids", "sequence_counter", "edge"),
+        ("rad_obsids", "sequence_counter", "start_after_gap", "end_before_gap"),
         [
-            pytest.param([257, 257, 128, 256, 256, 128], None, "start", id="start-at-first-packet"),
-            pytest.param([128, 256, 256, 128, 257, 257], None, "end", id="end-at-last-packet"),
-            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 6, 7, 8], "start", id="gap-before-start"),
-            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 5, 6, 8], "end", id="gap-after-end"),
+            pytest.param([257, 257, 128, 256, 256, 128], None, 1, 0, id="start-at-first-packet"),
+            pytest.param([128, 256, 256, 128, 257, 257], None, 0, 1, id="data-stops-early-at-last-packet"),
+            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 6, 7, 8], 1, 0, id="gap-before-start"),
+            pytest.param([128, 256, 256, 128, 257, 257, 128], [1, 2, 3, 4, 5, 6, 8], 0, 1, id="gap-after-end"),
         ],
     )
-    def test_run_on_the_day_with_an_edge_not_in_the_data_raises(self, tmp_path, rad_obsids, sequence_counter, edge):
-        """The 257 run's edge is missing; the whole 256 run in the same data does not save the day."""
+    def test_run_edge_at_a_gap_is_written_and_flagged(
+        self, tmp_path, rad_obsids, sequence_counter, start_after_gap, end_before_gap
+    ):
+        """The 257 run is written with its gap edge flagged; the whole 256 run carries no flag."""
         ds = _synthetic_nom_hk(rad_obsids=rad_obsids, sequence_counter=sequence_counter)
+        _, mock_write = _write_runs(ds, tmp_path)
 
-        with pytest.raises(ValueError, match=rf"for 2028-02-13: its {edge} is not in the NOM-HK data"):
-            _write_runs(ds, tmp_path)
+        flags = {
+            call.args[1].attrs["ProductID"]: (
+                call.args[1].attrs[RUN_START_AFTER_GAP_ATTRIBUTE],
+                call.args[1].attrs[RUN_END_BEFORE_GAP_ATTRIBUTE],
+            )
+            for call in mock_write.call_args_list
+        }
+        assert flags == {
+            "NOM-HK-SWC-365NM-TRIMMED": (0, 0),
+            "NOM-HK-SWC-405NM-TRIMMED": (start_after_gap, end_before_gap),
+        }
+
+    def test_gaps_inside_a_run_are_one_run_counting_the_missing_packets(self, tmp_path):
+        """Packets lost inside one ObsID's stretch leave it one run, with its edges unflagged and the losses counted."""
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 257, 128], sequence_counter=[1, 2, 3, 5, 9, 10])
+        written, mock_write = _write_runs(ds, tmp_path)
+
+        assert len(written) == 1
+        run = mock_write.call_args.args[1]
+        assert run.sizes["PACKET"] == 4
+        assert run.attrs[RUN_START_AFTER_GAP_ATTRIBUTE] == 0
+        assert run.attrs[RUN_END_BEFORE_GAP_ATTRIBUTE] == 0
+        assert run.attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 4
+
+    def test_whole_run_counts_no_missing_packets(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128], sequence_counter=[1, 2, 3, 4])
+        _, mock_write = _write_runs(ds, tmp_path)
+
+        assert mock_write.call_args.args[1].attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 0
+
+    def test_gap_across_the_counter_wrap_is_counted(self, tmp_path):
+        top = SEQUENCE_COUNTER_MODULUS - 1
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 128], sequence_counter=[top - 1, top, 2, 3])
+        _, mock_write = _write_runs(ds, tmp_path)
+
+        assert mock_write.call_args.args[1].attrs[RUN_MISSING_PACKETS_ATTRIBUTE] == 2
+
+    def test_find_obsid_runs_does_not_split_at_a_counter_gap(self):
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 128], sequence_counter=[1, 2, 3, 5, 6])
+        assert [pkt_slice for _, pkt_slice in find_obsid_runs(ds)] == [slice(1, 4)]
+
+    @pytest.mark.parametrize(
+        ("last_time", "raises"),
+        [
+            pytest.param("2028-02-14T01:50:00", True, id="data-reaches-the-padding"),
+            pytest.param("2028-02-14T01:49:59", False, id="data-stops-before-the-padding"),
+        ],
+    )
+    def test_run_still_going_at_the_padding_raises(self, tmp_path, last_time, raises):
+        """Data within DAY_BUFFER of 2 h past the day reaches the padding, so a run still going there outlasts it."""
+        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257])
+        times = np.array(
+            ["2028-02-13T23:00:00", "2028-02-13T23:00:01", "2028-02-14T00:30:00", last_time], dtype="datetime64[us]"
+        )
+        ds = ds.assign_coords(PACKET_ICIE_TIME=("PACKET", times))
+
+        if raises:
+            with pytest.raises(ValueError, match="the run lasts longer than CALIBRATION_TRIM_PADDING"):
+                _write_runs(ds, tmp_path)
+        else:
+            _, mock_write = _write_runs(ds, tmp_path)
+            assert mock_write.call_args.args[1].attrs[RUN_END_BEFORE_GAP_ATTRIBUTE] == 1
 
     def test_rejected_day_calls_no_write(self, tmp_path):
+        """The whole 256 run is not written when the 257 run on the same day outlasts the padding."""
         ds = _synthetic_nom_hk(rad_obsids=[128, 256, 256, 128, 257, 257])
+        times = np.datetime64("2028-02-13T23:00:00") + np.arange(5) * np.timedelta64(1, "s")
+        times = np.append(times, np.datetime64("2028-02-14T02:00:00")).astype("datetime64[us]")
+        ds = ds.assign_coords(PACKET_ICIE_TIME=("PACKET", times))
         mock_filename = MagicMock()
         with (
             patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename) as mock_write,
-            pytest.raises(ValueError, match="its end is not in the NOM-HK data"),
+            pytest.raises(ValueError, match="the run lasts longer than CALIBRATION_TRIM_PADDING"),
         ):
             write_trimmed_nom_hk_products(ds, tmp_path, day=_DAY, source_product_filename=_PARENT_GRANULE)
 
