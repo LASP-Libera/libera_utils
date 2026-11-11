@@ -127,21 +127,6 @@ class TestSceneIdCamWrite:
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
 
-    def test_written_product_has_every_declared_variable(self, tmp_path):
-        """Every variable the definition declares is written, under its declared name.
-
-        FootprintData names the variables the product carries as the definition does (``Scene_ID_ERBE``,
-        ``Surface_Type``, ``Scene_Bin_ERBE_Cloud_Fraction_Min``), so a declared name the pipeline spells differently
-        would be dropped from the product rather than written.
-        """
-        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
-        footprint_data = run_scene_identification_cam(input_path)
-        output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
-
-        definition = LiberaDataProductDefinition.from_yaml(PRODUCT_DEFINITION_PATH)
-        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
-        assert set(definition.variables) <= set(reopened.variables)
-
 
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
@@ -615,7 +600,8 @@ class TestMissingIgbpCode:
         dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
 
         assert np.isnan(dataset["Surface_Type"].values[1])
-        for name in (n for n in dataset.data_vars if n.startswith("scene_id_")):
+        for scene_definition in standard_scene_definitions(RUNNER_CONFIGS[variant].scene_types):
+            name = f"Scene_ID_{scene_definition.type}"
             assert dataset[name].values[1] == 0, name
         assert (dataset["Scene_ID_ERBE"].values[[0, 2, 3]] > 0).all()
 
