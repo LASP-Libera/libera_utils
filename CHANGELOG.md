@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.25.0] - 2026-11-11
+
 ### Added
 
-- `libera_utils.footprint_matching.product`, which assembles and writes the FMATCH products for all four operational modes: `assemble_fmatch_dataset` and `write_fmatch_product`, with `aggregate_external_variables`, `build_radiometer_footprints` and `compute_derived_viewing_geometry`. Geolocation and viewing angles pass through from L1B (or the camera pseudo-footprints), and each radiometer record's `PSF_Bbox_*` is its ray-traced footprint box (`NaN` off the limb); `Sunglint_Angle`, the external aggregated variables, `PSF_Coverage_Fraction` and the CERES 75%/95% coverage bits in `Quality_Flag` are computed. `Sunglint_Angle` follows the L1B relative azimuth convention (CERES BDS origin, Sun at 180°), so it is zero at the specular direction, `RAA = 0`. An off-limb L1B record keeps its index as a footprint with `bbox=None` and `off_limb=True`, and is written as fill with zero coverage; a -999 or `NaN` L1B `Cone_Angle_Rate` is `None` on the footprint. `aggregate_external_variables` defaults to `AngularPSFWeigher`, which needs each on-Earth footprint's cone-angle rate (pass `RadialWeigher` for footprints without one). The `sources` passed in must be exactly the mode's readers (`KeyError` otherwise, through `footprint_matching.sources.require_mode_reader_keys`, which `build_sources` also uses), and passing both `sources` and `source_file_paths` raises `ValueError`. Every PSF is sized from the L1B ephemeris, so aggregating a camera-timescale mode raises `ValueError` until camera pseudo-footprints carry it. A declared variable no input produced (the external columns without staged ancillary inputs, a reader's columns without its source, or `Cloud_Fraction_Camera` omitted for a CAM mode) raises `ValueError` naming each one, unless `allow_placeholders=True`, which writes them as fill values; `cloud_fraction_camera` given for an IMAGER mode, not one value per footprint, or with a finite value outside percent `[0, 100]` raises `ValueError`. A reader's `ProductStack`s are written as one variable per stack on its dimension, such as FMATCH-IMAGER's ERA5 pressure-level fields on `(RADIOMETER_TIME, PRESSURE_LEVEL)`, with the stacks' coordinate values as that dimension's coordinate. Missing or padded cells of the integer category and pixel-index columns are written as -1 (`FMATCH_INTEGER_FILL_VALUE`), the `_FillValue` each declares, since 0 is a real value there; integer bitmasks such as `Quality_Flag` take 0, and an integer variable declaring neither `_FillValue` nor `flag_masks` raises `ValueError`. Assembly fills each column under the name the product definition declares, so nothing is renamed on the way to the file. The L1B input dict is keyed by the L1B RAD-4CH names (`Latitude`, `Solar_Zenith_Surface`, `Subsatellite_Latitude`, `Radius_of_Satellite_from_Center_of_Earth`, `Cone_Angle_Rate`, ...) plus `RADIOMETER_TIME`; the pass-through names (`L1B_PASSTHROUGH_VARIABLES`) are also the product names, and `L1B_PASSTHROUGH_VARIABLES` and `L1B_SCAN_REFERENCE_VARIABLES` are tuples of L1B names. Every radiometer assembly builds the footprints from L1B, so the scan-reference fields are required even without ancillary inputs, and an unusable ephemeris raises `MissingGeolocationError` there too. `write_fmatch_product` hands the assembled arrays to `write_libera_data_product`, so the product's conformance is enforced and checked once.
-- `aggregate_external_variables` runs the footprints on a process pool when the `FMATCH_WORKERS` configuration key (or environment variable) is above one: contiguous along-track chunks, forked after the sources are loaded so the workers share one copy of every static source, with the same output as the single-process run.
-- `AncillaryReader.preload()` loads whatever a reader holds for the whole run ahead of the first query: a `StaticReader` loads and indexes its whole source, raising as its first query would; other readers load nothing.
+- `libera_utils.footprint_matching.product` assembles and writes the FMATCH products for all four operational modes (`assemble_fmatch_dataset`, `write_fmatch_product`, `aggregate_external_variables`, `build_radiometer_footprints`, `compute_derived_viewing_geometry`).
+  - Geolocation and viewing angles pass through from L1B, keyed by their L1B RAD-4CH names (`L1B_PASSTHROUGH_VARIABLES`), which are also the product names. `PSF_Bbox_*`, `Sunglint_Angle`, `PSF_Coverage_Fraction`, the aggregated external variables and the CERES 75%/95% coverage bits in `Quality_Flag` are computed. `Sunglint_Angle` uses the L1B relative azimuth convention, so it is zero at the specular direction.
+  - Off-limb records are kept and written as fill with zero coverage. Footprints are weighted with `AngularPSFWeigher` by default; pass `RadialWeigher` for footprints without a cone-angle rate.
+  - Missing inputs raise rather than write fill: a variable no input produced raises `ValueError` unless `allow_placeholders=True`, and an unusable ephemeris raises `MissingGeolocationError`. Camera-timescale modes cannot be aggregated yet.
+  - Integer category and pixel-index variables use -1 (`FMATCH_INTEGER_FILL_VALUE`) as fill; bitmasks such as `Quality_Flag` use 0.
+- `aggregate_external_variables` runs on a process pool when the `FMATCH_WORKERS` configuration key or environment variable is above one, with the same output as a single-process run.
+- `AncillaryReader.preload()` loads a reader's whole-run data before the first query.
 
 ### Changed
 
-- The `lasp-curryer` requirement is `>= 0.5.3, <1.0`: 0.5.2 lacks `curryer.compute.spatial.relative_azimuth`, the relative azimuth convention `Sunglint_Angle` follows.
+- `lasp-curryer` requires `>= 0.5.3, <1.0`, for `curryer.compute.spatial.relative_azimuth`.
 
 ## [5.24.0] - 2026-11-11
 
@@ -1061,7 +1067,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...HEAD
+[5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
 [5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0
