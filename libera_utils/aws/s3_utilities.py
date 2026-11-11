@@ -65,9 +65,14 @@ ManualIngestFilename = (
     | AncillaryDataProductFilename
 )
 
-# The filename types whose ingestion verify_ingestion can confirm.
-# TODO[LIBSDC-880]: add LiberaVersionPartitionedDataProductFilename once verification supports it.
-VerifiableIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
+# The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata and Data Availability
+# records are keyed on its applicable date, and an L0 or ground CCSDS file has its own record rules. A non-daily
+# file (a version-partitioned data product, the land/ocean mask, IGBP) has no applicable date, so ``put --verify``
+# stages it but cannot verify it.
+# TODO[LIBSDC-880]: verify non-daily products once the ingester defines their records
+VerifiableIngestFilename = (
+    L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | DailyAncillaryDataProductFilename
+)
 
 
 class IngestionNotVerifiedError(RuntimeError):
@@ -122,15 +127,15 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
 
-    With ``--verify``, every file is staged and the ingestion of each daily data product, L0, and ground CCSDS file is
-    verified. Version-partitioned data product files are staged but not verified, and the handler then raises naming
-    them.
+    With ``--verify``, every file is staged and the ingestion of each L0, ground CCSDS, daily Libera data product and
+    daily ancillary file is verified. A non-daily file (a version-partitioned data product, the land/ocean mask,
+    IGBP) is staged but not verified, and the handler then raises naming it.
 
     Raises
     ------
     IngestionNotVerifiedError
-        If ``--verify`` is given and any of the files is a version-partitioned data product file, which ingestion
-        verification does not yet support. Every file has still been staged.
+        If ``--verify`` is given and any file is non-daily (a version-partitioned data product or a non-daily
+        ancillary product), which ingestion verification does not yet support. Every file has still been staged.
     TimeoutError
         If ``--verify`` is given and the verifiable files are not fully ingested within ``--timeout`` seconds.
     """
@@ -150,14 +155,12 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 
     if parsed_args.verify:
-        # TODO[LIBSDC-880]: verify ingestion of version-partitioned data products, then verify every staged file.
+        # TODO[LIBSDC-880]: verify ingestion of non-daily files, then verify every staged file.
         verifiable = [f for f in libera_filenames if isinstance(f, VerifiableIngestFilename)]
-        unverified = [f for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
+        unverified = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
         if unverified:
             logger.warning(
-                "Staged %d version-partitioned data product file(s) that --verify cannot yet verify: %s",
-                len(unverified),
-                [f.path.name for f in unverified],
+                "Staged %d non-daily file(s) that --verify cannot yet verify: %s", len(unverified), unverified
             )
         if verifiable:
             logger.info(
@@ -167,10 +170,9 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
             logger.info("Verified full ingestion of %d file(s).", len(verifiable))
         if unverified:
             raise IngestionNotVerifiedError(
-                f"Staged {len(unverified)} version-partitioned data product file(s) whose ingestion --verify cannot "
-                "yet confirm: "
-                f"{[f.path.name for f in unverified]}. Their NewFilesAvailable events were emitted. Confirm each one "
-                "is archived under its <ProductID>/<Version> prefix in the archive bucket."
+                f"Staged {len(unverified)} non-daily file(s) whose ingestion --verify cannot yet confirm: "
+                f"{unverified}. Their NewFilesAvailable events were emitted. Confirm each one is archived under its "
+                "archive prefix in its archive bucket."
             )
     else:
         logger.info(
@@ -364,8 +366,9 @@ def verify_ingestion(
     3. A File Metadata record exists for the file basename.
 
     A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
-    its Data Availability record, keyed on its applicable date and upstream version. A static ancillary product
-    (the land/ocean mask), which has no applicable date, cannot be verified yet and is refused before any check.
+    its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary product
+    (the land/ocean mask, IGBP) has no applicable date and no checks here, so it is rejected before any lookup;
+    ``s3_put_cli_handler`` keeps such files out of the list it verifies.
 
     A ground CCSDS capture passes on its base File Metadata row alone, so a successful
     verification does not mean its packet time span was indexed into a searchable row.
@@ -378,8 +381,9 @@ def verify_ingestion(
     Parameters
     ----------
     libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or
-        AncillaryDataProductFilename
-        The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``).
+        DailyAncillaryDataProductFilename
+        The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``), less any
+        non-daily ancillary file.
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
     timeout : float, optional
@@ -389,23 +393,18 @@ def verify_ingestion(
 
     Raises
     ------
-    ValueError
-        If any file is a static ancillary product, which has no applicable date to verify records against.
     TypeError
-        If any file is not an L0, ground CCSDS, Libera data product or ancillary filename.
+        If any file is not an L0, ground CCSDS, Libera data product or daily ancillary filename, such as a
+        non-daily ancillary file.
     TimeoutError
         If any expected record/object is still missing when the timeout elapses.
     """
-    # TODO[LIBSDC-880]: Verify static ancillary products once the ingester defines their records
-    static_files = [
-        f.path.name
-        for f in libera_filenames
-        if isinstance(f, AncillaryDataProductFilename) and not isinstance(f, DailyAncillaryDataProductFilename)
-    ]
-    if static_files:
-        raise ValueError(
-            f"Cannot verify ingestion of static ancillary products, which have no applicable date: {static_files}. "
-            "Ingest them without --verify and check their archive bucket instead."
+    unverifiable = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
+    if unverifiable:
+        raise TypeError(
+            f"Cannot verify ingestion of {unverifiable}: only L0, ground CCSDS, Libera data product and daily "
+            "ancillary files have records to check. Ingest a non-daily file without --verify and confirm it in "
+            "its archive bucket."
         )
 
     s3_client = boto_session.client("s3")
@@ -437,17 +436,12 @@ def verify_ingestion(
             # packets cover. A file whose packets yield no usable time span keeps only its base
             # record, so the base record alone counts as ingested.
             spec["min_metadata_count"] = 1
-        elif isinstance(libera_filename, L0Filename):
+        else:
             # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets a base
             # record plus a product record (SK=applicable_date) per applicable date it covers. We can't derive
             # a PDS's applicable dates here, so we verify via record count.
             is_construction_record = libera_filename.data_product_id == DataProductIdentifier.l0_pds_cr
             spec["min_metadata_count"] = 1 if is_construction_record else 2
-        else:
-            raise TypeError(
-                f"Cannot verify ingestion of {libera_filename.path.name}: {type(libera_filename).__name__} is not an "
-                "L0, ground CCSDS, Libera data product or ancillary filename."
-            )
         file_specs.append(spec)
 
     metadata_table = dynamodb.Table(
