@@ -307,7 +307,7 @@ def test_l1a_product_definition_file(test_data_path: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def fmatch_real_data_path(test_data_path):
-    """Path to shortened real ancillary granules for the footprint matching readers.
+    """Path to shortened real granules for footprint matching: the readers' ancillary inputs and a CF-CAM product.
 
     Each file is cut from a real granule with its values unchanged; see the README.md
     in that directory for each file's source granule and what was kept.

@@ -47,6 +47,10 @@ are the contract every downstream consumer (Scene ID, Camera Cloud Fraction, ADM
 binning) reads against. Keeping the loaders next to the writers means there is a
 single place that knows how a FMATCH file is produced, while the reader plugins
 stay decoupled from product I/O.
+
+See Also
+--------
+libera_utils.footprint_matching.footprint_match_algorithm : Manifest-driven runners that call into this module.
 """
 
 from __future__ import annotations
@@ -74,6 +78,8 @@ from libera_utils.footprint_matching.geometry import (
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.sources import build_sources, require_mode_reader_keys
 from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    CameraFootprintQualityFlag,
     FmatchCoverageFlag,
     OperationalMode,
     PseudoFootprint,
@@ -804,8 +810,9 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The L1B pass-through arrays the FMATCH runner reads from L1B Daily (already
-        filtered to finite geolocation), keyed by their L1B names. ``RADIOMETER_TIME``,
+        The arrays
+        :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`
+        returns (already filtered to finite geolocation), keyed by their L1B names. ``RADIOMETER_TIME``,
         ``Latitude``, ``Longitude``, ``Viewing_Zenith_Surface`` and every name in
         ``L1B_SCAN_REFERENCE_VARIABLES`` are required; ``Cone_Angle_Rate``
         (``L1B_CONE_ANGLE_RATE_VARIABLE``) is read when present.
@@ -1079,8 +1086,10 @@ def assemble_fmatch_dataset(
       :class:`~libera_utils.footprint_matching.types.PseudoFootprint` objects. See
       ``_assemble_camtime_dataset``.
     * **Radiometer-timescale** (``CAM``, ``IMAGER``) - assembled
-      from the L1B pass-through arrays the FMATCH runner reads from L1B Daily.
-      ``inputs`` is that dict. See ``_assemble_radiometer_dataset``.
+      from the L1B pass-through arrays produced by
+      :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`.
+      The first positional argument is that dict. See
+      ``_assemble_radiometer_dataset``.
 
     In both cases the derived viewing geometry (``Sunglint_Angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
@@ -1374,6 +1383,154 @@ def _normalize_longitude(longitude_deg: float) -> float:
     detect a dateline-crossing box because it then has ``lon_min > lon_max``.
     """
     return longitude_deg - 360.0 if longitude_deg > 180.0 else longitude_deg
+
+
+# Bit layout of the CF-CAM-CAMTIME ``PSF_Bbox_Flags`` variable, set by the Camera Cloud Fraction
+# algorithm. These carry the BoundingBox flags that cannot be recovered from the stored bounds alone
+# (``is_polar`` depends on the boresight latitude and ``truncated`` on the limb-clipping history), so
+# FMATCH can rebuild the exact BoundingBox of each pseudo-footprint.
+CAMTIME_BBOX_WRAPS_DATELINE_BIT: int = 0b001
+CAMTIME_BBOX_IS_POLAR_BIT: int = 0b010
+CAMTIME_BBOX_TRUNCATED_BIT: int = 0b100
+
+# Every CF-CAM-CAMTIME variable and coordinate :func:`pseudofootprints_from_camtime_dataset` reads to
+# rebuild the camera pseudo-footprints. The bounding-box longitudes are raw (they may exceed +/-180 for a
+# dateline-crossing box), ``Altitude`` is in meters as in L1B, and ``Quality_Flag`` holds only the
+# :class:`~libera_utils.footprint_matching.types.CameraFootprintQualityFlag` bits.
+CAMTIME_PSEUDOFOOTPRINT_VARIABLES: tuple[str, ...] = (
+    "CAMERA_TIME",
+    "Camera_Pixel_X_Min",
+    "Camera_Pixel_X_Max",
+    "Camera_Pixel_Y_Min",
+    "Camera_Pixel_Y_Max",
+    "Latitude",
+    "Longitude",
+    "Altitude",
+    "Solar_Zenith_Surface",
+    "Viewing_Zenith_Surface",
+    "Relative_Azimuth_Surface",
+    "Center_Pixel_X",
+    "Center_Pixel_Y",
+    "PSF_Bbox_Lat_Min",
+    "PSF_Bbox_Lat_Max",
+    "PSF_Bbox_Lon_Min",
+    "PSF_Bbox_Lon_Max",
+    "PSF_Bbox_Flags",
+    "Quality_Flag",
+)
+
+
+class MissingCamtimeVariablesError(ValueError):
+    """A camera-timescale input product lacks variables needed to rebuild its pseudo-footprints."""
+
+
+def camtime_real_cell_mask(dataset: Dataset) -> np.ndarray:
+    """Boolean ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` mask of real (non-padded) footprint cells.
+
+    The camera-timescale grid is rectangular but ragged: images segmented into fewer subsections than
+    the widest image leave padded trailing cells. A real footprint always has a finite center-pixel
+    latitude, so a finite ``Latitude`` marks a real cell. The footprint reconstruction and any per-cell
+    variable read (e.g. ``Cloud_Fraction``) both use this mask, so they select the same cells in the
+    same order.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        A camera-timescale dataset carrying a 2-D ``Latitude`` variable.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean array shaped ``(CAMERA_TIME, PSEUDOFOOTPRINT)``; ``True`` at real footprint cells.
+    """
+    return np.isfinite(np.asarray(dataset["Latitude"].values, dtype=float))
+
+
+def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootprint]:
+    """Rebuild the flat pseudo-footprint list from a CF-CAM-CAMTIME dataset.
+
+    The Camera Cloud Fraction algorithm segments each L1B camera image into pseudo-footprints and
+    writes them onto the rectangular ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid of CF-CAM-CAMTIME. Both
+    camera-timescale FMATCH modes take their footprints from that product rather than segmenting the
+    camera image themselves.
+
+    Real footprints are recovered in row-major order (``CAMERA_TIME`` ascending, then
+    ``PSEUDOFOOTPRINT`` ascending), skipping the padded cells (see :func:`camtime_real_cell_mask`).
+    Because the per-image column order is preserved, the FMATCH product built from the result lays out
+    its grid identically to the input.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        A CF-CAM-CAMTIME dataset carrying every name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
+
+    Returns
+    -------
+    list[PseudoFootprint]
+        The pseudo-footprints, in an order that regenerates the source grid.
+
+    Raises
+    ------
+    MissingCamtimeVariablesError
+        If ``dataset`` lacks any name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
+    """
+    missing = [name for name in CAMTIME_PSEUDOFOOTPRINT_VARIABLES if name not in dataset.variables]
+    if missing:
+        raise MissingCamtimeVariablesError(
+            f"The camera-timescale input lacks {', '.join(missing)}, which FMATCH needs to rebuild the camera "
+            "pseudo-footprints. Check that the input is a CF-CAM-CAMTIME product written by the Camera Cloud "
+            "Fraction algorithm, and report the missing variables to that algorithm's owners if it is."
+        )
+
+    def values(name: str, dtype: type | None = None) -> np.ndarray:
+        return np.asarray(dataset[name].values, dtype=dtype)
+
+    camera_time = dataset["CAMERA_TIME"].values
+    lat, lon, alt = values("Latitude", float), values("Longitude", float), values("Altitude", float)
+    sza = values("Solar_Zenith_Surface", float)
+    vza = values("Viewing_Zenith_Surface", float)
+    raa = values("Relative_Azimuth_Surface", float)
+    center_x, center_y = values("Center_Pixel_X"), values("Center_Pixel_Y")
+    px_min, px_max = values("Camera_Pixel_X_Min"), values("Camera_Pixel_X_Max")
+    py_min, py_max = values("Camera_Pixel_Y_Min"), values("Camera_Pixel_Y_Max")
+    bbox_lat_min, bbox_lat_max = values("PSF_Bbox_Lat_Min", float), values("PSF_Bbox_Lat_Max", float)
+    bbox_lon_min, bbox_lon_max = values("PSF_Bbox_Lon_Min", float), values("PSF_Bbox_Lon_Max", float)
+    bbox_flags, q_flags = values("PSF_Bbox_Flags"), values("Quality_Flag")
+
+    # np.nonzero is C-order (CAMERA_TIME ascending, then PSEUDOFOOTPRINT ascending), which is the order
+    # that rebuilds this grid and the order a boolean-mask read of a per-cell variable returns.
+    rows, cols = np.nonzero(camtime_real_cell_mask(dataset))
+    footprints: list[PseudoFootprint] = []
+    for row, col in zip(rows, cols, strict=True):
+        flags = int(bbox_flags[row, col])
+        bbox = BoundingBox(
+            float(bbox_lat_min[row, col]),
+            float(bbox_lat_max[row, col]),
+            float(bbox_lon_min[row, col]),
+            float(bbox_lon_max[row, col]),
+            bool(flags & CAMTIME_BBOX_WRAPS_DATELINE_BIT),
+            bool(flags & CAMTIME_BBOX_IS_POLAR_BIT),
+            bool(flags & CAMTIME_BBOX_TRUNCATED_BIT),
+        )
+        footprints.append(
+            PseudoFootprint(
+                time=camera_time[row],
+                # camera_pixel_*_max are inclusive; the slices are half-open.
+                slice_x=slice(int(px_min[row, col]), int(px_max[row, col]) + 1),
+                slice_y=slice(int(py_min[row, col]), int(py_max[row, col]) + 1),
+                center_ix=int(center_x[row, col]),
+                center_iy=int(center_y[row, col]),
+                latitude=float(lat[row, col]),
+                longitude=float(lon[row, col]),
+                altitude=float(alt[row, col]),
+                solar_zenith_angle=float(sza[row, col]),
+                viewing_zenith_angle=float(vza[row, col]),
+                relative_azimuth_angle=float(raa[row, col]),
+                bbox=bbox,
+                q_flags=CameraFootprintQualityFlag(int(q_flags[row, col])),
+            )
+        )
+    return footprints
 
 
 def _assemble_camtime_dataset(
@@ -1670,7 +1827,9 @@ def _assemble_radiometer_dataset(
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The arrays the FMATCH runner reads from L1B Daily, keyed by their L1B names: the
+        The arrays
+        :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`
+        returns, keyed by their L1B names: the
         ``RADIOMETER_TIME`` coordinate, each name in :data:`L1B_PASSTHROUGH_VARIABLES`
         and :data:`L1B_SCAN_REFERENCE_VARIABLES`, all the same length, and optionally
         ``Cone_Angle_Rate``.
