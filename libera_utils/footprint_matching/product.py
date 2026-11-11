@@ -144,7 +144,7 @@ RADIOMETER_TIME_KEY: str = "RADIOMETER_TIME"
 FMATCH_WORKERS_CONFIG_KEY: str = "FMATCH_WORKERS"
 # Chunks per worker: footprints are split into this many contiguous ranges per worker so
 # a slow chunk (a stepped source reloading, a dense swath) does not idle the others.
-_CHUNKS_PER_WORKER: int = 4
+_CHUNKS_PER_WORKER: int = 4  # TODO[LIBSDC-928]: Define the best value of this variable
 # Below this many footprints the pool's start-up costs more than it saves.
 _MIN_FOOTPRINTS_PER_WORKER: int = 50
 
