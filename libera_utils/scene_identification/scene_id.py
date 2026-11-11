@@ -650,9 +650,9 @@ class FootprintVariables(enum.StrEnum):
     CLOUD_PHASE_LOWER = "cloud_phase_lower"
     CLOUD_PHASE_UPPER = "cloud_phase_upper"
 
-    # Viewing-geometry angles (input variables). These are measured per footprint and read directly from the CERES
-    # SSF "Viewing_Angles" group. They are required classification variables for every scene definition (each scene
-    # CSV carries Solar_Zenith_Surface/Viewing_Zenith_Surface/Relative_Azimuth_Surface min/max columns). The string
+    # Viewing-geometry angles (input variables), one value per footprint. They are required classification variables
+    # for every scene definition (each scene CSV carries Solar_Zenith_Surface/Viewing_Zenith_Surface/
+    # Relative_Azimuth_Surface min/max columns). The string
     # values here must match those CSV variable names exactly, otherwise SceneDefinition.required_columns will not
     # line up with the dataset variables. They are the L1B names of the same quantities.
     SOLAR_ZENITH_ANGLE = "Solar_Zenith_Surface"
@@ -863,20 +863,11 @@ class FootprintData:
         Internal dataset of footprint data. During scene identification, scene IDs
         are added as variables to this dataset.
 
-    Methods
-    -------
-    process_ssf_and_camera(ssf_path, scene_definitions)
-        Process SSF and camera data to identify scenes
-    process_cldpx_viirs_geos_cam_groundscene()
-        Process alternative data format (not implemented)
-    process_clouds_groundscene()
-        Process cloud/ground scene data (not implemented)
-
     Notes
     -----
-    This class handles the complete pipeline from raw satellite data to scene
+    This class handles the complete pipeline from a FMATCH product to scene
     identification, including:
-    1. Data extraction from NetCDF files
+    1. Data extraction from FMATCH NetCDF files
     2. Missing value handling
     3. Derived field calculation (cloud fraction, optical depth, etc.)
     4. Scene ID matching based on classification rules
@@ -884,74 +875,6 @@ class FootprintData:
 
     def __init__(self, data: xr.Dataset):
         self._data = data
-
-    @classmethod
-    def from_ceres_ssf(cls, ssf_path: str | pathlib.Path | S3Path):
-        """Process SSF (Single Scanner Footprint) and camera data to identify scenes.
-
-        Reads CERES SSF data, extracts relevant variables, calculates derived fields, and identifies scene
-        classifications for each footprint.
-
-        Parameters
-        ----------
-        ssf_path : str | pathlib.Path | cloudpathlib.S3Path
-            Path (local or S3) to the SSF NetCDF file (CeresSSFNOAA20FM6Ed1C format).
-        Returns
-        -------
-        FootprintData
-            Processed footprint data object containing the extracted footprint variables. Scene IDs are added
-            later by :meth:`identify_scenes`.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the SSF file cannot be found or opened
-
-        Notes
-        -----
-        Processing steps:
-        1. Extract variables from SSF NetCDF groups
-        2. Apply maximum value thresholds to cloud properties
-        3. Calculate derived fields (cloud fraction, optical depth, wind speed, etc.)
-        4. Match footprints to scene IDs using provided scene definitions
-
-        Maximum value thresholds applied:
-        - Cloud fraction: 100%
-        - Cloud phase: 2 (ice)
-        - Optical depth: 500
-
-        Examples
-        --------
-        >>> footprint_data = FootprintData.from_ceres_ssf(Path("CERES_SSF_NOAA20_2024001.nc"))
-        >>> footprint_data.identify_scenes()
-        """
-        # netCDF4 opens only a filesystem path or an in-memory buffer, so the bytes are read through smart_open (local,
-        # S3 or gzip) and handed to netCDF4 as a buffer.
-        try:
-            with smart_open(ssf_path) as file_handle:
-                ssf_bytes = file_handle.read()
-        except FileNotFoundError as err:
-            raise FileNotFoundError(f"Unable to open input file: {ssf_path}") from err
-        with nc.Dataset(pathlib.Path(str(ssf_path)).name, memory=ssf_bytes) as file:
-            extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
-        footprint_data = cls(extracted_data)
-        # Format extracted data
-        max_cloud_fraction = 100.0
-        max_cloud_phase = 2.0
-        max_optical_depth = 500.0
-
-        columns_with_max_value = [
-            (FootprintVariables.CLOUD_FRACTION_LOWER, max_cloud_fraction),
-            (FootprintVariables.CLOUD_FRACTION_UPPER, max_cloud_fraction),
-            (FootprintVariables.CLOUD_PHASE_LOWER, max_cloud_phase),
-            (FootprintVariables.CLOUD_PHASE_UPPER, max_cloud_phase),
-            (FootprintVariables.OPTICAL_DEPTH_LOWER, max_optical_depth),
-            (FootprintVariables.OPTICAL_DEPTH_UPPER, max_optical_depth),
-        ]
-        for column_name, threshold in columns_with_max_value:
-            footprint_data._fill_column_above_max_value(column_name, threshold)
-
-        return footprint_data
 
     @classmethod
     def from_fmatch_cam(cls, fmatch_path: str | pathlib.Path | S3Path) -> "FootprintData":
@@ -1393,219 +1316,6 @@ class FootprintData:
             self._data[spec.output_var] = result
         else:
             raise ValueError(f"Cannot calculate fields - missing dependencies {spec.input_vars}")
-
-    def _convert_missing_values(self, input_missing_value: float):
-        """Convert input missing values in footprint data to output missing values.
-
-        This method standardizes missing value representations by converting from the input dataset's missing value
-        convention to the output convention used in FootprintData processing (np.nan).
-
-        Parameters
-        ----------
-        input_missing_value : float
-            Missing value indicator used in input data (e.g., -999.0, 9.96921e+36)
-
-        Notes
-        -----
-        Handles two cases:
-        - If input_missing_value is NaN: Uses np.isnan() for comparison
-        - If input_missing_value is numeric: Uses direct equality comparison
-
-        Modifies self._data in place, replacing all occurrences of input_missing_value
-        with np.nan.
-
-        Examples
-        --------
-        >>> footprint._data = xr.Dataset({'temp': [20.0, -999.0, 25.0]})
-        >>> footprint._convert_missing_values(-999.0)
-        >>> print(footprint._data['temp'].values)
-        array([20., nan, 25.])
-        """
-        if np.isnan(input_missing_value):
-            # For NaN input missing values, use isnan
-            result = self._data.where(~np.isnan(self._data), np.nan)
-        else:
-            # For numeric input missing values, use direct comparison
-            result = self._data.where(self._data != input_missing_value, np.nan)
-        self._data = result
-
-    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.nan):
-        """Replace values above threshold with fill value for specified column.
-
-        Parameters
-        ----------
-        column_name : str
-            Name of the column/variable to process
-        threshold : float
-            Maximum allowed value - values above this will be replaced
-        fill_value : float, optional
-            Value to use as replacement for out-of-range data. Default is NaN.
-
-        Raises
-        ------
-        ValueError
-            If the specified column is not found in the dataset
-
-        Examples
-        --------
-        >>> footprint._data = xr.Dataset({'Cloud_Fraction': [50, 120, 80]})
-        >>> footprint._fill_column_above_max_value('Cloud_Fraction', 100.0)
-        >>> print(footprint._data['Cloud_Fraction'].values)
-        array([50., nan, 80.])
-        """
-        if column_name not in self._data.variables:
-            raise ValueError(f"Column {column_name} not found in input data")
-        else:
-            self._data[column_name] = self._data[column_name].where(self._data[column_name] <= threshold, fill_value)
-
-    @staticmethod
-    def _extract_data_from_CeresSSFNOAA20FM6Ed1C(dataset: nc.Dataset) -> xr.Dataset:
-        """Extract data from CERES SSF file (using numpy arrays).
-
-        Parameters
-        ----------
-        dataset : netCDF4.Dataset
-            Open NetCDF4 dataset in CeresSSFNOAA20FM6Ed1C format
-
-        Returns
-        -------
-        xr.Dataset
-            Dataset containing extracted footprint variables as numpy arrays
-
-        """
-
-        try:
-            logger.info("Reading NetCDF data...")
-
-            # Extract 2D arrays - read to numpy first
-            cloud_fraction_np = np.array(dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"][:])
-            logger.debug(f"Cloud fraction shape: {cloud_fraction_np.shape}")
-
-            igbp_surface_type_np = np.array(dataset.groups["Surface_Map"].variables["surface_igbp_type"][:])
-            logger.debug(f"IGBP surface type shape: {igbp_surface_type_np.shape}")
-
-            cloud_phase_var = dataset.groups["Cloudy_Footprint_Area"].variables["cloud_particle_phase_37um_mean"]
-            cloud_phase_np = np.array(cloud_phase_var[:])
-            cloud_phase_fill_value = cloud_phase_var._FillValue if hasattr(cloud_phase_var, "_FillValue") else None
-            logger.debug(f"Cloud phase shape: {cloud_phase_np.shape}")
-            logger.debug(f"Cloud phase fill value: {cloud_phase_fill_value}")
-
-            optical_depth_np = np.array(
-                dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"][:]
-            )
-            logger.debug(f"Optical depth shape: {optical_depth_np.shape}")
-
-            # Extract 1D arrays - read to numpy first
-            surface_wind_u_np = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_u_vector"][:])
-            logger.debug(f"Surface wind U shape: {surface_wind_u_np.shape}")
-
-            surface_wind_v_np = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_v_vector"][:])
-            logger.debug(f"Surface wind V shape: {surface_wind_v_np.shape}")
-
-            clear_area_np = np.array(dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"][:])
-            logger.debug(f"Clear area shape: {clear_area_np.shape}")
-
-            # Viewing-geometry angles, one value per footprint, read from the CERES SSF "Viewing_Angles" group. These
-            # feed the geometry classification bins on every scene definition (their physical ranges are declared in
-            # the product definition). They are carried forward under their L1B names (FootprintVariables), e.g. the SSF
-            # "view_zenith_angle" becomes "Viewing_Zenith_Surface".
-            viewing_angles_group = dataset.groups["Viewing_Angles"]
-            solar_zenith_angle_np = np.array(viewing_angles_group.variables["solar_zenith_angle"][:])
-            viewing_zenith_angle_np = np.array(viewing_angles_group.variables["view_zenith_angle"][:])
-            relative_azimuth_angle_np = np.array(viewing_angles_group.variables["relative_azimuth_angle"][:])
-
-            # The SSF marks missing angles with a large float32 sentinel (_FillValue ~ 3.4e38). Convert those to NaN
-            # so they are treated as "no value" downstream: a NaN in any classification variable leaves the footprint
-            # unmatched (scene ID 0) in the scene matcher (see Scene.matches / _identify_vectorized), and NetCDF
-            # writing stores the NaN as-is (float variables carry no declared fill value; NaN is inherently missing).
-            for angle_name, angle_array in (
-                ("solar_zenith_angle", solar_zenith_angle_np),
-                ("view_zenith_angle", viewing_zenith_angle_np),
-                ("relative_azimuth_angle", relative_azimuth_angle_np),
-            ):
-                angle_variable = viewing_angles_group.variables[angle_name]
-                angle_fill_value = angle_variable._FillValue if hasattr(angle_variable, "_FillValue") else None
-                if angle_fill_value is not None:
-                    angle_array[angle_array == angle_fill_value] = np.nan
-            logger.debug("Converted viewing-angle fill values to NaN")
-
-            # Time of observation, one value per footprint. The downstream Libera SCENE-ID product is written on
-            # the same "RADIOMETER_TIME" axis as its L1B input (see the L1B_RAD product), so we carry the CERES SSF
-            # observation time through the pipeline as the RADIOMETER_TIME coordinate. In the CERES SSF format the
-            # time is stored as floating-point "days since 1970-01-01 00:00:00" UTC.
-            # Reference: https://ceres.larc.nasa.gov/data/#ssf-level-2
-            observation_time_np = np.array(dataset.groups["Time_and_Position"].variables["time"][:])
-            logger.debug(f"Observation time shape: {observation_time_np.shape}")
-
-            logger.info("NetCDF data read successfully")
-
-        except KeyError as e:
-            raise ValueError(f"Required variable or group not found in NetCDF file: {e}")
-        except Exception as e:
-            raise RuntimeError(f"Error reading NetCDF file: {e}")
-
-        # Slice 2D arrays to extract specific layers/estimates
-        logger.info("Extracting layers from 2D arrays...")
-
-        igbp_surface_type = igbp_surface_type_np[:, 0].astype(np.uint8)
-        cloud_fraction_lower = cloud_fraction_np[:, 1]
-        cloud_fraction_upper = cloud_fraction_np[:, 2]
-        cloud_phase_lower = cloud_phase_np[:, 0]
-        cloud_phase_upper = cloud_phase_np[:, 1]
-        optical_depth_lower = optical_depth_np[:, 0]
-        optical_depth_upper = optical_depth_np[:, 1]
-
-        # Process cloud phase arrays: replace fill values with NaN
-        if cloud_phase_fill_value is not None:
-            cloud_phase_lower = np.where(cloud_phase_lower == cloud_phase_fill_value, np.nan, cloud_phase_lower)
-            cloud_phase_upper = np.where(cloud_phase_upper == cloud_phase_fill_value, np.nan, cloud_phase_upper)
-
-        # Force all non-NaN values to be either 1 or 2 (whichever is closer)
-        # Round to nearest integer (1 or 2)
-        cloud_phase_lower = np.where(
-            ~np.isnan(cloud_phase_lower), np.round(np.clip(cloud_phase_lower, 1, 2)), cloud_phase_lower
-        )
-        cloud_phase_upper = np.where(
-            ~np.isnan(cloud_phase_upper), np.round(np.clip(cloud_phase_upper, 1, 2)), cloud_phase_upper
-        )
-
-        # Convert the CERES SSF observation time ("days since 1970-01-01") into absolute datetime64[ns] values.
-        # We build the timestamps by adding the (fractional) day offsets to the 1970-01-01 epoch. Using
-        # timedelta64[ns] keeps sub-second precision (the SSF sampling is well under a second apart). The absolute
-        # datetime representation lets write_libera_data_product re-encode it with whatever epoch/units the product
-        # definition specifies (the Libera convention is "nanoseconds since 1958-01-01").
-        ssf_epoch = np.datetime64("1970-01-01T00:00:00", "ns")
-        nanoseconds_per_day = 24 * 60 * 60 * 1_000_000_000
-        radiometer_time = ssf_epoch + (observation_time_np * nanoseconds_per_day).astype("timedelta64[ns]")
-
-        # Create xarray Dataset with numpy arrays
-        logger.info("Creating xarray Dataset...")
-
-        parsed_dataset = xr.Dataset(
-            {
-                FootprintVariables.IGBP_SURFACE_TYPE: ([RADIOMETER_TIME_DIMENSION], igbp_surface_type),
-                FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], surface_wind_u_np),
-                FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], surface_wind_v_np),
-                FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], clear_area_np),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], optical_depth_lower),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], optical_depth_upper),
-                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], cloud_fraction_lower),
-                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_fraction_upper),
-                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_lower),
-                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_upper),
-                FootprintVariables.SOLAR_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], solar_zenith_angle_np),
-                FootprintVariables.VIEWING_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], viewing_zenith_angle_np),
-                FootprintVariables.RELATIVE_AZIMUTH_ANGLE: ([RADIOMETER_TIME_DIMENSION], relative_azimuth_angle_np),
-                # RADIOMETER_TIME's name equals its dimension, so xarray treats it as a dimension coordinate the
-                # moment this Dataset is built. It rides through scene identification as that coordinate; the
-                # runner's to_time_product() step is then idempotent for it.
-                RADIOMETER_TIME_DIMENSION: ([RADIOMETER_TIME_DIMENSION], radiometer_time),
-            }
-        )
-
-        logger.info(f"Dataset created successfully with {parsed_dataset.sizes[RADIOMETER_TIME_DIMENSION]} footprints")
-
-        return parsed_dataset
 
     def to_time_product(self, time_variable: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
         """Return the footprint data ready to write on its record grid.
