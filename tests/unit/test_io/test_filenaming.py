@@ -794,6 +794,50 @@ def test_applicable_date_midpoint_calculation():
     assert filename.applicable_date == expected_midpoint
 
 
+@pytest.mark.parametrize(
+    ("data_level", "product_name"),
+    [("L1A", "NOM-HK-SWC-365NM-TRIMMED"), ("CAL", "SWC-365NM")],
+)
+def test_calibration_event_files_are_dated_by_their_start_day(data_level, product_name):
+    """A TRIMMED or CAL event crossing midnight is dated and archived on the UTC day it started."""
+    filename = filenaming.LiberaDataProductFilename.from_filename_parts(
+        data_level=data_level,
+        product_name=product_name,
+        version="V1-0-0",
+        utc_start=dt.datetime(2027, 1, 2, 23, 50, 0, tzinfo=dt.UTC),
+        utc_end=dt.datetime(2027, 1, 3, 0, 20, 0, tzinfo=dt.UTC),
+        revision=dt.datetime(2027, 1, 3, 8, 9, 10, 123456, tzinfo=dt.UTC),
+    )
+
+    assert filename.applicable_date == dt.date(2027, 1, 2)
+    assert filename.archive_prefix == f"{product_name}/2027/01/02"
+
+
+def test_calibration_event_file_longer_than_a_day_does_not_warn():
+    """An event file is dated by its start whatever its length, so its span is not a warning."""
+    filename = filenaming.LiberaDataProductFilename.from_filename_parts(
+        data_level="CAL",
+        product_name="LUNAR-SOUTH-POLE",
+        version="V1-0-0",
+        utc_start=dt.datetime(2027, 1, 2, 12, 0, 0, tzinfo=dt.UTC),
+        utc_end=dt.datetime(2027, 1, 4, 0, 0, 0, tzinfo=dt.UTC),
+        revision=dt.datetime(2027, 1, 4, 8, 9, 10, 123456, tzinfo=dt.UTC),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert filename.applicable_date == dt.date(2027, 1, 2)
+
+
+def test_trimmed_filename_start_is_the_event_partition_key():
+    """The event's partition key is its UTC start time, to the second, read back from the TRIMMED filename."""
+    name = "LIBERA_L1A_NOM-HK-SWC-365NM-TRIMMED_V1-0-0_20270102T235012_20270103T002034_R20270103T080910123456.nc"
+    filename = filenaming.LiberaDataProductFilename(name)
+
+    assert filename.data_product_id is DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed
+    assert filename.filename_parts.utc_start == dt.datetime(2027, 1, 2, 23, 50, 12, tzinfo=dt.UTC)
+
+
 def test_applicable_date_warning_message():
     """Test that the warning message is correctly formatted"""
     filename = filenaming.LiberaDataProductFilename.from_filename_parts(

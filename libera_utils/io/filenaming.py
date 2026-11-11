@@ -20,6 +20,7 @@ from libera_utils.constants import (
     ManifestType,
     ProcessingStepIdentifier,
 )
+from libera_utils.obsids import is_calibration_event_product
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{PRINTABLE_TS_FORMAT}%f"
@@ -703,16 +704,23 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
     @property
     def applicable_date(self) -> date:
-        """Property that returns the applicable date based on the midpoint of start and end times.
+        """Property that returns the UTC date a file is archived and recorded under.
 
-        Issues a warning if the time range covers more than 24 hours.
+        A calibration event file (the TRIMMED or CAL product of a calibration ObsID, see
+        :func:`~libera_utils.obsids.is_calibration_event_product`) holds one event and is dated by the
+        UTC day the event started, the date of ``utc_start``, whatever its length. Every other file is
+        dated by the midpoint of ``utc_start`` and ``utc_end``, with a warning if its time range covers
+        more than 24 hours.
 
         Returns
         -------
         : datetime.date
-            The date of the midpoint between utc_start and utc_end
+            The UTC date of ``utc_start`` for a calibration event file, otherwise of the midpoint between
+            ``utc_start`` and ``utc_end``.
         """
         utc_start = self.filename_parts.utc_start
+        if is_calibration_event_product(self.data_product_id):
+            return utc_start.date()
         utc_end = self.filename_parts.utc_end
 
         # Check if time range covers more than 24 hours and issue warning

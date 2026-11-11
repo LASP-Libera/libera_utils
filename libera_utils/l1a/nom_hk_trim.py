@@ -1,12 +1,8 @@
 """Trim decoded NOM-HK L1A Datasets to contiguous calibration ObsID runs.
 
-One file is written per contiguous ObsID run, stamped with the run's *calibration dependency
-family* ProductID rather than its ObsID: ObsIDs that downstream algorithms process identically
-share one TRIMMED ProductID (see :mod:`libera_utils.obsids`). A day therefore normally yields
-several files sharing one family ProductID — six ``NOM-HK-SWC-FAMILY-TRIMMED`` granules for the
-six shortwave LED ObsIDs, for example — distinguished by their filename time ranges. Each file
-covers exactly one ObsID run, and the ObsID is read from the ``ICIE__SW_OBSID_*`` variable the
-file carries.
+One file is written per contiguous ObsID run, stamped with that ObsID's own TRIMMED ProductID
+(see :mod:`libera_utils.obsids`). Files of one ProductID are told apart by their filename time
+ranges.
 """
 
 from __future__ import annotations
@@ -30,7 +26,7 @@ from libera_utils.io.product_definition import (
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
 from libera_utils.l1a.packet_ordering import out_of_order_positions
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
-from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
+from libera_utils.obsids import NomHkObsidSource, ObsIdSpec, get_trimmed_obsid_spec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
 
 logger = logging.getLogger(__name__)
@@ -46,7 +42,7 @@ def get_trimmed_nom_hk_product_definition(
     Parameters
     ----------
     trimmed_product : DataProductIdentifier
-        A known TRIMMED NOM-HK calibration family ProductID from the ObsID registry.
+        A TRIMMED NOM-HK ProductID from the ObsID registry.
 
     Returns
     -------
@@ -56,13 +52,15 @@ def get_trimmed_nom_hk_product_definition(
     Raises
     ------
     ValueError
-        If ``trimmed_product`` is not a registered TRIMMED family ProductID.
+        If ``trimmed_product`` is not a TRIMMED ProductID in the ObsID registry.
     """
-    if trimmed_product not in TRIM_FAMILIES:
+    try:
+        get_trimmed_obsid_spec(trimmed_product)
+    except KeyError as exc:
         raise ValueError(
-            f"ProductID {trimmed_product.value!r} is not a known TRIMMED NOM-HK calibration family "
-            f"product. Expected one of: {sorted(product.value for product in TRIM_FAMILIES)}"
-        )
+            f"ProductID {trimmed_product.value!r} is not a TRIMMED NOM-HK product in the ObsID registry. "
+            "Register the calibration ObsID in libera_utils/data/obsid_registry.csv first."
+        ) from exc
 
     base = LiberaDataProductDefinition.from_yaml(get_l1a_product_definition_path(LiberaApid.icie_nom_hk.value))
     updated_attrs = {**base.attributes, "ProductID": trimmed_product.value}
@@ -179,12 +177,10 @@ def write_trimmed_nom_hk_products(
 ) -> list[LiberaDataProductFilename]:
     """Detect ObsID runs in ``nom_hk`` and write one TRIMMED file per run.
 
-    Each file is stamped with its run's calibration dependency family ProductID, so several
-    files written from one Dataset normally share a ProductID — one per ObsID in that family —
-    and are told apart by their filename time ranges.
+    Each file is stamped with its run's ObsID's TRIMMED ProductID.
 
     When the same ``(source, obsid)`` appears in multiple disjoint runs, each run
-    is written separately and a warning is logged (unexpected in normal ops).
+    is written separately and a warning is logged.
 
     Parameters
     ----------
@@ -222,14 +218,14 @@ def write_trimmed_nom_hk_products(
         if n > 1:
             logger.warning(
                 "ObsID %s on %s (%s) appears in %d disjoint runs in this NOM-HK Dataset; "
-                "writing separate TRIMMED files per run (unexpected in normal operations)",
+                "writing separate TRIMMED files per run",
                 obsid,
                 src.name,
                 src.value,
                 n,
             )
 
-    # One definition per distinct family, not per run; dict.fromkeys keeps the run order
+    # One definition per distinct ProductID, not per run; dict.fromkeys keeps the run order
     distinct_products = dict.fromkeys(spec.trimmed_product for spec, _ in runs)
     definitions = {product: get_trimmed_nom_hk_product_definition(product) for product in distinct_products}
 
@@ -248,7 +244,7 @@ def write_trimmed_nom_hk_products(
             add_archive_path_prefix=add_archive_path_prefix,
         )
         logger.info(
-            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s into family %s",
+            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s as %s",
             filename.path.name,
             trimmed.sizes[PACKET_DIM],
             spec.obsid,

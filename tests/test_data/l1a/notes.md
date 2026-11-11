@@ -11,13 +11,10 @@ Compact subset of DITL NOM-HK for integration tests of `libera_utils.l1a.nom_hk_
 
 Keeps RAD cal runs with a 5-packet pad of surrounding non-cal ObsIDs:
 
-| ObsID | CAL product   | Trimmed family ProductID    | Packets in run |
-| ----: | ------------- | --------------------------- | -------------: |
-|   257 | SWC-405NM     | NOM-HK-SWC-FAMILY-TRIMMED   |            236 |
-|   385 | SOLAR-TOT-PRI | NOM-HK-SOLAR-FAMILY-TRIMMED |             81 |
-|   386 | SOLAR-LW-PRI  | NOM-HK-SOLAR-FAMILY-TRIMMED |             81 |
-
-ObsIDs 385 and 386 belong to the same trimmed family, so they produce two files sharing
-`NOM-HK-SOLAR-FAMILY-TRIMMED` that differ only in their filename time ranges.
+| ObsID | CAL product   | TRIMMED ProductID            | Packets in run |
+| ----: | ------------- | ---------------------------- | -------------: |
+|   257 | SWC-405NM     | NOM-HK-SWC-405NM-TRIMMED     |            236 |
+|   385 | SOLAR-TOT-PRI | NOM-HK-SOLAR-TOT-PRI-TRIMMED |             81 |
+|   386 | SOLAR-LW-PRI  | NOM-HK-SOLAR-LW-PRI-TRIMMED  |             81 |
 
 No camera/WFOV cal ObsIDs are present (see TODO[LIBSDC-567]).

@@ -45,6 +45,11 @@ assert fn.applicable_date.isoformat() == "2027-01-02"  # midpoint of the time ra
 assert fn.ummg_metadata_filename.name.endswith(".cmr.json")  # companion UMM-G metadata filename
 ```
 
+`applicable_date` is the UTC date a file is archived under (`archive_prefix`). It is the date of the
+midpoint of the time range, except for a calibration event file (a calibration ObsID's TRIMMED or
+CAL product, which holds one event), which is dated by the day its `utc_start` falls on. See
+[the ObsID Registry page](obsid_registry.md#calibration-event-files).
+
 ## Hashing and Equality
 
 All `Filename` classes are hashable and compare equal when their paths are equal, so they can be used as dictionary

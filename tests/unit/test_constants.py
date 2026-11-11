@@ -12,7 +12,6 @@ from libera_utils.constants import (
     ManifestType,
     ProcessingStepIdentifier,
 )
-from libera_utils.obsids import get_family_specs
 
 
 class TestManifestType:
@@ -143,17 +142,47 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
-            # L1A calibration dependency family trimmed NOM-HK products
-            "l1a_icie_nom_hk_gain_family_trimmed",
-            "l1a_icie_nom_hk_swc_family_trimmed",
-            "l1a_icie_nom_hk_lwc_family_trimmed",
-            "l1a_icie_nom_hk_solar_family_trimmed",
-            "l1a_icie_nom_hk_ct_video_family_trimmed",
-            "l1a_icie_nom_hk_raps_video_family_trimmed",
-            "l1a_icie_nom_hk_darks_family_trimmed",
-            "l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed",
-            "l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed",
-            "l1a_icie_nom_hk_lunar_family_trimmed",
+            # L1A calibration event TRIMMED NOM-HK products (per ObsID)
+            "l1a_icie_nom_hk_gain_trimmed",
+            "l1a_icie_nom_hk_noise_trimmed",
+            "l1a_icie_nom_hk_swc_365nm_trimmed",
+            "l1a_icie_nom_hk_swc_405nm_trimmed",
+            "l1a_icie_nom_hk_swc_520nm_trimmed",
+            "l1a_icie_nom_hk_swc_635nm_trimmed",
+            "l1a_icie_nom_hk_swc_840nm_trimmed",
+            "l1a_icie_nom_hk_swc_1550nm_trimmed",
+            "l1a_icie_nom_hk_lwc_310k_trimmed",
+            "l1a_icie_nom_hk_lwc_320k_trimmed",
+            "l1a_icie_nom_hk_lwc_335k_trimmed",
+            "l1a_icie_nom_hk_lwc_300k_trimmed",
+            "l1a_icie_nom_hk_lwc_305k_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_tot_pri_trimmed",
+            "l1a_icie_nom_hk_solar_lw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_sw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_tot_sec_trimmed",
+            "l1a_icie_nom_hk_solar_lw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_sw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_tot_ter_trimmed",
+            "l1a_icie_nom_hk_solar_lw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_sw_ter_trimmed",
+            "l1a_icie_nom_hk_lunar_south_pole_trimmed",
+            "l1a_icie_nom_hk_lunar_north_pole_trimmed",
+            "l1a_icie_nom_hk_ct_video_6min_trimmed",
+            "l1a_icie_nom_hk_ct_video_12min_trimmed",
+            "l1a_icie_nom_hk_ct_video_18min_trimmed",
+            "l1a_icie_nom_hk_raps_video_6min_trimmed",
+            "l1a_icie_nom_hk_raps_video_12min_trimmed",
+            "l1a_icie_nom_hk_raps_video_18min_trimmed",
+            "l1a_icie_nom_hk_darks_of_darks_trimmed",
+            "l1a_icie_nom_hk_led_of_dark_trimmed",
+            "l1a_icie_nom_hk_nominal_darks_trimmed",
+            "l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed",
+            "l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed",
+            "l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed",
+            "l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed",
             # Calibration Event Products (per ObsID)
             "cal_gain",
             "cal_noise",
@@ -332,11 +361,14 @@ class TestDataProductIdentifier:
         assert not aliases, f"Members whose ProductID repeats an earlier member's: {aliases}"
 
     def test_trimmed_nom_hk_products_metadata(self):
-        """Test L1A calibration family trimmed NOM-HK products associate with NOM-HK APID."""
-        trimmed = DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed
-        assert trimmed.data_level is DataLevel.L1A
-        assert trimmed.value == "NOM-HK-GAIN-FAMILY-TRIMMED"
-        assert trimmed.associated_apid is LiberaApid.icie_nom_hk
+        """Every TRIMMED NOM-HK product is L1A, associates with the NOM-HK APID and is named for its CAL product."""
+        trimmed_products = [product for product in DataProductIdentifier if product.name.endswith("_trimmed")]
+        assert len(trimmed_products) == 40
+        for trimmed in trimmed_products:
+            cal = DataProductIdentifier[f"cal_{trimmed.name.removeprefix('l1a_icie_nom_hk_').removesuffix('_trimmed')}"]
+            assert trimmed.data_level is DataLevel.L1A
+            assert trimmed.value == f"NOM-HK-{cal.value}-TRIMMED"
+            assert trimmed.associated_apid is LiberaApid.icie_nom_hk
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
@@ -367,11 +399,47 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
-            # Radiometer calibration dependency family combine steps
-            "cal_gain_family",
-            "cal_swc_family",
-            "cal_lwc_family",
-            "cal_solar_family",
+            # Calibration combiner steps (per CAL product)
+            "cal_combine_gain",
+            "cal_combine_noise",
+            "cal_combine_swc_365nm",
+            "cal_combine_swc_405nm",
+            "cal_combine_swc_520nm",
+            "cal_combine_swc_635nm",
+            "cal_combine_swc_840nm",
+            "cal_combine_swc_1550nm",
+            "cal_combine_lwc_310k",
+            "cal_combine_lwc_320k",
+            "cal_combine_lwc_335k",
+            "cal_combine_lwc_300k",
+            "cal_combine_lwc_305k",
+            "cal_combine_solar_ssw_pri",
+            "cal_combine_solar_tot_pri",
+            "cal_combine_solar_lw_pri",
+            "cal_combine_solar_sw_pri",
+            "cal_combine_solar_ssw_sec",
+            "cal_combine_solar_tot_sec",
+            "cal_combine_solar_lw_sec",
+            "cal_combine_solar_sw_sec",
+            "cal_combine_solar_ssw_ter",
+            "cal_combine_solar_tot_ter",
+            "cal_combine_solar_lw_ter",
+            "cal_combine_solar_sw_ter",
+            "cal_combine_lunar_south_pole",
+            "cal_combine_lunar_north_pole",
+            "cal_combine_ct_video_6min",
+            "cal_combine_ct_video_12min",
+            "cal_combine_ct_video_18min",
+            "cal_combine_raps_video_6min",
+            "cal_combine_raps_video_12min",
+            "cal_combine_raps_video_18min",
+            "cal_combine_darks_of_darks",
+            "cal_combine_led_of_dark",
+            "cal_combine_nominal_darks",
+            "cal_combine_rad_viirs_lunar_pos_start",
+            "cal_combine_rad_viirs_lunar_neg_start",
+            "cal_combine_wfov_viirs_lunar_pos_start",
+            "cal_combine_wfov_viirs_lunar_neg_start",
             # L2 steps — camera cloud fraction track
             "l2_unf_rad_cam",
             "l2_cf_cam",
@@ -489,25 +557,24 @@ class TestProcessingStepIdentifier:
             assert name.endswith("-docker-repo")
 
     def test_cal_steps_share_ecr_name(self):
-        """Radiometer cal-combine steps share one ECR repository name for CDK reuse."""
+        """Calibration combiner steps share one ECR repository name for CDK reuse."""
         cal_steps = [step for step in ProcessingStepIdentifier if str(step).startswith("cal-")]
-        assert len(cal_steps) == 4
-        shared = {step.ecr_name for step in cal_steps}
-        assert shared == {"cal-rad-docker-repo"}
+        assert len(cal_steps) == 40
+        assert all(str(step).startswith("cal-combine-") for step in cal_steps)
+        assert {step.ecr_name for step in cal_steps} == {"cal-rad-docker-repo"}
         assert ProcessingStepIdentifier.l1b_rad.ecr_name == "l1b-rad-docker-repo"
 
-    def test_cal_family_steps_produce_their_families_cal_products(self):
-        """Each cal family step declares exactly the CAL products of its trimmed family's ObsIDs."""
-        expected = {
-            ProcessingStepIdentifier.cal_gain_family: DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed,
-            ProcessingStepIdentifier.cal_swc_family: DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed,
-            ProcessingStepIdentifier.cal_lwc_family: DataProductIdentifier.l1a_icie_nom_hk_lwc_family_trimmed,
-            ProcessingStepIdentifier.cal_solar_family: DataProductIdentifier.l1a_icie_nom_hk_solar_family_trimmed,
-        }
-        for step, trimmed_product in expected.items():
-            family_cal_products = [spec.cal_product for spec in get_family_specs(trimmed_product)]
-            assert step.products == family_cal_products
+    def test_each_cal_product_has_one_combiner_step_producing_only_it(self):
+        """Every CAL product is produced by exactly one step, cal_combine_<x>, which produces nothing else."""
+        cal_products = [product for product in DataProductIdentifier if product.data_level is DataLevel.CAL]
+        assert len(cal_products) == 40
+        for cal in cal_products:
+            producers = [step for step in ProcessingStepIdentifier if cal in step.products]
+            step = ProcessingStepIdentifier[f"cal_combine_{cal.name.removeprefix('cal_')}"]
+            assert producers == [step]
+            assert step.products == [cal]
             assert step.level is DataLevel.CAL
+            assert ProcessingStepIdentifier.from_data_product(cal) is step
 
     def test_l2_team_iam_role_property(self):
         """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""

@@ -880,18 +880,15 @@ TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (a
 the filename product token) changes. Science/scan modes (ObsIDs 0-2, 128, 132, and 136–140)
 are cataloged but do not emit TRIMMED files.
 
-The `ProductID` names the run's **calibration dependency family**
-(`NOM-HK-SWC-FAMILY-TRIMMED`, `NOM-HK-SOLAR-FAMILY-TRIMMED`, …) rather than its individual
-ObsID, and one processing step is deployed per family. One day therefore normally produces
-several files sharing a family `ProductID` — one per ObsID in that family — distinguished
-by their filename time ranges. Each file covers exactly one ObsID run, and the ObsID stays
-readable from the `ICIE__SW_OBSID_RAD` / `ICIE__SW_OBSID_WFOV` variable inside the file.
+Each file's `ProductID` is its ObsID's own TRIMMED product (`NOM-HK-SWC-365NM-TRIMMED`,
+`NOM-HK-SOLAR-TOT-PRI-TRIMMED`, …). Each file covers exactly one ObsID run, and the ObsID
+stays readable from the `ICIE__SW_OBSID_RAD` / `ICIE__SW_OBSID_WFOV` variable inside the
+file. Files of one `ProductID` are told apart by their filename time ranges, and each is
+dated by the UTC day its run started.
 
-Normal operations expect each calibration ObsID at most once per day. If the same
-`(source, obsid)` appears in multiple disjoint runs, each run is written as a separate
-file and a warning is logged. Two _different_ ObsIDs of one family are not that case and
-do not warn.
+If the same `(source, obsid)` appears in multiple disjoint runs, each run is written as a
+separate file and a warning is logged.
 
 See [the ObsID Registry page](obsid_registry.md) for the `(source, obsid)` keying, how
-downstream repos dispatch cal-combine steps from it, and how to register a new calibration
+downstream combiners dispatch from it, and how to register a new calibration
 ObsID.
