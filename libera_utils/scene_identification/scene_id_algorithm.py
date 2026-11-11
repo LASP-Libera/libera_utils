@@ -89,7 +89,7 @@ class SceneIdRunnerConfig:
 # FMATCH-CAM, but that reader is not implemented yet (the FMATCH step is a separate milestone), so this runner
 # currently reads placeholder CERES SSF files via from_ceres_ssf. CERES SSF files are NOT Libera products, so
 # input_product_id is None to select the "keep non-Libera-product files" input-collection mode in collect_input_files.
-# Runs ERBE and unfiltering (both keyed off surface_type and cloud_fraction) but not TRMM, whose variables are absent.
+# Runs ERBE and unfiltering (both keyed off Surface_Type and Cloud_Fraction) but not TRMM, whose variables are absent.
 # TODO[LIBSDC-794]: switch reader to FootprintData.from_fmatch_cam and input_product_id to aux_fmatch_cam once the
 # FMATCH-CAM product format is available.
 CAM_CONFIG = SceneIdRunnerConfig(

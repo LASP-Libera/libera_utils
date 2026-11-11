@@ -80,7 +80,7 @@ class TestVIIRSCldpropD3ReaderLoadSpatialRegion:
 
         Builds a fixture whose cloud fraction, optical thickness and top pressure groups hold 0.6, 4.0 and 700.0,
         queries a box just larger than the 4 x 8 grid and asserts a float32 ``(2, 4, 8)`` grid with row 0 at 4.0 and
-        row 1 at 700.0, so the unread cloud fraction group appears nowhere, the source ``"viirs_cldprop_d3"`` and no
+        row 1 at 700.0, so the unread cloud fraction group appears nowhere, the source ``"VIIRS_CLDPROP_D3"`` and no
         timestamp source.
         """
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
@@ -90,7 +90,7 @@ class TestVIIRSCldpropD3ReaderLoadSpatialRegion:
         assert np.allclose(data[0], 4.0, atol=1e-4)  # cloud_optical_thickness
         assert np.allclose(data[1], 700.0, atol=1e-3)  # cloud_top_pressure
         samples = reader.samples_in(_full_bbox(), _T)
-        assert samples.source == "viirs_cldprop_d3"
+        assert samples.source == "VIIRS_CLDPROP_D3"
         assert samples.timestamp_source is None
 
     def test_fill_value_comes_from_the_field(self, tmp_path):

@@ -63,9 +63,11 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 
 from libera_utils.footprint_matching.types import (
+    STANDARD_DEVIATION_SUFFIX,
     BoundingBox,
     GridSamples,
     PointSamples,
+    ProductStack,
     SampleSet,
     TimeMatch,
     VariableSpec,
@@ -258,8 +260,10 @@ class AncillaryReader(abc.ABC):
     Class-Level Attributes (required on every concrete subclass)
     -------------------------------------------------------------
     READER_KEY : str
-        Unique string key used to register the reader in ``ReaderRegistry``.
-        Examples: ``"igbp"``, ``"nise"``, ``"era5_surface"``, ``"viirs_aod"``.
+        Unique string key used to register the reader in ``ReaderRegistry``, and the
+        prefix of its product variable names, spelled as in the product (Camel_Case,
+        acronyms in capitals). Examples: ``"IGBP"``, ``"NISE"``, ``"ERA5_Surface"``,
+        ``"VIIRS_AOD"``.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
         for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
@@ -270,8 +274,9 @@ class AncillaryReader(abc.ABC):
         measure from it, unless the reader measures the spacing on the granule itself
         (``PointSamples.spacing_km``), which then takes precedence.
     VARIABLES : tuple[VariableSpec, ...]
-        Ordered tuple of the variables this reader *reads from its source*. Axis 0 of
-        every ``values`` array follows this order.
+        Ordered tuple of the variables this reader *reads from its source*, each named
+        as in the product without the ``READER_KEY`` prefix (e.g. ``"Sea_Ice_Concentration"``).
+        Axis 0 of every ``values`` array follows this order.
     TIME_MATCH : TimeMatch
         The time-selection policy (see the module docstring).
     PASS_WINDOW : np.timedelta64 or None
@@ -290,6 +295,10 @@ class AncillaryReader(abc.ABC):
         derived during PSF aggregation rather than read (e.g. IGBP's ranked scenes).
         Standard-deviation companions are added automatically (see
         ``product_variable_specs``).
+    PRODUCT_STACKS : tuple[ProductStack, ...]
+        Product variables that stack several product specs along a second product
+        dimension (e.g. ERA5's pressure levels). A stack whose members all have
+        standard-deviation companions gains a companion stack (see ``product_stacks``).
 
     Parameters
     ----------
@@ -318,6 +327,7 @@ class AncillaryReader(abc.ABC):
     MAX_TIME_OFFSET: np.timedelta64 | None = None
     TIMESTAMP_SOURCE: str | None = None
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = ()
+    PRODUCT_STACKS: tuple[ProductStack, ...] = ()
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Validate and register every concrete subclass in ReaderRegistry.
@@ -334,7 +344,9 @@ class AncillaryReader(abc.ABC):
         TypeError
             If a concrete subclass lacks a required class attribute, declares a window
             attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
-            registered to a different class.
+            registered to a different class, or declares a ``PRODUCT_STACKS`` entry that names
+            a spec it does not produce, stacks a spec twice, takes the name of a product spec,
+            or stacks specs only some of which have standard-deviation companions.
         """
         super().__init_subclass__(**kwargs)
         # ABCMeta sets __abstractmethods__ only after type.__new__ returns, and this hook runs inside
@@ -373,6 +385,8 @@ class AncillaryReader(abc.ABC):
                 "remove its MAX_TIME_OFFSET / PASS_WINDOW."
             )
 
+        cls._check_product_stacks()
+
         from libera_utils.footprint_matching.readers.registry import ReaderRegistry  # noqa: PLC0415
 
         registered = ReaderRegistry._registry.get(key)
@@ -387,19 +401,85 @@ class AncillaryReader(abc.ABC):
     def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
         """Return every variable this reader contributes to the product definition.
 
-        This is the full set of *output* variables -- what appears in the FMATCH
-        product definition YAMLs and what the product/test cross-check is built
-        against. It is distinct from ``VARIABLES`` (the smaller set actually read
-        from the source file) and is composed of, in order:
+        This is the full set of *output* variables -- what appears, prefixed with
+        ``<READER_KEY>_``, in the FMATCH product definition YAMLs and what the
+        product/test cross-check is built against. It is distinct from ``VARIABLES``
+        (the smaller set actually read from the source file) and is composed of, in order:
 
         1. each read variable in ``VARIABLES``;
-        2. a ``<name>_standard_deviation`` companion for every *continuous*
+        2. a ``<name>_Standard_Deviation`` companion for every *continuous*
            (mean-aggregated) read variable, inserted right after its parent by
            :func:`~libera_utils.footprint_matching.types.with_standard_deviation_companions`;
         3. any reader-specific derived outputs declared in
            ``ADDITIONAL_PRODUCT_VARIABLES`` (e.g. IGBP ranked scenes).
         """
         return with_standard_deviation_companions(cls.VARIABLES) + cls.ADDITIONAL_PRODUCT_VARIABLES
+
+    @classmethod
+    def product_stacks(cls) -> tuple[ProductStack, ...]:
+        """Return every stacked product variable this reader contributes.
+
+        Each stack in ``PRODUCT_STACKS``, followed by a ``<name>_Standard_Deviation``
+        stack of its members' companions when its members are continuous. The stacked
+        members leave the product as separate variables; every other spec in
+        ``product_variable_specs`` stays a 1-D product variable.
+        """
+        product_names = {spec.name for spec in cls.product_variable_specs()}
+        stacks: list[ProductStack] = []
+        for stack in cls.PRODUCT_STACKS:
+            stacks.append(stack)
+            companions = tuple(f"{member}{STANDARD_DEVIATION_SUFFIX}" for member in stack.members)
+            if companions[0] in product_names:
+                stacks.append(
+                    ProductStack(
+                        name=f"{stack.name}{STANDARD_DEVIATION_SUFFIX}",
+                        dimension=stack.dimension,
+                        coordinate_values=stack.coordinate_values,
+                        members=companions,
+                    )
+                )
+        return tuple(stacks)
+
+    @classmethod
+    def _check_product_stacks(cls) -> None:
+        """Reject a ``PRODUCT_STACKS`` declaration the product could not be built from.
+
+        Raises
+        ------
+        TypeError
+            If a stack names a spec the reader does not produce, a spec is stacked twice,
+            a stack takes the name of a product spec, or a stack's members have
+            standard-deviation companions for some members but not others.
+        """
+        product_names = {spec.name for spec in cls.product_variable_specs()}
+        stacked: list[str] = []
+        for stack in cls.PRODUCT_STACKS:
+            unknown = [member for member in stack.members if member not in product_names]
+            if unknown:
+                raise TypeError(
+                    f"Reader {cls.__name__!r}: ProductStack {stack.name!r} stacks {unknown}, which are not among "
+                    "its product variable specs. Stack only names the reader's VARIABLES or "
+                    "ADDITIONAL_PRODUCT_VARIABLES produce."
+                )
+            if stack.name in product_names:
+                raise TypeError(
+                    f"Reader {cls.__name__!r}: ProductStack {stack.name!r} has the name of one of its own product "
+                    "specs, so the product would hold two variables of that name. Rename the stack."
+                )
+            has_companion = [f"{member}{STANDARD_DEVIATION_SUFFIX}" in product_names for member in stack.members]
+            if any(has_companion) and not all(has_companion):
+                raise TypeError(
+                    f"Reader {cls.__name__!r}: ProductStack {stack.name!r} mixes members with and without a "
+                    "standard-deviation companion, so its companion stack would have gaps. Stack specs that "
+                    "aggregate the same way."
+                )
+            stacked.extend(stack.members)
+        repeated = sorted({name for name in stacked if stacked.count(name) > 1})
+        if repeated:
+            raise TypeError(
+                f"Reader {cls.__name__!r}: specs {repeated} appear in more than one ProductStack. "
+                "Each spec belongs to at most one stacked product variable."
+            )
 
     def __init__(self, file_paths: Sequence[Path]) -> None:
         if isinstance(file_paths, (str, Path)):

@@ -197,20 +197,20 @@ class _CLDPIXField(NamedTuple):
 
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
-    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", None),
-    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", None),
-    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", None),
-    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", None),
-    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", None),
-    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None),
+    _CLDPIXField("Cloud_Optical_Depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", None),
+    _CLDPIXField("Cloud_Water_Path", "Cld_Water_Path", "weighted_mean", None),
+    _CLDPIXField("Cloud_Effective_Temperature", "Eff_Cld_Temp", "weighted_mean", None),
+    _CLDPIXField("Cloud_Effective_Height", "Eff_Cld_Height", "weighted_mean", None),
+    _CLDPIXField("Cloud_Effective_Pressure", "Eff_Cld_Pressure", "weighted_mean", None),
+    _CLDPIXField("Cloud_Top_Height", "Top_Cld_Height", "weighted_mean", None),
     # Effective cloud particle radius (μm). Cld_Radius is the combined
     # (water+ice blended) effective radius produced by the CERES cloud
     # retrieval algorithm, distinct from the phase-separated radii
     # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
-    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", None),
+    _CLDPIXField("Cloud_Particle_Radius", "Cld_Radius", "weighted_mean", None),
     # --- categorical (mode-aggregated) ---
-    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", 5),
-    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", 4),
+    _CLDPIXField("Cloud_Particle_Phase", "Cloud_Particle_Phase", "weighted_mode", 5),
+    _CLDPIXField("Cloud_Mask", "CERES_Cloud_Mask", "weighted_mode", 4),
 )
 
 
@@ -232,7 +232,7 @@ class CLDPIXReader(PassReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"cldpix"``.
+        Registry key ``"CLDPIX"``.
     RESOLUTION_KM : float
         ~1 km (VIIRS imager pixel scale), the fallback when a granule's own pixel
         spacing cannot be measured.
@@ -245,7 +245,7 @@ class CLDPIXReader(PassReader):
         The CERES CLDPIX NetCDF4 granule(s) covering the processing period.
     """
 
-    READER_KEY: str = "cldpix"
+    READER_KEY: str = "CLDPIX"
     # CLDPIX imager-pixel cloud retrievals read here are the NOAA-20 stream
     # (CER_CLDPIX_NOAA20-VIIRS).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets

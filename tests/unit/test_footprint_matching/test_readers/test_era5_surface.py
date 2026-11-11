@@ -142,10 +142,10 @@ class TestERA5ReaderPlanes:
         assert data.dtype == np.float32
         assert np.allclose(data[0], 3.0, atol=1e-4)
         assert np.allclose(data[1], -2.0, atol=1e-4)
-        for i, (_, nc_name, _) in enumerate(_ERA5_SURFACE_VARIABLES[2:], start=2):
+        for i, (_, nc_name) in enumerate(_ERA5_SURFACE_VARIABLES[2:], start=2):
             assert np.allclose(data[i], ERA5_SURFACE_FILLS[nc_name], rtol=1e-6), nc_name
         samples = reader.samples_in(bbox, _T)
-        assert samples.source == "era5_surface"
+        assert samples.source == "ERA5_Surface"
         assert samples.timestamp_source is None
         assert samples.times is None
 
@@ -312,11 +312,11 @@ class TestERA5ReaderRealSubset:
 
         A value must reach the product exactly as the source granule stores it, under the right variable name.
 
-        Queries a small box around 45N, 105W of the real subset and compares ``temperature_2m``, ``surface_pressure``
-        and ``wind_u10`` with the source granule's values there.
+        Queries a small box around 45N, 105W of the real subset and compares ``Temperature_2m``, ``Surface_Pressure``
+        and ``Wind_U10`` with the source granule's values there.
         """
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
         values = dict(zip([v.name for v in ERA5SurfaceReader.VARIABLES], sample_at(samples, 45.0, -105.0), strict=True))
-        assert values["temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
-        assert values["surface_pressure"] == pytest.approx(88917.95, abs=0.1)
-        assert values["wind_u10"] == pytest.approx(1.84288, abs=1e-4)
+        assert values["Temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
+        assert values["Surface_Pressure"] == pytest.approx(88917.95, abs=0.1)
+        assert values["Wind_U10"] == pytest.approx(1.84288, abs=1e-4)

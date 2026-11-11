@@ -9,7 +9,7 @@ Data source: NOAA-20 (JPSS-1) VIIRS Daily Level-3 Cloud Properties
 - Data layout: variables stored with dimension order (longitude, latitude),
   requiring a transpose to the expected (latitude, longitude) output order
 - Temporal resolution: Daily composites
-- Variables: cloud_optical_thickness (Mean), cloud_top_pressure (Mean)
+- Variables: Cloud_Optical_Thickness (Mean), Cloud_Top_Pressure (Mean)
 
 NetCDF4 group layout (CLDPROP_D3)
 ----------------------------------
@@ -52,8 +52,8 @@ from libera_utils.io.netcdf import field_fill_value
 # product carries its log statistics separately, as Cloud_Optical_Thickness_Log_Combined;
 # L3 CLDPROP User Guide v2.1, p. 60), so cells combine with the arithmetic mean.
 _D3_FIELDS: tuple[tuple[str, str, str, str], ...] = (
-    ("cloud_optical_thickness", "Cloud_Optical_Thickness_Combined", "Mean", "weighted_mean"),
-    ("cloud_top_pressure", "Cloud_Top_Pressure", "Mean", "weighted_mean"),
+    ("Cloud_Optical_Thickness", "Cloud_Optical_Thickness_Combined", "Mean", "weighted_mean"),
+    ("Cloud_Top_Pressure", "Cloud_Top_Pressure", "Mean", "weighted_mean"),
 )
 
 
@@ -64,7 +64,7 @@ _MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
 class VIIRSCldpropD3Reader(StaticReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
-    Loads two cloud variables (cloud_optical_thickness, cloud_top_pressure)
+    Loads two cloud variables (Cloud_Optical_Thickness, Cloud_Top_Pressure)
     from a CLDPROP_D3 VIIRS Level-3 daily file as a ``(2, n_lat, n_lon)`` grid
     stacked in ``VARIABLES`` order. The file is a daily composite with no time
     axis, so the staged day is the time match (``TIME_MATCH = DAILY``).
@@ -76,11 +76,11 @@ class VIIRSCldpropD3Reader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"viirs_cldprop_d3"``, after the product's short name.
+        Registry key ``"VIIRS_CLDPROP_D3"``, after the product's short name.
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Two variables: cloud_optical_thickness, cloud_top_pressure.
+        Two variables: Cloud_Optical_Thickness, Cloud_Top_Pressure.
 
     Parameters
     ----------
@@ -88,7 +88,7 @@ class VIIRSCldpropD3Reader(StaticReader):
         The one CLDPROP_D3 NetCDF4 file for the processing day.
     """
 
-    READER_KEY: str = "viirs_cldprop_d3"
+    READER_KEY: str = "VIIRS_CLDPROP_D3"
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.
@@ -117,7 +117,7 @@ class VIIRSCldpropD3Reader(StaticReader):
         -------
         GridSamples
             ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
-            [cloud_optical_thickness, cloud_top_pressure] (fill as NaN).
+            [Cloud_Optical_Thickness, Cloud_Top_Pressure] (fill as NaN).
 
         Raises
         ------

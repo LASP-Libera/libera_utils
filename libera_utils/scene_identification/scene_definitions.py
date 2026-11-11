@@ -9,11 +9,11 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
-# Storage dtype for each classification variable's property-bin bounds (the scene_bin_{type}_{variable}_min/max
-# variables from _compute_property_bins). surface_type is a categorical code, stored as uint8; other (continuous)
+# Storage dtype for each classification variable's property-bin bounds (the Scene_Bin_{type}_{variable}_Min/_Max
+# variables from _compute_property_bins). Surface_Type is a categorical code, stored as uint8; other (continuous)
 # variables use float32. There is no fill value: unbounded/unmatched sides are NaN for floats and 0 for ints, and
 # scene_id == 0 is the authoritative unmatched flag consumers key off.
-_BIN_BOUND_DTYPES: dict[str, type] = {"surface_type": np.uint8}
+_BIN_BOUND_DTYPES: dict[str, type] = {"Surface_Type": np.uint8}
 _DEFAULT_BIN_BOUND_DTYPE: type = np.float32
 
 
@@ -39,13 +39,13 @@ class Scene:
     >>> scene = Scene(
     ...     scene_id=1,
     ...     variable_ranges={
-    ...         "cloud_fraction": (0.0, 50.0),
+    ...         "Cloud_Fraction": (0.0, 50.0),
     ...         "optical_depth": (0.0, 10.0)
     ...     }
     ... )
-    >>> scene.matches({"cloud_fraction": 30.0, "optical_depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 30.0, "optical_depth": 5.0})
     True
-    >>> scene.matches({"cloud_fraction": 60.0, "optical_depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 60.0, "optical_depth": 5.0})
     False
     """
 
@@ -124,7 +124,8 @@ class SceneDefinition:
     Attributes
     ----------
     type : str
-        Type of scene definition (e.g., 'TRMM', 'ERBE'), derived from filename
+        Type of scene definition (e.g., 'TRMM', 'ERBE', 'Unfiltering'): the CSV filename stem as spelled, which
+        names the output variables (``Scene_ID_{type}``, ``Scene_Bin_{type}_{variable}_Min``)
     scenes : list of Scene
         List of scene definitions with their variable ranges
     required_columns : list of str
@@ -140,16 +141,16 @@ class SceneDefinition:
     Notes
     -----
     Expected CSV format:
-        scene_id,variable1_min,variable1_max,variable2_min,variable2_max,...
+        scene_id,variable1_Min,variable1_Max,variable2_Min,variable2_Max,...
         1,0.0,10.0,20.0,30.0,...
         2,10.0,20.0,30.0,40.0,...
 
-    Each variable must have both a _min and _max column. NaN or empty values
+    Each variable must have both a _Min and _Max column. NaN or empty values
     indicate unbounded ranges.
 
     Examples
     --------
-    >>> scene_def = SceneDefinition(Path("trmm.csv"))
+    >>> scene_def = SceneDefinition(Path("TRMM.csv"))
     >>> print(scene_def.type)
     'TRMM'
     >>> print(len(scene_def.scenes))
@@ -158,7 +159,7 @@ class SceneDefinition:
 
     def __init__(self, definition_path: pathlib.Path):
         """Initialize scene definition from CSV file."""
-        self.type = definition_path.stem.lower()
+        self.type = definition_path.stem
 
         # Read CSV with scene definitions
         scene_df = pd.read_csv(definition_path, na_values=["", " ", "NaN", "nan", "NULL"])
@@ -215,28 +216,41 @@ class SceneDefinition:
         list of str
             Sorted list of unique variable names
 
+        Raises
+        ------
+        ValueError
+            If a column ends in a lower-case ``_min`` or ``_max``, which would otherwise be ignored and leave its
+            variable out of the classification.
+
         Notes
         -----
-        Variable names are extracted by removing the '_min' or '_max' suffix from column names. Only columns with these
+        Variable names are extracted by removing the '_Min' or '_Max' suffix from column names. Only columns with these
         suffixes are considered as variable definitions.
 
         Examples
         --------
-        >>> cols = pd.Index(['scene_id', 'temp_min', 'temp_max', 'pressure_min', 'pressure_max'])
+        >>> cols = pd.Index(['scene_id', 'temp_Min', 'temp_Max', 'pressure_Min', 'pressure_Max'])
         >>> scene_def._extract_variable_names(cols)
         ['pressure', 'temp']
         """
+        lower_case_bounds = [col for col in columns if col.endswith(("_min", "_max"))]
+        if lower_case_bounds:
+            raise ValueError(
+                f"Scene definition columns {lower_case_bounds} end in a lower-case _min/_max; rename each to end in "
+                "_Min or _Max (e.g. Cloud_Fraction_Min) so its bound is read."
+            )
+
         variable_names = set()
         for col in columns:
             if "scene_id" in col:
                 continue
 
-            # Remove _min or _max suffix to get variable name
-            if col.endswith("_min"):
-                var_name = col[:-4]  # Remove '_min'
+            # Remove _Min or _Max suffix to get variable name
+            if col.endswith("_Min"):
+                var_name = col[:-4]  # Remove '_Min'
                 variable_names.add(var_name)
-            elif col.endswith("_max"):
-                var_name = col[:-4]  # Remove '_max'
+            elif col.endswith("_Max"):
+                var_name = col[:-4]  # Remove '_Max'
                 variable_names.add(var_name)
 
         return sorted(list(variable_names))
@@ -261,21 +275,21 @@ class SceneDefinition:
 
         Notes
         -----
-        For each variable, looks for columns named {variable}_min and
-        {variable}_max. NaN values in the CSV are converted to None to
+        For each variable, looks for columns named {variable}_Min and
+        {variable}_Max. NaN values in the CSV are converted to None to
         indicate unbounded ranges.
 
         Examples
         --------
-        >>> row = pd.Series({'scene_id': 1, 'temp_min': 0.0, 'temp_max': 100.0,
-        ...                  'pressure_min': np.nan, 'pressure_max': 1000.0})
+        >>> row = pd.Series({'scene_id': 1, 'temp_Min': 0.0, 'temp_Max': 100.0,
+        ...                  'pressure_Min': np.nan, 'pressure_Max': 1000.0})
         >>> scene_def._parse_row_to_ranges(row, ['temp', 'pressure'])
         {'temp': (0.0, 100.0), 'pressure': (None, 1000.0)}
         """
         ranges = {}
         for var_name in variable_names:
-            min_col = f"{var_name}_min"
-            max_col = f"{var_name}_max"
+            min_col = f"{var_name}_Min"
+            max_col = f"{var_name}_Max"
 
             min_val = row.get(min_col, None)
             max_val = row.get(max_col, None)
@@ -299,15 +313,15 @@ class SceneDefinition:
             If True (default), also add, for each classification variable, two
             variables reporting the (min, max) bounds of the property bin that
             each footprint's matched scene occupies. These are named
-            ``scene_bin_{type}_{variable}_min`` and
-            ``scene_bin_{type}_{variable}_max``. Unbounded bin sides and
+            ``Scene_Bin_{type}_{variable}_Min`` and
+            ``Scene_Bin_{type}_{variable}_Max``. Unbounded bin sides and
             unmatched footprints (scene ID 0) are reported as NaN. Set to False
             to emit only the scene ID and reduce output size.
 
         Returns
         -------
         xr.Dataset
-            Input dataset with scene ID variable added as f"scene_id_{self.type.lower()}",
+            Input dataset with scene ID variable added as f"Scene_ID_{self.type}",
             and, when ``report_bin_bounds`` is True, the per-variable bin bound
             variables described above.
 
@@ -325,7 +339,7 @@ class SceneDefinition:
         scene_ids = self._identify_vectorized(data, shape)
 
         # Create scene ID variable name
-        scene_id_var_name = f"scene_id_{self.type.lower()}"
+        scene_id_var_name = f"Scene_ID_{self.type}"
 
         # Add scene IDs as a new variable to the dataset
         data[scene_id_var_name] = xr.DataArray(
@@ -387,13 +401,12 @@ class SceneDefinition:
         Returns
         -------
         dict[str, np.ndarray]
-            Mapping of output variable name (``scene_bin_{type}_{variable}_min``
-            / ``_max``) to an array the same shape as ``scene_ids``. Continuous
+            Mapping of output variable name (``Scene_Bin_{type}_{variable}_Min``
+            / ``_Max``) to an array the same shape as ``scene_ids``. Continuous
             variables use ``float32`` with ``NaN`` marking an unbounded bin side
-            or an unmatched footprint; ``surface_type`` uses a compact ``uint8``
+            or an unmatched footprint; ``Surface_Type`` uses a compact ``uint8``
             left at ``0`` for those cases (scene_id 0 flags the unmatched case).
         """
-        scene_type = self.type.lower()
         bin_arrays: dict[str, np.ndarray] = {}
 
         max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
@@ -425,8 +438,8 @@ class SceneDefinition:
                 min_by_id[scene.scene_id] = unbounded_min if min_val is None else min_val
                 max_by_id[scene.scene_id] = unbounded_max if max_val is None else max_val
 
-            bin_arrays[f"scene_bin_{scene_type}_{var_name}_min"] = min_by_id[scene_ids_int]
-            bin_arrays[f"scene_bin_{scene_type}_{var_name}_max"] = max_by_id[scene_ids_int]
+            bin_arrays[f"Scene_Bin_{self.type}_{var_name}_Min"] = min_by_id[scene_ids_int]
+            bin_arrays[f"Scene_Bin_{self.type}_{var_name}_Max"] = max_by_id[scene_ids_int]
 
         return bin_arrays
 
@@ -470,7 +483,7 @@ class SceneDefinition:
         """Validate scene definition file for complete coverage and no overlaps.
 
         Ensures that:
-        1. Column names follow the expected format (variable_min, variable_max pairs)
+        1. Column names follow the expected format (variable_Min, variable_Max pairs)
         2. Min values are less than or equal to max values for all bins
         3. Every possible combination of variable values maps to exactly one scene ID
         4. There are no gaps in coverage (all value combinations are classified)
@@ -480,7 +493,7 @@ class SceneDefinition:
         ----------
         scene_df : pd.DataFrame
             DataFrame loaded from scene definition CSV with columns:
-            scene_id, var1_min, var1_max, var2_min, var2_max, ...
+            scene_id, var1_Min, var1_Max, var2_Min, var2_Max, ...
         required_columns : list of str
             List of variable names that should have min/max pairs
 
@@ -493,20 +506,20 @@ class SceneDefinition:
         --------
         >>> df = pd.DataFrame({
         ...     'scene_id': [1, 2],
-        ...     'temp_min': [0, 50],
-        ...     'temp_max': [50, 100],
-        ...     'pressure_min': [900, 900],
-        ...     'pressure_max': [1100, 1100]
+        ...     'temp_Min': [0, 50],
+        ...     'temp_Max': [50, 100],
+        ...     'pressure_Min': [900, 900],
+        ...     'pressure_Max': [1100, 1100]
         ... })
         >>> validate_scene_definition_file(df, ['temp', 'pressure'])
         # Passes validation
 
         >>> df = pd.DataFrame({
         ...     'scene_id': [1, 2],
-        ...     'temp_min': [0, 40],  # Overlap at 40-50
-        ...     'temp_max': [50, 100],
-        ...     'pressure_min': [900, 900],
-        ...     'pressure_max': [1100, 1100]
+        ...     'temp_Min': [0, 40],  # Overlap at 40-50
+        ...     'temp_Max': [50, 100],
+        ...     'pressure_Min': [900, 900],
+        ...     'pressure_Max': [1100, 1100]
         ... })
         >>> validate_scene_definition_file(df, ['temp', 'pressure'])
         ValueError: Overlapping scenes detected...
@@ -544,8 +557,8 @@ class SceneDefinition:
         Examples
         --------
         >>> scene_def = SceneDefinition(Path("scenes.csv"))
-        >>> scene_def.required_columns = ['cloud_fraction', 'optical_depth']
-        >>> data = xr.Dataset({'cloud_fraction': [10, 20]})
+        >>> scene_def.required_columns = ['Cloud_Fraction', 'optical_depth']
+        >>> data = xr.Dataset({'Cloud_Fraction': [10, 20]})
         >>> scene_def.validate_input_data_columns(data)
         ValueError: Required columns ['optical_depth'] not in input data for TRMM scene identification.
         """
@@ -560,7 +573,7 @@ class SceneDefinition:
             )
 
     def _validate_column_name_format(self, scene_df: pd.DataFrame) -> None:
-        """Validate that all required variable columns exist with _min and _max suffixes.
+        """Validate that all required variable columns exist with _Min and _Max suffixes.
 
         Parameters
         ----------
@@ -573,15 +586,15 @@ class SceneDefinition:
         ------
         ValueError
             If scene_id column is missing or if any required variable is missing
-            its _min or _max column
+            its _Min or _Max column
         """
         if "scene_id" not in scene_df.columns:
             raise ValueError("Scene definition file must contain a 'scene_id' column")
 
         missing_columns = []
         for var_name in self.required_columns:
-            min_col = f"{var_name}_min"
-            max_col = f"{var_name}_max"
+            min_col = f"{var_name}_Min"
+            max_col = f"{var_name}_Max"
 
             if min_col not in scene_df.columns:
                 missing_columns.append(min_col)
@@ -612,15 +625,15 @@ class SceneDefinition:
             scene_id = row["scene_id"]
 
             for var_name in self.required_columns:
-                min_val = row[f"{var_name}_min"]
-                max_val = row[f"{var_name}_max"]
+                min_val = row[f"{var_name}_Min"]
+                max_val = row[f"{var_name}_Max"]
 
                 # Skip if either value is NaN (unbounded)
                 if pd.isna(min_val) or pd.isna(max_val):
                     continue
 
                 if min_val > max_val:
-                    invalid_bins.append(f"Scene {scene_id}: {var_name}_min ({min_val}) > {var_name}_max ({max_val})")
+                    invalid_bins.append(f"Scene {scene_id}: {var_name}_Min ({min_val}) > {var_name}_Max ({max_val})")
 
         if invalid_bins:
             raise ValueError(f"Invalid bin definitions (min > max):\n" + "\n".join(invalid_bins))

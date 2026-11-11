@@ -76,7 +76,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         The 4 x 8 fixture writes count 200 with ``scale_factor`` 0.001 everywhere and the fill to the southernmost row,
         last column, of each field. The query must fold back to a float32 ``(9, 4, 8)`` grid whose served latitudes
         ascend from the southern cell center 0.025, equal to 0.2 everywhere except NaN at row 0, last column, of every
-        plane, with source ``"viirs_brdf"`` and no timestamp source.
+        plane, with source ``"VIIRS_BRDF"`` and no timestamp source.
         """
         reader = _make_reader(tmp_path)
         samples = reader.samples_in(_full_bbox(), _T)
@@ -88,7 +88,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         assert np.isnan(data[:, 0, -1]).all()
         assert np.isnan(data).sum() == data.shape[0]
         assert np.allclose(data[np.isfinite(data)], 0.200, atol=1e-4)
-        assert samples.source == "viirs_brdf"
+        assert samples.source == "VIIRS_BRDF"
         assert samples.timestamp_source is None
 
     def test_partial_bbox_subsets_correctly(self, tmp_path):
@@ -419,7 +419,7 @@ class TestVIIRSBRDFReaderRealSubset:
         """
         land = reader.samples_in(BoundingBox(36.4, 36.45, -121.95, -121.9), _T)
         values = sample_at(land, 36.425, -121.925)
-        assert values[0] == pytest.approx(0.069)  # brdf_shortwave_fiso
-        assert values[3] == pytest.approx(0.062)  # brdf_vis_fiso
+        assert values[0] == pytest.approx(0.069)  # shortwave_fiso
+        assert values[3] == pytest.approx(0.062)  # vis_fiso
         ocean = reader.samples_in(BoundingBox(36.95, 37.0, -123.0, -122.95), _T)
         assert np.isnan(sample_at(ocean, 36.975, -122.975)).all()

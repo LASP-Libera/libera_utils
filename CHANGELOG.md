@@ -7,13 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.24.0] - 2026-11-11
+
 ### Added
 
 - Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when a requested tag other than `latest` already exists in the ECR repository, whatever image it holds: found by a check before anything is pushed, or refused by ECR during the push when another push took the tag after that check. The message names every such tag and the repository, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. A refused push is not retried, and `ecr-upload` registers nothing.
+- Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME) products. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, carried by IMAGER alone through their `VariableSpec.modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `ERA5_Pressure_Temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `Cloud_Fraction_Camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input. FMATCH-CAM(-CAMTIME) carry no ERA5 10 m winds or VIIRS BRDF kernel weights, since no consumer of the CAM products reads them. Every integer category, pixel-index and camera pixel-bound variable declares `_FillValue: -1`, since 0 is a real value in each; the `Quality_Flag` bitmask and the `PSEUDOFOOTPRINT` index declare none. Dimensionless variables carry no `units` attribute (CF §3.1), and `VIIRS_CLDPROP_D3_Cloud_Optical_Thickness` carries the CLDPROP_D3 source's combined-phase long_name and its `valid_min`/`valid_max` `[0, 150]`.
+- `libera_utils.footprint_matching.aggregation.stack_product_values` collects a reader's stacked specs into one array per stacked product variable and raises `ValueError` when a member's scalar is missing.
 
 ### Changed
 
 - **BREAKING:** Before pushing, `push_image_to_ecr` and `ecr-upload` check ECR for every requested tag other than `latest` and push nothing if any of them already exists, even in a repository that would accept the push, which used to replace the image under the tag. A session that pushes a version tag now needs `ecr:DescribeImages` on the repository, and a missing repository fails the check before any push. Tags other than `latest` are then pushed before `latest`, so a tag taken by another push since the check leaves `latest` where it was.
+- **BREAKING:** SCENE-ID-CAM and SCENE-ID-CAM-CAMTIME variables take their product names (`Scene_ID_ERBE`, `Scene_ID_Unfiltering`, `Scene_Bin_ERBE_Cloud_Fraction_Min`, `Scene_Bin_ERBE_Solar_Zenith_Surface_Min`, `Surface_Type`, `IGBP_Surface_Type`, `Cloud_Fraction`, `Solar_Zenith_Surface`, `Camera_Pixel_X_Min`, ...). `FootprintData` holds each variable a product writes under its product name (the `FootprintVariables` values), so `create_and_write_data_product` writes the declared variables as they are.
+- **BREAKING:** The VIIRS BRDF reader's variables drop the repeated `brdf_` prefix (`brdf_shortwave_fiso` → `Shortwave_Fiso`, and likewise for each band and kernel weight), and the VIIRS AOD reader's `aod_550` is `Optical_Depth_550`, so the FMATCH product variables are `VIIRS_BRDF_<Band>_<Param>` and `VIIRS_AOD_Optical_Depth_550`.
+- **BREAKING:** FMATCH reader `READER_KEY`s are their product-variable prefixes (`CLDPIX`, `ERA5_Pressure`, `ERA5_Surface`, `FLASHFlux`, `IGBP`, `NISE`, `VIIRS_AOD`, `VIIRS_BRDF`, `VIIRS_CLDPROP_D3`), so `ReaderRegistry.get`, `FMATCH_MODE_READERS` and the `source_file_paths` keys of `build_sources` use them. Reader spec names are Camel_Case (`Sea_Ice_Concentration`, `Surface_Type_Primary`, `Temperature_500hPa`), and `STANDARD_DEVIATION_SUFFIX` is `_Standard_Deviation`.
+- **BREAKING:** The shipped scene definitions are `ERBE.csv`, `TRMM.csv` and `Unfiltering.csv`. Their columns end in `_Min`/`_Max` and name the classification variables `Surface_Type`, `Cloud_Fraction`, `Solar_Zenith_Surface`, `Viewing_Zenith_Surface` and `Relative_Azimuth_Surface`. `SceneDefinition.type` is the CSV filename stem as spelled, and its outputs are `Scene_ID_{type}` and `Scene_Bin_{type}_{variable}_Min`/`_Max`. A column ending in lower-case `_min`/`_max` raises `ValueError`.
+- SCENE-ID-CAM and SCENE-ID-CAM-CAMTIME take the L1B RAD-4CH and L1B CAM `long_name`s for the variables they pass through from L1B (`Solar_Zenith_Surface`, `Viewing_Zenith_Surface`, `Relative_Azimuth_Surface`, and in SCENE-ID-CAM-CAMTIME `Latitude`, `Longitude`, `Altitude`), and their `Cloud_Fraction` `long_name` says the CF-CAM values are in percent rather than scaled to percent. Units and values are unchanged.
+
+### Removed
+
+- **BREAKING:** `OperationalMode.IMAGER_FLASH` (`FMATCH-IMAGER-FLASH`). No FMATCH-IMAGER-FLASH product is planned, so the CERES FLASHFlux reader feeds FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME only.
+- **BREAKING:** The ERA5 surface reader's 10 m winds and the VIIRS BRDF reader no longer serve the CAM modes: `ERA5_Surface` and `VIIRS_BRDF` feed FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME only, so they leave the CAM entries of `FMATCH_MODE_READERS`, and `build_sources` for a CAM mode rejects their `source_file_paths` keys.
 
 ## [5.23.0] - 2026-11-05
 
@@ -1037,7 +1051,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...HEAD
+[5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
 [5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0
 [5.21.0]: https://github.com/LASP-Libera/libera_utils/compare/5.20.0...5.21.0

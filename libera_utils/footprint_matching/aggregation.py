@@ -22,6 +22,9 @@ Two layers
    reader's *product* variable specifications, picks the right value row for each,
    dispatches to the correct strategy, and returns the single scalar the product
    definition stores for that variable, once per footprint per source.
+   :func:`stack_product_values` then collects a reader's stacked specs (its
+   ``PRODUCT_STACKS``, e.g. ERA5 pressure levels) into one array per stacked
+   product variable.
 
 CERES heritage
 --------------
@@ -53,7 +56,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from libera_utils.footprint_matching.readers.base import AncillaryReader
-    from libera_utils.footprint_matching.types import SampleSet, VariableSpec
+    from libera_utils.footprint_matching.types import ProductStack, SampleSet, VariableSpec
     from libera_utils.footprint_matching.weighting import WeightField
 
 # CERES coverage thresholds (design doc section 2.4.2.7 / 2.8.1.1.3). The coverage
@@ -147,7 +150,7 @@ class _WeightedPartials:
     :func:`weighted_log_mean`, :func:`weighted_positive_std`) each independently apply the
     ``_usable`` mask before doing their arithmetic. When several product variables
     derive from the *same* data plane -- e.g. a variable and its
-    ``<name>_standard_deviation`` companion -- that mask (and the array copy it drives)
+    ``<name>_Standard_Deviation`` companion -- that mask (and the array copy it drives)
     is identical across them. :func:`_prepare` computes it once and the ``*_from_partials``
     cores consume the result, so :func:`aggregate_sample_variables` pays the masking cost
     once per plane rather than once per variable. The public strategy functions are thin
@@ -232,7 +235,7 @@ def weighted_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str,
     """PSF-weighted standard deviation ``sqrt(sum(w*x^2)/sum(w) - xbar^2)``.
 
     This is the within-footprint spread that pairs with :func:`weighted_mean`; it is
-    the value stored in every ``<name>_standard_deviation`` companion variable (see
+    the value stored in every ``<name>_Standard_Deviation`` companion variable (see
     :data:`libera_utils.footprint_matching.types.STANDARD_DEVIATION_SUFFIX`). The
     variance is clipped at zero before the square root to absorb floating-point
     round-off that could otherwise make a near-zero variance slightly negative.
@@ -254,7 +257,7 @@ def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict
     strategy returns the exponential of that mean, so the value stays in optical-depth
     units. Only strictly positive values contribute -- ``ln`` is undefined at and
     below zero -- so those samples are dropped in addition to the usual NaN exclusion.
-    Its ``_standard_deviation`` companion is :func:`weighted_positive_std`, over the
+    Its ``_Standard_Deviation`` companion is :func:`weighted_positive_std`, over the
     same positive samples.
     """
     return _log_mean_from_partials(_prepare(values, weights))
@@ -263,7 +266,7 @@ def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict
 def weighted_positive_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
     """PSF-weighted standard deviation over the strictly positive samples.
 
-    The ``<name>_standard_deviation`` companion of a :func:`weighted_log_mean`
+    The ``<name>_Standard_Deviation`` companion of a :func:`weighted_log_mean`
     variable, so the spread describes the same samples as the mean it pairs with. In
     the variable's own units, as :func:`weighted_std` is. NaN when no sample is
     positive.
@@ -369,7 +372,7 @@ def weighted_mode(
 def _ranked_mode(values: np.ndarray, weights: np.ndarray, rank: int, n_categories: int | None) -> dict[str, float]:
     """The ``rank``-th most common category (0 = primary, 1 = secondary, ...).
 
-    Backs IGBP's ``surface_type_primary/secondary/tertiary`` ranked-scene outputs.
+    Backs IGBP's ``Surface_Type_Primary/Secondary/Tertiary`` ranked-scene outputs.
     Returns NaN when fewer than ``rank + 1`` classes are present, so a footprint that
     is entirely one land-cover type reports NaN for its (non-existent) secondary and
     tertiary scenes rather than a spurious class.
@@ -424,7 +427,7 @@ _SCALAR_KEY: dict[str, str] = {name: scalar_key for name, (_, scalar_key) in _ST
 # Cores that consume a single plane's shared partials, keyed by strategy name.
 # :func:`aggregate_sample_variables` dispatches through these so several product
 # variables derived from one data plane (e.g. a mean-aggregated variable and its
-# ``_standard_deviation`` companion) reuse a single ``_usable`` mask instead of
+# ``_Standard_Deviation`` companion) reuse a single ``_usable`` mask instead of
 # recomputing it per variable. Each core returns the same result dict as its public
 # strategy (which are thin wrappers over the same cores), so the shared and the
 # per-variable paths are numerically identical.
@@ -510,7 +513,7 @@ def _map_product_specs(reader_cls: type[AncillaryReader]) -> list[tuple[Variable
 
     A reader's *product* variables (``product_variable_specs()``) are a superset of
     the *read* variables (``VARIABLES``): each read variable, plus a
-    ``<name>_standard_deviation`` companion for continuous ones, plus reader-specific
+    ``<name>_Standard_Deviation`` companion for continuous ones, plus reader-specific
     derived extras (IGBP's ranked scenes). All of those are computed from the *same*
     source data plane as their parent read variable, whose position on axis 0 of a
     multi-variable ``values`` array we need in order to pick out its row.
@@ -518,8 +521,8 @@ def _map_product_specs(reader_cls: type[AncillaryReader]) -> list[tuple[Variable
     This resolves each product spec to that axis-0 index by name:
 
     * an exact read-variable name -> that read plane;
-    * a ``..._standard_deviation`` companion -> the read plane of its stem;
-    * otherwise a derived extra (e.g. ``surface_type_primary``) -> the read plane
+    * a ``..._Standard_Deviation`` companion -> the read plane of its stem;
+    * otherwise a derived extra (e.g. ``Surface_Type_Primary``) -> the read plane
       whose name is the longest prefix of the spec name.
 
     Returns
@@ -576,7 +579,7 @@ def aggregate_sample_variables(
     variable (see ``_map_product_specs``), dispatches to that variable's
     aggregation strategy with the PSF ``weight_field``, and returns the single scalar
     the product stores -- keyed by the *bare* spec name (the caller prefixes it with
-    ``<source>_`` to form the product variable name).
+    ``<READER_KEY>_`` to form the product variable name).
 
     An empty or all-NaN sample set yields NaN for every variable (the aggregation
     strategies return NaN when nothing is usable), which is the signal for a region
@@ -611,8 +614,8 @@ def aggregate_sample_variables(
     cores directly rather than through :func:`aggregate`. Coverage is the weigher's
     (``WeightField.coverage``, scored by :func:`check_coverage`), not computed here.
     Because many product variables derive from the same data plane -- a variable and its
-    ``_standard_deviation`` companion, or IGBP's four ranked-mode scenes off one
-    ``surface_type`` plane -- the per-plane ``_usable`` mask (continuous) and category
+    ``_Standard_Deviation`` companion, or IGBP's four ranked-mode scenes off one
+    ``Surface_Type`` plane -- the per-plane ``_usable`` mask (continuous) and category
     histogram (categorical) are computed once and reused across those variables.
     """
     mapping = _map_product_specs(reader_cls)
@@ -674,4 +677,56 @@ def aggregate_sample_variables(
             else:
                 result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
         out[spec.name] = float(result[_SCALAR_KEY[strategy]])
+    return out
+
+
+@cache
+def _product_stacks(reader_cls: type[AncillaryReader]) -> tuple[ProductStack, ...]:
+    """Return ``reader_cls.product_stacks()``, computed once per reader class.
+
+    The stacks are a static property of the reader, so :func:`stack_product_values`
+    reuses them for every footprint rather than rebuilding them.
+    """
+    return reader_cls.product_stacks()
+
+
+def stack_product_values(reader_cls: type[AncillaryReader], scalars: dict[str, float]) -> dict[str, float | np.ndarray]:
+    """Shape one footprint's per-spec scalars from one source into its product variables.
+
+    Each of the reader's stacks (``reader_cls.product_stacks()``) becomes one 1-D array
+    holding its members' scalars in coordinate order, the footprint's row of a
+    ``(time, dimension)`` product variable. Every scalar that is not a stack member is
+    passed through as the 1-D product variable it already is.
+
+    Parameters
+    ----------
+    reader_cls : type[AncillaryReader]
+        The reader class whose product variables to shape.
+    scalars : dict[str, float]
+        ``{spec.name: scalar}`` for the footprint, as :func:`aggregate_sample_variables`
+        returns it.
+
+    Returns
+    -------
+    dict[str, float | np.ndarray]
+        A float64 array of length ``len(stack.members)`` under each stack's name, and
+        every unstacked scalar under its own name. Names are bare, as in ``scalars``.
+
+    Raises
+    ------
+    ValueError
+        If ``scalars`` lacks a member of one of the reader's stacks, so a stacked
+        variable would be missing a level.
+    """
+    stacks = _product_stacks(reader_cls)
+    stacked_members = {member for stack in stacks for member in stack.members}
+    out: dict[str, float | np.ndarray] = {name: value for name, value in scalars.items() if name not in stacked_members}
+    for stack in stacks:
+        missing = [member for member in stack.members if member not in scalars]
+        if missing:
+            raise ValueError(
+                f"Reader {reader_cls.__name__!r}: no scalar for {missing}, members of the stacked product "
+                f"variable {stack.name!r}. Pass the full output of aggregate_sample_variables for this reader."
+            )
+        out[stack.name] = np.array([scalars[member] for member in stack.members], dtype=np.float64)
     return out

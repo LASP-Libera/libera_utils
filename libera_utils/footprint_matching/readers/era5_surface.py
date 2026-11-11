@@ -11,13 +11,11 @@ Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 
 Variables read
 --------------
-Wind components (every product, from mission start):
+Every variable is carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, alongside the RBSP
+CLDPIX/FLASHFlux cloud fields. The CAM products carry none: no consumer of FMATCH-CAM or
+FMATCH-CAM-CAMTIME reads them.
 
 - u10 / v10: 10 m U/V wind components
-
-Additional single-level fields, carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME
-alongside the RBSP CLDPIX/FLASHFlux cloud fields:
-
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
 - sp:  surface pressure
@@ -44,23 +42,19 @@ from libera_utils.footprint_matching.readers._longitude import normalize_longitu
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
-# The products that carry the winds: every FMATCH product, from mission start.
-_WIND_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
-# The products that carry the other single-level fields, alongside the RBSP CLDPIX/FLASHFlux
-# cloud fields.
-_IMAGER_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+# The products that carry the single-level fields: the imager products.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
-# Each output variable, the ERA5 variable it reads as stored in CDS NetCDF4 files, and
-# the products that carry it. This order is VARIABLES order and axis 0 of the reader's
-# data array.
-_ERA5_SURFACE_VARIABLES: tuple[tuple[str, str, frozenset[OperationalMode]], ...] = (
-    ("wind_u10", "u10", _WIND_MODES),
-    ("wind_v10", "v10", _WIND_MODES),
-    ("temperature_2m", "t2m", _IMAGER_MODES),
-    ("dew_point_temperature_2m", "d2m", _IMAGER_MODES),
-    ("surface_pressure", "sp", _IMAGER_MODES),
-    ("surface_geopotential", "z", _IMAGER_MODES),
-    ("forecast_albedo", "fal", _IMAGER_MODES),
+# Each output variable and the ERA5 variable it reads as stored in CDS NetCDF4 files.
+# This order is VARIABLES order and axis 0 of the reader's data array.
+_ERA5_SURFACE_VARIABLES: tuple[tuple[str, str], ...] = (
+    ("Wind_U10", "u10"),
+    ("Wind_V10", "v10"),
+    ("Temperature_2m", "t2m"),
+    ("Dew_Point_Temperature_2m", "d2m"),
+    ("Surface_Pressure", "sp"),
+    ("Surface_Geopotential", "z"),
+    ("Forecast_Albedo", "fal"),
 )
 
 
@@ -195,14 +189,12 @@ class ERA5SurfaceReader(ERA5ReaderBase):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"era5_surface"``.
+        Registry key ``"ERA5_Surface"``.
     RESOLUTION_KM : float
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
-        Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
-        are carried by every product; the five additional single-level fields only
-        by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME. So ``era5_surface`` feeds every
-        product but contributes a different variable subset to each.
+        Seven continuous float32 variables, carried by FMATCH-IMAGER and
+        FMATCH-IMAGER-CAMTIME.
 
     Parameters
     ----------
@@ -212,7 +204,7 @@ class ERA5SurfaceReader(ERA5ReaderBase):
         time axis.
     """
 
-    READER_KEY: str = "era5_surface"
+    READER_KEY: str = "ERA5_Surface"
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
     # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"
@@ -224,10 +216,10 @@ class ERA5SurfaceReader(ERA5ReaderBase):
             name=name,
             dtype="float32",
             aggregation="weighted_mean",
-            modes=modes,
+            modes=_MODES,
             n_categories=None,
         )
-        for name, _, modes in _ERA5_SURFACE_VARIABLES
+        for name, _ in _ERA5_SURFACE_VARIABLES
     )
 
     def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
@@ -239,12 +231,12 @@ class ERA5SurfaceReader(ERA5ReaderBase):
             If the file is missing any of the expected ERA5 variables (e.g. a
             download configured with only a subset of the required fields).
         """
-        missing = [nc_name for _, nc_name, _ in _ERA5_SURFACE_VARIABLES if nc_name not in step]
+        missing = [nc_name for _, nc_name in _ERA5_SURFACE_VARIABLES if nc_name not in step]
         if missing:
             raise KeyError(
                 f"ERA5 single-levels file {path} is missing variable(s) {missing}. "
                 f"The CDS download must include every variable in "
-                f"{[nc for _, nc, _ in _ERA5_SURFACE_VARIABLES]}."
+                f"{[nc for _, nc in _ERA5_SURFACE_VARIABLES]}."
             )
-        for i, (_, nc_name, _) in enumerate(_ERA5_SURFACE_VARIABLES):
+        for i, (_, nc_name) in enumerate(_ERA5_SURFACE_VARIABLES):
             out[i] = step[nc_name].values

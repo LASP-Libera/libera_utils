@@ -10,16 +10,20 @@ Real ERA5 pressure-level files can be downloaded from:
     CDS login required: https://cds.climate.copernicus.eu/user/register
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import xarray as xr
 
+import libera_utils
 from libera_utils.footprint_matching.readers.era5_pressure import (
     _ERA5_PRESSURE_LEVEL_VARIABLES,
     _ERA5_PRESSURE_LEVELS,
     ERA5PressureLevelReader,
 )
-from libera_utils.footprint_matching.types import BoundingBox
+from libera_utils.footprint_matching.types import STANDARD_DEVIATION_SUFFIX, BoundingBox
+from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
@@ -34,6 +38,100 @@ _T = ERA5_FIXTURE_TIME
 _N_SPECS = len(_ERA5_PRESSURE_LEVEL_VARIABLES) * len(_ERA5_PRESSURE_LEVELS)
 
 
+class TestERA5PressureLevelProductStacks:
+    def test_one_stack_per_variable_with_levels_ascending(self):
+        """``PRODUCT_STACKS`` stacks each variable's per-level specs, levels ascending, along ``PRESSURE_LEVEL``.
+
+        Element ``k`` of a stacked product variable is published at ``PRESSURE_LEVEL[k]``; a member out of level
+        order would publish one level's value at another level's pressure.
+
+        Asserts one stack per ERA5 variable, named for it, whose members are ``<variable>_<level>hPa`` in
+        ``_ERA5_PRESSURE_LEVELS`` order and whose coordinate values are those levels.
+        """
+        stacks = ERA5PressureLevelReader.PRODUCT_STACKS
+        assert [stack.name for stack in stacks] == [base for base, _ in _ERA5_PRESSURE_LEVEL_VARIABLES]
+        for stack in stacks:
+            assert stack.dimension == "PRESSURE_LEVEL"
+            assert stack.coordinate_values == _ERA5_PRESSURE_LEVELS
+            assert stack.members == tuple(f"{stack.name}_{level}hPa" for level in _ERA5_PRESSURE_LEVELS)
+
+    def test_every_stacked_spec_is_published_once(self):
+        """Every pressure-level product spec belongs to exactly one stack, mean or standard deviation.
+
+        A spec outside every stack would be published as a stray 1-D variable alongside the stacked ones.
+
+        Collects the members of ``product_stacks()`` and asserts they are exactly the ``product_variable_specs``
+        names, with no repeats.
+        """
+        members = [member for stack in ERA5PressureLevelReader.product_stacks() for member in stack.members]
+        assert len(members) == len(set(members))
+        assert set(members) == {spec.name for spec in ERA5PressureLevelReader.product_variable_specs()}
+
+
+@pytest.fixture(scope="module")
+def definition() -> LiberaDataProductDefinition:
+    """The shipped FMATCH-IMAGER product definition."""
+    path = Path(libera_utils.__file__).parent / "data" / "product_definitions" / "fmatch_imager.yml"
+    return LiberaDataProductDefinition.from_yaml(path)
+
+
+class TestERA5PressureLevelProductDefinition:
+    """The FMATCH-IMAGER definition declares exactly the reader's stacked variables, on ``PRESSURE_LEVEL``."""
+
+    def test_variables_match_reader_stacks(self, definition):
+        """The definition's ``ERA5_Pressure_*`` variables are the reader's stacks, each on time and pressure level.
+
+        The product writer fills each stacked variable from the reader's stack of the same name; a variable with no
+        stack would be left empty, and a stack with no variable would have nowhere to go.
+
+        Asserts the definition's ``ERA5_Pressure_`` variable names equal ``ERA5_Pressure_<stack name>`` for every
+        stack, and each has dimensions ``["RADIOMETER_TIME", "PRESSURE_LEVEL"]``.
+        """
+        prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
+        declared = {name: var for name, var in definition.variables.items() if name.startswith(prefix)}
+        expected = {f"{prefix}{stack.name}" for stack in ERA5PressureLevelReader.product_stacks()}
+        assert set(declared) == expected
+        for var in declared.values():
+            assert var.dimensions == ["RADIOMETER_TIME", "PRESSURE_LEVEL"]
+
+    def test_standard_deviations_share_units_with_their_means(self, definition):
+        """Each pressure-level standard deviation carries the units of its mean.
+
+        A spread is in the units of the quantity it spreads; a mismatch would tell a reader the spread of temperature
+        is, say, in percent.
+
+        Compares the ``units`` attribute of every ``*_Standard_Deviation`` stacked variable with its mean's.
+        """
+        prefix = f"{ERA5PressureLevelReader.READER_KEY}_"
+        for stack in ERA5PressureLevelReader.PRODUCT_STACKS:
+            mean = definition.variables[f"{prefix}{stack.name}"]
+            spread = definition.variables[f"{prefix}{stack.name}{STANDARD_DEVIATION_SUFFIX}"]
+            assert spread.attributes["units"] == mean.attributes["units"]
+
+    def test_pressure_level_coordinate_is_declared_in_hpa(self, definition):
+        """The definition declares a ``PRESSURE_LEVEL`` coordinate in hPa, the unit of ``_ERA5_PRESSURE_LEVELS``.
+
+        The writer stores the stacks' coordinate values, which are hPa, in this coordinate; any other declared unit
+        would mislabel every level.
+
+        Asserts the coordinate exists on dimension ``PRESSURE_LEVEL`` with ``units`` ``hPa``.
+        """
+        coordinate = definition.coordinates["PRESSURE_LEVEL"]
+        assert coordinate.dimensions == ["PRESSURE_LEVEL"]
+        assert coordinate.attributes["units"] == "hPa"
+
+    def test_pressure_level_dimension_size_matches_levels(self, definition):
+        """The standard ``PRESSURE_LEVEL`` dimension is as long as ``_ERA5_PRESSURE_LEVELS``.
+
+        Conformance checking rejects a stacked variable whose level axis differs from the dimension's size, so a
+        change to the level list without the dimension (or the reverse) would fail every product write.
+
+        Asserts the size in the standard dimensions equals the number of configured levels.
+        """
+        dimensions = LiberaVariableDefinition._get_standard_dimensions()
+        assert dimensions["PRESSURE_LEVEL"].size == len(_ERA5_PRESSURE_LEVELS)
+
+
 class TestERA5PressureLevelReaderPlanes:
     def test_planes_hold_their_variable_and_level(self, tmp_path):
         """Plane ``i`` of the served data holds, as float32, the variable and pressure level ``VARIABLES[i]`` names.
@@ -45,7 +143,7 @@ class TestERA5PressureLevelReaderPlanes:
 
         The synthetic 4 x 4 file stores levels descending and fills each (variable, level) layer with its own constant
         from ``era5_pressure_fixture_value``; a full-extent query must fold back to one float32 plane per spec, each
-        the constant for its spec (so levels are selected by value, not by position), with source ``"era5_pressure"``
+        the constant for its spec (so levels are selected by value, not by position), with source ``"ERA5_Pressure"``
         and no timestamp source.
         """
         reader = ERA5PressureLevelReader([make_era5_pressure_netcdf_fixture(tmp_path)])
@@ -60,7 +158,7 @@ class TestERA5PressureLevelReaderPlanes:
                 assert np.allclose(data[layer], expected, rtol=1e-6), (var_index, level)
                 layer += 1
         samples = reader.samples_in(bbox, _T)
-        assert samples.source == "era5_pressure"
+        assert samples.source == "ERA5_Pressure"
         assert samples.timestamp_source is None
 
 
@@ -137,11 +235,11 @@ class TestERA5PressureLevelReaderRealSubset:
         A value must reach the product exactly as the source granule stores it, under the name of its own variable and
         level.
 
-        Queries a small box around 45N, 105W of the real subset and compares ``temperature_500hPa`` and
+        Queries a small box around 45N, 105W of the real subset and compares ``Temperature_500hPa`` and
         ``geopotential_500hPa`` with the source granule's values there.
         """
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
         names = [v.name for v in ERA5PressureLevelReader.VARIABLES]
         values = sample_at(samples, 45.0, -105.0)
-        assert values[names.index("temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
-        assert values[names.index("geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)
+        assert values[names.index("Temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
+        assert values[names.index("Geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)

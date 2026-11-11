@@ -1,0 +1,319 @@
+# =============================================================================
+# FMATCH-CAM-CAMTIME Data Product Definition
+# =============================================================================
+
+attributes:
+  ProductID: FMATCH-CAM-CAMTIME
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
+
+coordinates:
+  # 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: each pseudo-footprint (image subsection) is identified by its image time
+  # (CAMERA_TIME) and its subsection index within that image (PSEUDOFOOTPRINT). Both are coordinates; every data variable
+  # hangs on both dimensions.
+  #
+  # CAMERA_TIME is the SHARED image-acquisition axis (one 2048x2048 image = one entry, unique and sorted). For a given
+  # date, FMATCH-CAM-CAMTIME and SCENE-ID-CAM-CAMTIME carry identical CAMERA_TIME values so records align 1:1.
+  # TODO[LIBSDC-847]: video mode emits sequential images sharing a timestamp, so CAMERA_TIME uniqueness will not hold
+  # there; revisit once video-mode handling is decided.
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: >-
+        Camera image acquisition time (UTC) referenced to the CCSDS Epoch (January 1, 1958); one entry per image.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+  # PSEUDOFOOTPRINT is the 0-based subsection index within a single image, generated at write time. Subsections may overlap
+  # in pixel space and do not tile the image.
+  PSEUDOFOOTPRINT:
+    dtype: int32
+    dimensions: ["PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: >-
+        Pseudo-footprint (image subsection) index within a camera image; paired with CAMERA_TIME it identifies each
+        subsection.
+
+  # Camera pixel-block provenance: each pseudo-footprint is an axis-aligned block of L1B Daily Camera pixels
+  # (CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y grid). The four inclusive bounds x_min..x_max (columns) and
+  # y_min..y_max (rows) trace it back to those pixels. Blocks may overlap. Passed through verbatim to SCENE-ID-CAM-CAMTIME.
+  Camera_Pixel_X_Min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  Camera_Pixel_X_Max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  Camera_Pixel_Y_Min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+  Camera_Pixel_Y_Max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+
+variables:
+  # ---------------------------------------------------------------------------
+  # Center pixel: the boresight (center) pixel of each pseudo-footprint, after any
+  #     nearest-valid substitution (see the center_pixel_substituted Quality_Flag bit).
+  #     FMATCH-only provenance; SCENE-ID-CAM-CAMTIME does not carry it.
+  # ---------------------------------------------------------------------------
+  Center_Pixel_X:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
+  Center_Pixel_Y:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
+
+  # ---------------------------------------------------------------------------
+  # Geolocation and viewing angles: passed through unchanged from L1B Daily
+  #     Camera at each pseudo-footprint's center pixel (the nearest valid pixel
+  #     when the center_pixel_substituted Quality_Flag bit is set), not averaged.
+  # ---------------------------------------------------------------------------
+  Latitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Geodetic latitude. Coordinate Reference System WGS84
+      units: degrees_north
+  Longitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Longitude. Coordinate Reference System WGS84
+      units: degrees_east
+  Altitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # This value is the L1B CAM `Altitude` field at the center pixel: the height above the
+      # WGS84 ellipsoid (EPSG:4979) of that pixel's geolocated point -- NOT the ~835 km
+      # spacecraft altitude.
+      long_name: Height above the WGS84 ellipsoid. EPSG:4979
+      units: meters
+  Solar_Zenith_Surface:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Geodetic zenith angle at the Earth point of the Sun
+      units: degrees
+  Viewing_Zenith_Surface:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Geodetic angle at the Earth point to the satellite
+      units: degrees
+  Relative_Azimuth_Surface:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Geodetic azimuth angle at the Earth point of the satellite relative to the solar plane (measured clockwise in the plane normal to the geodetic zenith)
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # Derived viewing geometry: computed here from the angles above (CERES/SSF
+  #     heritage).
+  # ---------------------------------------------------------------------------
+  Sunglint_Angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Sun glint angle
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # PSF-aggregated external variables: aggregated here from external sources
+  #     with the PSF weights, one value per footprint.
+  #     Variable names are <READER_KEY>_<spec name>; the source instrument is
+  #     recorded in each variable's long_name as "... (INSTRUMENT)".
+  # ---------------------------------------------------------------------------
+  # --- source reader: IGBP (resolution 0.463 km) ---
+  IGBP_Surface_Type:
+    dtype: int16
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: IGBP surface type classification (MODIS)
+  IGBP_Surface_Type_Primary:
+    dtype: int16
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Most common IGBP surface type in footprint (MODIS)
+  IGBP_Surface_Type_Secondary:
+    dtype: int16
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Second most common IGBP surface type in footprint (MODIS)
+  IGBP_Surface_Type_Tertiary:
+    dtype: int16
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Third most common IGBP surface type in footprint (MODIS)
+  # --- source reader: NISE (resolution 25.0 km) ---
+  NISE_Sea_Ice_Concentration:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Sea ice concentration over the footprint (fraction) (AMSR2)
+  NISE_Sea_Ice_Concentration_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of sea ice concentration (fraction), PSF-weighted over within-footprint values (AMSR2)
+  NISE_Snow_Free_Land:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by snow-free land (NISE code 0) (AMSR2)
+  NISE_Snow_Free_Land_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow-free land (NISE code 0), PSF-weighted over within-footprint values (AMSR2)
+  NISE_Permanent_Ice:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (AMSR2)
+  NISE_Permanent_Ice_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by permanent ice (NISE code 101), PSF-weighted over within-footprint values (AMSR2)
+  NISE_Snow_On_Land:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by snow on land (NISE codes 103-104) (AMSR2)
+  NISE_Snow_On_Land_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by snow on land (NISE codes 103-104), PSF-weighted over within-footprint values (AMSR2)
+  NISE_Open_Ocean:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by ocean (NISE code 255) (AMSR2)
+  NISE_Open_Ocean_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of fraction of footprint covered by ocean (NISE code 255), PSF-weighted over within-footprint values (AMSR2)
+  # --- source reader: VIIRS_CLDPROP_D3 (resolution 111.0 km) ---
+  # valid_min/valid_max are the CLDPROP_D3_VIIRS_NOAA20 Cloud_Optical_Thickness_Combined group's
+  #     valid_min/valid_max. A PSF-weighted mean of in-range cells stays in that range; the reader
+  #     masks only the source _FillValue and does not reject out-of-range cells.
+  VIIRS_CLDPROP_D3_Cloud_Optical_Thickness:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Cloud optical thickness for combined phase clouds (primary retrieval for cloudy scenes), daily L3 mean (NOAA20)
+      valid_min: 0.0
+      valid_max: 150.0
+  VIIRS_CLDPROP_D3_Cloud_Optical_Thickness_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of cloud optical thickness for combined phase clouds (primary retrieval for cloudy scenes), PSF-weighted over within-footprint daily L3 means (NOAA20)
+  VIIRS_CLDPROP_D3_Cloud_Top_Pressure:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Cloud top pressure (NOAA20)
+      units: "hPa"
+  VIIRS_CLDPROP_D3_Cloud_Top_Pressure_Standard_Deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Standard deviation of cloud top pressure, PSF-weighted over within-footprint values (NOAA20)
+      units: "hPa"
+
+  # ---------------------------------------------------------------------------
+  # Libera WFOV CAM algorithm outputs: passed through from Libera's CF-CAM
+  #     product, already one value per footprint (NOT from external readers).
+  # ---------------------------------------------------------------------------
+  Cloud_Fraction_Camera:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # Carried in percent [0, 100] matching the CF-CAM-CAMTIME input; SCENE-ID ingests it as-is.
+      # Percent in every product that carries cloud fraction (Data Product Definition Working Group, 2026-08-19).
+      long_name: Cloud fraction (Libera WFOV)
+      units: percent
+
+  # ---------------------------------------------------------------------------
+  # Coverage / QA: computed here from the PSF bounding box and each source's coverage.
+  # ---------------------------------------------------------------------------
+  PSF_Bbox_Lat_Min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  PSF_Bbox_Lat_Max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  PSF_Bbox_Lon_Min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
+  PSF_Bbox_Lon_Max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
+  PSF_Coverage_Fraction:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+  Quality_Flag:
+    # int32 (not int64): only a handful of bits are defined, so a 64-bit width is unnecessary.
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      # CF flag metadata. Quality_Flag ORs CameraFootprintQualityFlag (masks 1, 2) with
+      # FmatchCoverageFlag (masks 1, 4, 8, 16); both enums use mask 1 for partial coverage.
+      # flag_masks/flag_meanings let a consumer decode each bit without reading source:
+      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth, or
+      #                                    75% <= PSF-energy coverage < 95%)
+      #   2 = center_pixel_substituted   (the geometric center pixel was off-Earth, so the
+      #                                    nearest valid pixel was used as the boresight)
+      #   4 = insufficient_coverage      (PSF-energy coverage < 75%; retained but flagged)
+      #   8 = limb_truncated             (bounding box clipped at the Earth's limb)
+      #  16 = off_limb                   (view centroid off the limb; no Earth footprint,
+      #                                    external variables left at fill)
+      flag_masks: [1, 2, 4, 8, 16]
+      flag_meanings: "partial_coverage center_pixel_substituted insufficient_coverage limb_truncated off_limb"

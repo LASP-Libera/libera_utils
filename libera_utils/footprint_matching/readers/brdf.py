@@ -26,7 +26,7 @@ These are dimensionless; values range from 0.0 to ~3.0 for fiso and ~1.0 for
 fvol/fgeo. Stored as int16; each field's own ``_FillValue`` (32767), ``valid_range``
 (0..32766), ``scale_factor`` (0.001) and ``add_offset`` (0) are applied.
 
-Output variable naming: ``brdf_{band}_{param}``
+Output variable naming: ``{band}_{param}``
 
   ========= =================
   Band      HDF5 field suffix
@@ -69,15 +69,15 @@ _BRDF_GRID_NAME: str = "VIIRS_CMG_BRDF"
 # Each output variable and the HDF5 field it reads from the grid's Data Fields group.
 # This order is VARIABLES order and axis 0 of the reader's data array.
 _BRDF_FIELDS: tuple[tuple[str, str], ...] = (
-    ("brdf_shortwave_fiso", "BRDF_Albedo_Parameter1_shortwave"),
-    ("brdf_shortwave_fvol", "BRDF_Albedo_Parameter2_shortwave"),
-    ("brdf_shortwave_fgeo", "BRDF_Albedo_Parameter3_shortwave"),
-    ("brdf_vis_fiso", "BRDF_Albedo_Parameter1_vis"),
-    ("brdf_vis_fvol", "BRDF_Albedo_Parameter2_vis"),
-    ("brdf_vis_fgeo", "BRDF_Albedo_Parameter3_vis"),
-    ("brdf_nir_fiso", "BRDF_Albedo_Parameter1_nir"),
-    ("brdf_nir_fvol", "BRDF_Albedo_Parameter2_nir"),
-    ("brdf_nir_fgeo", "BRDF_Albedo_Parameter3_nir"),
+    ("Shortwave_Fiso", "BRDF_Albedo_Parameter1_shortwave"),
+    ("Shortwave_Fvol", "BRDF_Albedo_Parameter2_shortwave"),
+    ("Shortwave_Fgeo", "BRDF_Albedo_Parameter3_shortwave"),
+    ("VIS_Fiso", "BRDF_Albedo_Parameter1_vis"),
+    ("VIS_Fvol", "BRDF_Albedo_Parameter2_vis"),
+    ("VIS_Fgeo", "BRDF_Albedo_Parameter3_vis"),
+    ("NIR_Fiso", "BRDF_Albedo_Parameter1_nir"),
+    ("NIR_Fvol", "BRDF_Albedo_Parameter2_nir"),
+    ("NIR_Fgeo", "BRDF_Albedo_Parameter3_nir"),
 )
 
 # The per-field attributes a VJ143C1 BRDF field carries and the read applies.
@@ -114,8 +114,9 @@ def _cell_centers(edges: np.ndarray, first_edge: float, last_edge: float, axis_n
     return edges + direction * 0.5 * cell
 
 
-# The products that carry the VIIRS BRDF variables: every FMATCH product.
-_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+# The products that carry the VIIRS BRDF variables: the imager products. The CAM products carry
+# none, since no consumer of FMATCH-CAM or FMATCH-CAM-CAMTIME reads BRDF.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
 
 class VIIRSBRDFReader(StaticReader):
@@ -129,12 +130,13 @@ class VIIRSBRDFReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"viirs_brdf"``.
+        Registry key ``"VIIRS_BRDF"``.
     RESOLUTION_KM : float
         5.6 km (0.05° CMG grid spacing at equator).
     VARIABLES : tuple[VariableSpec, ...]
         Nine BRDF kernel parameter variables (3 bands × 3 kernel weights),
-        all float32 with ``weighted_mean`` aggregation.
+        all float32 with ``weighted_mean`` aggregation, carried by FMATCH-IMAGER
+        and FMATCH-IMAGER-CAMTIME.
 
     Parameters
     ----------
@@ -142,7 +144,7 @@ class VIIRSBRDFReader(StaticReader):
         The one VJ143C1 HDF5 (HDF-EOS5) file for the processing day.
     """
 
-    READER_KEY: str = "viirs_brdf"
+    READER_KEY: str = "VIIRS_BRDF"
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.

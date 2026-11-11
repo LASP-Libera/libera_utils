@@ -14,7 +14,7 @@ import numpy as np
 
 
 class OperationalMode(enum.Enum):
-    """Five operational modes for the FMATCH algorithm.
+    """Four operational modes for the FMATCH algorithm.
 
     Each mode produces a distinct data product with its own identifier.
     Members are declared in order of increasing data latency.
@@ -25,8 +25,6 @@ class OperationalMode(enum.Enum):
         Radiometer timescale, camera/NRT latency. Runs continuously from mission start.
     CAM_CAMTIME : str
         Camera timescale, camera/NRT latency. Runs continuously from mission start.
-    IMAGER_FLASH : str
-        Radiometer timescale, RBSP Flash latency. Available post-Year 1.
     IMAGER : str
         Radiometer timescale, RBSP Climate Quality latency. Available post-Year 1.
     IMAGER_CAMTIME : str
@@ -40,13 +38,12 @@ class OperationalMode(enum.Enum):
 
     CAM = "FMATCH-CAM"
     CAM_CAMTIME = "FMATCH-CAM-CAMTIME"
-    IMAGER_FLASH = "FMATCH-IMAGER-FLASH"
     IMAGER = "FMATCH-IMAGER"
     IMAGER_CAMTIME = "FMATCH-IMAGER-CAMTIME"
 
 
 class FmatchCoverageFlag(enum.IntFlag):
-    """Bitwise coverage/QA flags folded into a footprint's ``q_flags`` variable.
+    """Bitwise coverage/QA flags folded into a footprint's ``Quality_Flag`` variable.
 
     Set by the product orchestrator from the CERES 75%/95% PSF-energy coverage rule once
     the external-variable aggregation has run. The values are OR-combined and tested
@@ -430,7 +427,7 @@ class VariableSpec:
     ----------
     name : str
         Variable name used throughout the footprint matching pipeline
-        (e.g., ``"surface_type"``, ``"cloud_optical_thickness"``).
+        (e.g., ``"Surface_Type"``, ``"Cloud_Optical_Thickness"``).
     dtype : str
         NumPy dtype string for the variable's data array (e.g., ``"int16"``).
     aggregation : str
@@ -485,25 +482,25 @@ _STANDARD_DEVIATION_AGGREGATION: dict[str, str] = {
 
 #: Suffix appended to a continuous variable's name to form its std-dev companion.
 #: Kept as a module constant so the readers, product definitions, and tests all
-#: agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``).
-STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
+#: agree on the exact spelling (e.g. ``ERA5_Surface_Wind_U10_Standard_Deviation``).
+STANDARD_DEVIATION_SUFFIX: str = "_Standard_Deviation"
 
 
 def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple[VariableSpec, ...]:
     """Return ``specs`` plus a standard-deviation companion for each continuous spec.
 
     For every mean-aggregated (continuous) variable in ``specs`` this appends a
-    ``<name>_standard_deviation`` companion describing the spread of that
+    ``<name>_Standard_Deviation`` companion describing the spread of that
     variable's values within the footprint. Categorical / mode-aggregated
     variables are passed through unchanged (no companion), because a standard
     deviation of a most-common category is not physically meaningful.
 
     The companion is declared here so the reader ``VariableSpec`` tuple stays the
     single source of truth for the FMATCH product variables (the product
-    definition YAMLs and the cross-check test both derive variable names from
-    these specs). The companion's ``aggregation`` is ``"weighted_std"`` for a
-    ``weighted_mean`` parent and ``"weighted_positive_std"`` for a
-    ``weighted_log_mean`` parent, so the spread covers the same samples as the mean.
+    definition YAMLs name each one ``<READER_KEY>_<spec name>``). The companion's
+    ``aggregation`` is ``"weighted_std"`` for a ``weighted_mean`` parent and
+    ``"weighted_positive_std"`` for a ``weighted_log_mean`` parent, so the spread
+    covers the same samples as the mean.
 
     Parameters
     ----------
@@ -535,3 +532,54 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
                 )
             )
     return tuple(expanded)
+
+
+@dataclass(frozen=True)
+class ProductStack:
+    """A product variable that stacks several read planes along a second product dimension.
+
+    A reader serves each plane of a multi-level field as its own :class:`VariableSpec`,
+    and the aggregation engine reduces each plane to its own scalar. A stack declares that
+    the product stores those scalars as one variable on ``(time, dimension)``: element
+    ``k`` of the product variable is the scalar of ``members[k]``, at coordinate value
+    ``coordinate_values[k]``.
+
+    Attributes
+    ----------
+    name : str
+        Bare product variable name (the caller prefixes it with ``<READER_KEY>_``, as for any
+        product variable), e.g. ``"Temperature"``.
+    dimension : str
+        The product dimension the stack runs along, as named in the Libera standard
+        dimensions file, e.g. ``"PRESSURE_LEVEL"``.
+    coordinate_values : tuple[float, ...]
+        The coordinate value of each element along ``dimension``, in the units the
+        product definition's coordinate of that name declares.
+    members : tuple[str, ...]
+        The product spec names stacked, one per coordinate value, in coordinate order.
+
+    Raises
+    ------
+    ValueError
+        If ``members`` is empty or names a spec twice, or if it has a different length
+        than ``coordinate_values``.
+    """
+
+    name: str
+    dimension: str
+    coordinate_values: tuple[float, ...]
+    members: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.members:
+            raise ValueError(f"ProductStack {self.name!r} has no members; list the spec names it stacks.")
+        if len(set(self.members)) != len(self.members):
+            raise ValueError(
+                f"ProductStack {self.name!r} lists a member more than once: {list(self.members)}. "
+                "Each element along the stack's dimension must come from its own spec."
+            )
+        if len(self.members) != len(self.coordinate_values):
+            raise ValueError(
+                f"ProductStack {self.name!r} has {len(self.members)} members but {len(self.coordinate_values)} "
+                f"coordinate values along {self.dimension!r}; give one coordinate value per member."
+            )

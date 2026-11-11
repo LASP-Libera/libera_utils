@@ -44,33 +44,33 @@ def _ramp(start: float, step: float) -> list[float]:
 # layer differs from its lower one, and aerosol type t holds (t + 1) * 5 plus the footprint index. Two of the five
 # shortwave ADM codes are the int16 fill.
 _CLUSTER_VALUES = {
-    "aerosol_optical_depth": _ramp(0.10, 0.10),
-    "clear_coverage": _ramp(10.0, 10.0),
-    "cloud_optical_depth_lower": [1.0, 2.0, 4.0, 8.0, 16.0],
-    "cloud_water_particle_radius_lower": _ramp(5.0, 1.0),
-    "cloud_ice_particle_radius_lower": _ramp(20.0, 5.0),
-    "cloud_classification": [1001.0, 1001.0, 1001.0, 1001.0, 1191.0],
-    "shortwave_adm_type": [50.0, 50.0, 50.0],
-    "longwave_adm_type": [50.0] * 5,
-    "layer_coverage_lower": _ramp(10.0, 5.0),
-    "layer_coverage_upper": _ramp(15.0, 5.0),
-    "cloud_coverage_multilayer_lower": _ramp(5.0, 3.0),
-    "cloud_coverage_multilayer_upper": _ramp(8.0, 3.0),
-    "cloud_top_pressure_lower": _ramp(300.0, 10.0),
-    "cloud_top_pressure_upper": _ramp(250.0, 10.0),
-    "cloud_base_pressure_lower": _ramp(800.0, 10.0),
-    "cloud_base_pressure_upper": _ramp(700.0, 10.0),
-    "cloud_particle_phase_37um_lower": _ramp(1.0, 0.05),
-    "cloud_particle_phase_37um_upper": _ramp(1.5, 0.05),
-    "cloud_optical_depth_upper": [2.0, 3.0, 5.0, 9.0, 17.0],
-    "cloud_water_particle_radius_upper": _ramp(6.0, 1.0),
-    "cloud_ice_particle_radius_upper": _ramp(22.0, 5.0),
-    "match_aot": _ramp(0.15, 0.10),
-    **{f"aerosol_type_percentage_type{t}": _ramp((t + 1) * 5.0, 1.0) for t in range(7)},
-    "imager_dark_target_land_055um_corrected_aerosol_optical_depth": _ramp(0.20, 0.10),
-    "imager_deep_blue_ocean_055um_aerosol_optical_depth": _ramp(0.25, 0.10),
-    "surface_albedo": _ramp(0.10, 0.05),
-    "toa_incoming_solar_radiation": _ramp(1360.0, 1.0),
+    "Aerosol_Optical_Depth": _ramp(0.10, 0.10),
+    "Clear_Coverage": _ramp(10.0, 10.0),
+    "Cloud_Optical_Depth_Lower": [1.0, 2.0, 4.0, 8.0, 16.0],
+    "Cloud_Water_Particle_Radius_Lower": _ramp(5.0, 1.0),
+    "Cloud_Ice_Particle_Radius_Lower": _ramp(20.0, 5.0),
+    "Cloud_Classification": [1001.0, 1001.0, 1001.0, 1001.0, 1191.0],
+    "Shortwave_ADM_Type": [50.0, 50.0, 50.0],
+    "Longwave_ADM_Type": [50.0] * 5,
+    "Layer_Coverage_Lower": _ramp(10.0, 5.0),
+    "Layer_Coverage_Upper": _ramp(15.0, 5.0),
+    "Cloud_Coverage_Multilayer_Lower": _ramp(5.0, 3.0),
+    "Cloud_Coverage_Multilayer_Upper": _ramp(8.0, 3.0),
+    "Cloud_Top_Pressure_Lower": _ramp(300.0, 10.0),
+    "Cloud_Top_Pressure_Upper": _ramp(250.0, 10.0),
+    "Cloud_Base_Pressure_Lower": _ramp(800.0, 10.0),
+    "Cloud_Base_Pressure_Upper": _ramp(700.0, 10.0),
+    "Cloud_Particle_Phase_37um_Lower": _ramp(1.0, 0.05),
+    "Cloud_Particle_Phase_37um_Upper": _ramp(1.5, 0.05),
+    "Cloud_Optical_Depth_Upper": [2.0, 3.0, 5.0, 9.0, 17.0],
+    "Cloud_Water_Particle_Radius_Upper": _ramp(6.0, 1.0),
+    "Cloud_Ice_Particle_Radius_Upper": _ramp(22.0, 5.0),
+    "Match_AOT": _ramp(0.15, 0.10),
+    **{f"Aerosol_Type_Percentage_Type{t}": _ramp((t + 1) * 5.0, 1.0) for t in range(7)},
+    "Imager_Dark_Target_Land_055um_Corrected_Aerosol_Optical_Depth": _ramp(0.20, 0.10),
+    "Imager_Deep_Blue_Ocean_055um_Aerosol_Optical_Depth": _ramp(0.25, 0.10),
+    "Surface_Albedo": _ramp(0.10, 0.05),
+    "TOA_Incoming_Solar_Radiation": _ramp(1360.0, 1.0),
 }
 
 
@@ -78,19 +78,19 @@ class TestFLASHFluxReaderSamples:
     def test_cluster_is_served_as_time_stamped_footprints(self, tmp_path):
         """``FLASHFluxReader.samples_in`` serves each footprint as its own float32 sample, at its position and time.
 
-        Each footprint is a native sample for the PSF weigher, tagged ``"flashflux"`` with its own observation time, which
+        Each footprint is a native sample for the PSF weigher, tagged ``"FLASHFlux"`` with its own observation time, which
         the nearest-pass selection relies on. FLASHFlux stores longitude in 0..360 while boxes use -180..180, so without
         normalization every western-hemisphere footprint would be missed.
 
         Reads the default fixture over the cluster box at -11..-9 degrees and asserts the values are float32
-        ``(len(VARIABLES), 5)``, every longitude is -10 degrees (stored as 350), the source is ``"flashflux"``,
+        ``(len(VARIABLES), 5)``, every longitude is -10 degrees (stored as 350), the source is ``"FLASHFlux"``,
         ``timestamp_source`` is None and every sample time is the fixture time.
         """
         samples = FLASHFluxReader([make_flashflux_fixture(tmp_path)]).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(FLASHFluxReader.VARIABLES), 5)
         assert samples.values.dtype == np.float32
         assert np.allclose(samples.lons, -10.0, atol=1e-4)
-        assert samples.source == "flashflux"
+        assert samples.source == "FLASHFlux"
         assert samples.timestamp_source is None
         assert np.all(samples.times == _T)
 
@@ -132,10 +132,10 @@ class TestFLASHFluxReaderTimeMatching:
         reader = FLASHFluxReader([make_flashflux_fixture(tmp_path, lats=lats, lons_0360=lons, times=times)])
         near_early = reader.samples_in(_BBOX, _T + np.timedelta64(20, "m"))
         assert near_early.n_samples == 3
-        assert np.allclose(_finite_values(near_early.values, "aerosol_optical_depth"), [0.10, 0.20, 0.30], atol=1e-4)
+        assert np.allclose(_finite_values(near_early.values, "Aerosol_Optical_Depth"), [0.10, 0.20, 0.30], atol=1e-4)
         near_late = reader.samples_in(_BBOX, late_time + np.timedelta64(20, "m"))
         assert near_late.n_samples == 3
-        assert np.allclose(_finite_values(near_late.values, "aerosol_optical_depth"), [0.40, 0.50, 0.60], atol=1e-4)
+        assert np.allclose(_finite_values(near_late.values, "Aerosol_Optical_Depth"), [0.40, 0.50, 0.60], atol=1e-4)
 
 
 class TestFLASHFluxReaderSpacing:
@@ -217,9 +217,9 @@ class TestFLASHFluxReaderValidRange:
             cloud_water_particle_radius_lower=np.full(n, 50.0, dtype=np.float32),
         )
         data = _values(FLASHFluxReader([path]))
-        assert np.allclose(_finite_values(data, "cloud_ice_particle_radius_lower"), 150.0)
-        assert _finite_values(data, "cloud_ice_particle_radius_lower").size == 5
-        assert _finite_values(data, "cloud_water_particle_radius_lower").size == 0
+        assert np.allclose(_finite_values(data, "Cloud_Ice_Particle_Radius_Lower"), 150.0)
+        assert _finite_values(data, "Cloud_Ice_Particle_Radius_Lower").size == 5
+        assert _finite_values(data, "Cloud_Water_Particle_Radius_Lower").size == 0
 
     def test_longitude_valid_range_comes_from_the_file(self, tmp_path):
         """``FLASHFluxReader`` range-checks footprint longitude with the ``valid_range`` the file declares.
@@ -245,7 +245,7 @@ class TestFLASHFluxReaderLayoutChecks:
         naming the first layered field read and ``alpha4``.
         """
         path = make_flashflux_fixture(tmp_path, layer_dim_name="Conditions")
-        with pytest.raises(ValueError, match=r"read as cloud_optical_depth_lower\) has dimensions.*'alpha4'"):
+        with pytest.raises(ValueError, match=r"read as Cloud_Optical_Depth_Lower\) has dimensions.*'alpha4'"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 
     def test_missing_variable_raises(self, tmp_path):
@@ -339,10 +339,10 @@ class TestFLASHFluxReaderRealSubset:
         assert at_i.size > 0
         names = [v.name for v in FLASHFluxReader.VARIABLES]
         expected = {
-            "layer_coverage_lower": layers[i, 0],
-            "layer_coverage_upper": layers[i, 1],
-            "clear_coverage": clear[i],
-            "aerosol_type_percentage_type2": aerosol[i, 2],
+            "Layer_Coverage_Lower": layers[i, 0],
+            "Layer_Coverage_Upper": layers[i, 1],
+            "Clear_Coverage": clear[i],
+            "Aerosol_Type_Percentage_Type2": aerosol[i, 2],
         }
         for name, value in expected.items():
             assert np.allclose(samples.values[names.index(name), at_i], value), name

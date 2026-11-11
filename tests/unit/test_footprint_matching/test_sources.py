@@ -16,7 +16,7 @@ from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
 from tests.plugins.footprint_matching_fixtures import ERA5_FIXTURE_TIME
 
 MODE = OperationalMode.CAM
-INACTIVE_SOURCE = "cldpix"
+INACTIVE_SOURCE = "CLDPIX"
 """A registered source the CAM product does not use."""
 
 
@@ -44,43 +44,43 @@ class TestBuildSources:
     def test_opens_no_granule_until_the_first_samples_in(self, tmp_path):
         readers = build_sources(MODE, _placeholder_paths(tmp_path))
         with pytest.raises(OSError, match="Unknown file format"):
-            readers["era5_surface"].samples_in(BoundingBox(0.5, 1.5, 10.5, 11.5), ERA5_FIXTURE_TIME)
+            readers["VIIRS_CLDPROP_D3"].samples_in(BoundingBox(0.5, 1.5, 10.5, 11.5), ERA5_FIXTURE_TIME)
 
 
 class TestBuildSourcesRejects:
     def test_missing_active_source_raises_keyerror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
-        del paths["era5_surface"]
-        with pytest.raises(KeyError, match="No file path supplied for active source 'era5_surface'"):
+        del paths["VIIRS_CLDPROP_D3"]
+        with pytest.raises(KeyError, match="No file path supplied for active source 'VIIRS_CLDPROP_D3'"):
             build_sources(MODE, paths)
 
     def test_unused_source_raises_keyerror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
         paths[INACTIVE_SOURCE] = [tmp_path / "cldpix.nc"]
-        with pytest.raises(KeyError, match=r"keys \['cldpix'\] that mode 'FMATCH-CAM' does not use"):
+        with pytest.raises(KeyError, match=r"keys \['CLDPIX'\] that mode 'FMATCH-CAM' does not use"):
             build_sources(MODE, paths)
 
     def test_misspelled_key_is_reported_as_itself(self, tmp_path):
         """The unexpected-key check runs before the missing-key check, so a typo names itself."""
         paths = _placeholder_paths(tmp_path)
-        paths["era5_surfce"] = paths.pop("era5_surface")
-        with pytest.raises(KeyError, match=r"keys \['era5_surfce'\]"):
+        paths["VIIRS_CLDPRP_D3"] = paths.pop("VIIRS_CLDPROP_D3")
+        with pytest.raises(KeyError, match=r"keys \['VIIRS_CLDPRP_D3'\]"):
             build_sources(MODE, paths)
 
     def test_single_path_entry_raises_typeerror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
-        paths["era5_surface"] = paths["era5_surface"][0]
+        paths["VIIRS_CLDPROP_D3"] = paths["VIIRS_CLDPROP_D3"][0]
         with pytest.raises(TypeError, match="Wrap it in a list"):
             build_sources(MODE, paths)
 
     def test_empty_entry_raises_valueerror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
-        paths["era5_surface"] = []
+        paths["VIIRS_CLDPROP_D3"] = []
         with pytest.raises(ValueError, match="at least one staged granule"):
             build_sources(MODE, paths)
 
     def test_missing_granule_raises_filenotfounderror(self, tmp_path):
         paths = _placeholder_paths(tmp_path)
-        paths["era5_surface"] = [tmp_path / "absent.nc"]
-        with pytest.raises(FileNotFoundError, match="ERA5SurfaceReader .* not existing files"):
+        paths["VIIRS_CLDPROP_D3"] = [tmp_path / "absent.nc"]
+        with pytest.raises(FileNotFoundError, match="VIIRSCldpropD3Reader .* not existing files"):
             build_sources(MODE, paths)

@@ -41,16 +41,16 @@ Rather than collapse the Extent SDS into a single sea ice field, this reader
 splits it into five independent ``float32`` coverage layers, one per surface
 class. Each layer carries a per-pixel value that the PSF aggregation engine
 turns into a footprint-level *fraction* via ``weighted_mean``;
-``sea_ice_concentration`` also preserves sub-pixel concentration magnitude:
+``Sea_Ice_Concentration`` also preserves sub-pixel concentration magnitude:
 
   ===================== =========== ============================================
   Variable              Codes       Per-pixel value
   ===================== =========== ============================================
-  sea_ice_concentration 1–100       code / 100.0  (0.01–1.0 concentration)
-  snow_free_land        0           1.0 else 0.0
-  permanent_ice         101         1.0 else 0.0
-  snow_on_land          103–104     1.0 else 0.0   (dry + wet snow)
-  open_ocean            255         1.0 else 0.0
+  Sea_Ice_Concentration 1–100       code / 100.0  (0.01–1.0 concentration)
+  Snow_Free_Land        0           1.0 else 0.0
+  Permanent_Ice         101         1.0 else 0.0
+  Snow_On_Land          103–104     1.0 else 0.0   (dry + wet snow)
+  Open_Ocean            255         1.0 else 0.0
   ===================== =========== ============================================
 
 Design notes
@@ -60,10 +60,10 @@ Design notes
   253 (suspect ice value). The weigher counts such a pixel as missing, so it lowers a
   footprint's coverage rather than pulling every class fraction toward zero. Code 254
   (off-Earth corners) is dropped from the point cloud entirely (see below).
-- The five layers do **not** sum to exactly 1.0: ``sea_ice_concentration`` holds
+- The five layers do **not** sum to exactly 1.0: ``Sea_Ice_Concentration`` holds
   a fractional concentration (intended), while the other four are 0/1 indicators.
   This is by design — four surface-class fractions plus a mean ice concentration.
-- ``snow_free_land`` (code 0) and ``open_ocean`` (code 255) are distinct classes:
+- ``Snow_Free_Land`` (code 0) and ``Open_Ocean`` (code 255) are distinct classes:
   the granule separates snow-free land from open water, so neither subsumes the
   other. Code 255 is ocean, the single largest class in each polar grid.
 
@@ -171,11 +171,11 @@ _SEA_ICE_PERCENT_DIVISOR: float = 100.0
 # which in turn MUST match the ``VARIABLES`` tuple below (the multi-variable
 # reader contract documented on ``PointSamples``).
 _VARIABLE_ORDER: tuple[str, ...] = (
-    "sea_ice_concentration",
-    "snow_free_land",
-    "permanent_ice",
-    "snow_on_land",
-    "open_ocean",
+    "Sea_Ice_Concentration",
+    "Snow_Free_Land",
+    "Permanent_Ice",
+    "Snow_On_Land",
+    "Open_Ocean",
 )
 
 
@@ -232,14 +232,14 @@ class NISEReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"nise"``.
+        Registry key ``"NISE"``.
     RESOLUTION_KM : float
         25 km (NISE EASE-Grid 25-km product).
     VARIABLES : tuple[VariableSpec, ...]
         Five fractional-coverage variables, all continuous float32 with
         ``weighted_mean`` aggregation and range 0.0–1.0:
-        ``"sea_ice_concentration"``, ``"snow_free_land"``, ``"permanent_ice"``,
-        ``"snow_on_land"``, and ``"open_ocean"``.
+        ``"Sea_Ice_Concentration"``, ``"Snow_Free_Land"``, ``"Permanent_Ice"``,
+        ``"Snow_On_Land"``, and ``"Open_Ocean"``.
     _HEMISPHERES : tuple[_HemisphereGrid, ...]
         The EASE-Grids read from every granule, in order: the Northern (EPSG:3408) and
         Southern (EPSG:3409) 721 x 721 25 km grids.
@@ -250,7 +250,7 @@ class NISEReader(StaticReader):
         The one NISE HDF-EOS4 file (``*.HDFEOS``) for the processing day.
     """
 
-    READER_KEY: str = "nise"
+    READER_KEY: str = "NISE"
     # The pipeline ingests NISE_A2, built from AMSR-2 passive microwave radiometry,
     # so provenance is tagged AMSR2.
     INSTRUMENT: str = "AMSR2"
@@ -263,35 +263,35 @@ class NISEReader(StaticReader):
     # because these are fractions, not discrete class codes.
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
-            name="sea_ice_concentration",
+            name="Sea_Ice_Concentration",
             dtype="float32",
             aggregation="weighted_mean",
             modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
-            name="snow_free_land",
+            name="Snow_Free_Land",
             dtype="float32",
             aggregation="weighted_mean",
             modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
-            name="permanent_ice",
+            name="Permanent_Ice",
             dtype="float32",
             aggregation="weighted_mean",
             modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
-            name="snow_on_land",
+            name="Snow_On_Land",
             dtype="float32",
             aggregation="weighted_mean",
             modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
-            name="open_ocean",
+            name="Open_Ocean",
             dtype="float32",
             aggregation="weighted_mean",
             modes=_MODES,
@@ -378,7 +378,7 @@ class NISEReader(StaticReader):
             # If kept, they would land in the other hemisphere's footprints and drag the
             # weighted_mean toward zero (254 maps to 0.0 in all five layers) -- a silent
             # corruption. Distinct from code 255 (ocean), which is retained as the
-            # ``open_ocean`` layer.
+            # ``Open_Ocean`` layer.
             keep = raw.ravel() != _CODE_OFF_EARTH
             hemi_lats.append(lats[keep])
             hemi_lons.append(lons[keep])
@@ -441,7 +441,7 @@ class NISEReader(StaticReader):
         """Split the raw NISE Extent codes into five float32 coverage layers.
 
         Each layer is a per-pixel value in [0.0, 1.0] (see the module docstring
-        for the full encoding). ``sea_ice_concentration`` keeps the fractional
+        for the full encoding). ``Sea_Ice_Concentration`` keeps the fractional
         concentration from codes 1–100; the other four layers are 0/1 indicators.
         Codes that belong to no surface class (102, 105–251, and the 252/253
         quality flags) are NaN in every layer, so the weigher counts them as missing.

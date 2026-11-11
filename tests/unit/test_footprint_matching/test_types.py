@@ -8,6 +8,7 @@ import pytest
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     OperationalMode,
+    ProductStack,
     RadiometerFootprint,
     VariableSpec,
     with_standard_deviation_companions,
@@ -122,16 +123,16 @@ class TestVariableSpec:
         deviation in a product without its mean, or leave the mean without its spread.
 
         Builds a weighted-mean parent carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME and asserts its companion is
-        named ``v_standard_deviation`` and carries the same two modes.
+        named ``v_Standard_Deviation`` and carries the same two modes.
         """
         modes = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
         parent = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", modes=modes)
         _, companion = with_standard_deviation_companions((parent,))
-        assert companion.name == "v_standard_deviation"
+        assert companion.name == "v_Standard_Deviation"
         assert companion.modes == modes
 
     def test_log_mean_companion_is_positive_std(self):
-        """The ``_standard_deviation`` companion of a log-mean variable is aggregated with ``weighted_positive_std``.
+        """The ``_Standard_Deviation`` companion of a log-mean variable is aggregated with ``weighted_positive_std``.
 
         The companion's strategy is set when the reader's specs are expanded, so that is where a log-mean variable must
         be paired with the positive-sample spread rather than the plain one.
@@ -149,5 +150,29 @@ class TestVariableSpec:
                 ),
             )
         )
-        companions = {spec.name: spec.aggregation for spec in specs if spec.name.endswith("_standard_deviation")}
-        assert companions == {"a_standard_deviation": "weighted_std", "b_standard_deviation": "weighted_positive_std"}
+        companions = {spec.name: spec.aggregation for spec in specs if spec.name.endswith("_Standard_Deviation")}
+        assert companions == {"a_Standard_Deviation": "weighted_std", "b_Standard_Deviation": "weighted_positive_std"}
+
+
+class TestProductStack:
+    """A ``ProductStack`` has one distinct member per coordinate value."""
+
+    @pytest.mark.parametrize(
+        ("members", "coordinate_values", "message"),
+        [
+            pytest.param((), (), "no members", id="empty"),
+            pytest.param(("t_1", "t_1"), (1, 2), "more than once", id="duplicate"),
+            pytest.param(("t_1", "t_2"), (1,), "coordinate values", id="length-mismatch"),
+        ],
+    )
+    def test_invalid_stack_raises(self, members, coordinate_values, message):
+        """An empty, repeating or length-mismatched ``ProductStack`` raises ``ValueError`` at construction.
+
+        Element ``k`` of a stacked variable is member ``k`` at coordinate value ``k``, so a stack with no members,
+        a member used twice, or a member without a coordinate value would publish a level with the wrong value or
+        none.
+
+        Each case constructs the stack and matches the message naming the defect.
+        """
+        with pytest.raises(ValueError, match=message):
+            ProductStack(name="t", dimension="PRESSURE_LEVEL", coordinate_values=coordinate_values, members=members)

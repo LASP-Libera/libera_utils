@@ -1,4 +1,4 @@
-scene_id,surface_type_min,surface_type_max,surface_wind_min,surface_wind_max,cloud_fraction_min,cloud_fraction_max,cloud_phase_min,cloud_phase_max,optical_depth_min,optical_depth_max,solar_zenith_angle_min,solar_zenith_angle_max,viewing_zenith_angle_min,viewing_zenith_angle_max,relative_azimuth_angle_min,relative_azimuth_angle_max
+scene_id,Surface_Type_Min,Surface_Type_Max,surface_wind_Min,surface_wind_Max,Cloud_Fraction_Min,Cloud_Fraction_Max,cloud_phase_Min,cloud_phase_Max,optical_depth_Min,optical_depth_Max,Solar_Zenith_Surface_Min,Solar_Zenith_Surface_Max,Viewing_Zenith_Surface_Min,Viewing_Zenith_Surface_Max,Relative_Azimuth_Surface_Min,Relative_Azimuth_Surface_Max
 1,0,1,,3.5,,0.1,,,,,0,180,0,90,0,360
 2,0,1,3.5,5.5,,0.1,,,,,0,180,0,90,0,360
 3,0,1,5.5,7.5,,0.1,,,,,0,180,0,90,0,360
