@@ -15,12 +15,50 @@ loads it, and the run stops: a product with a source silently missing would be w
 and a crash gets noticed.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from libera_utils.footprint_matching.readers.base import AncillaryReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
+
+
+def require_mode_reader_keys(mode: OperationalMode, keys: Iterable[str], argument: str) -> None:
+    """Check that ``keys`` are exactly the readers active in ``mode``.
+
+    A source left out would leave its product columns at fill and score coverage over
+    fewer sources than the product declares; a source the mode does not use would
+    aggregate variables the product does not carry.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        Operational mode whose active readers the keys must match.
+    keys : collections.abc.Iterable[str]
+        Reader registry keys a caller supplied.
+    argument : str
+        Name of the caller's argument that holds the keys, for the error message.
+
+    Raises
+    ------
+    KeyError
+        If ``keys`` holds a key for a source ``mode`` does not use, or is missing a
+        reader active in ``mode``.
+    """
+    required = set(ReaderRegistry.get_readers_for_mode(mode))
+    keys = set(keys)
+    unexpected = sorted(keys - required)
+    if unexpected:
+        raise KeyError(
+            f"{argument} has keys {unexpected} that mode {mode.value!r} does not use. "
+            f"Remove them, or correct a misspelled key; required sources: {sorted(required)}"
+        )
+    missing = sorted(required - keys)
+    if missing:
+        raise KeyError(
+            f"{argument} has no entry for active sources {missing} (mode {mode.value!r}). "
+            f"Required sources: {sorted(required)}"
+        )
 
 
 def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[Path]]) -> dict[str, AncillaryReader]:
@@ -60,19 +98,6 @@ def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[P
     FileNotFoundError
         If any staged granule path is not an existing file.
     """
+    require_mode_reader_keys(mode, source_file_paths, "source_file_paths")
     reader_classes = ReaderRegistry.get_readers_for_mode(mode)
-    unexpected = sorted(set(source_file_paths) - set(reader_classes))
-    if unexpected:
-        raise KeyError(
-            f"source_file_paths has keys {unexpected} that mode {mode.value!r} does not use. "
-            f"Remove them, or correct a misspelled key; required sources: {sorted(reader_classes)}"
-        )
-    readers: dict[str, AncillaryReader] = {}
-    for key, reader_cls in reader_classes.items():
-        if key not in source_file_paths:
-            raise KeyError(
-                f"No file path supplied for active source {key!r} (mode {mode.value!r}). "
-                f"Required sources: {sorted(reader_classes)}"
-            )
-        readers[key] = reader_cls(source_file_paths[key])
-    return readers
+    return {key: reader_cls(source_file_paths[key]) for key, reader_cls in reader_classes.items()}

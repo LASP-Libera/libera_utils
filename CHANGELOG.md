@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.25.0] - 2026-11-11
+
+### Added
+
+- `libera_utils.footprint_matching.product` assembles and writes the FMATCH products for all four operational modes (`assemble_fmatch_dataset`, `write_fmatch_product`, `aggregate_external_variables`, `build_radiometer_footprints`, `compute_derived_viewing_geometry`).
+  - Geolocation and viewing angles pass through from L1B, keyed by their L1B RAD-4CH names (`L1B_PASSTHROUGH_VARIABLES`), which are also the product names. `PSF_Bbox_*`, `Sunglint_Angle`, `PSF_Coverage_Fraction`, the aggregated external variables and the CERES 75%/95% coverage bits in `Quality_Flag` are computed. `Sunglint_Angle` uses the L1B relative azimuth convention, so it is zero at the specular direction.
+  - Off-limb records are kept and written as fill with zero coverage. Footprints are weighted with `AngularPSFWeigher` by default; pass `RadialWeigher` for footprints without a cone-angle rate.
+  - Missing inputs raise rather than write fill: a variable no input produced raises `ValueError` unless `allow_placeholders=True`, and an unusable ephemeris raises `MissingGeolocationError`. Camera-timescale modes cannot be aggregated yet.
+  - Integer category and pixel-index variables use -1 (`FMATCH_INTEGER_FILL_VALUE`) as fill; bitmasks such as `Quality_Flag` use 0.
+- `aggregate_external_variables` runs on a process pool when the `FMATCH_WORKERS` configuration key or environment variable is above one, with the same output as a single-process run.
+- `AncillaryReader.preload()` loads a reader's whole-run data before the first query.
+
+### Changed
+
+- `lasp-curryer` requires `>= 0.5.3, <1.0`, for `curryer.compute.spatial.relative_azimuth`.
+
 ## [5.24.0] - 2026-11-11
 
 ### Added
@@ -1051,7 +1067,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...HEAD
+[5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
 [5.22.0]: https://github.com/LASP-Libera/libera_utils/compare/5.21.0...5.22.0

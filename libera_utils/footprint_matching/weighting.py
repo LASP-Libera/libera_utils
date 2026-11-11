@@ -15,9 +15,9 @@ weights (:class:`PixelWeigher`) and two implementations:
   honouring the asymmetric along-scan response, the scan direction (L1B
   ``Cone_Angle_Rate``), and the stationary-scanner static FOV (design doc sections
   2.4.2.5-2.4.2.7, 2.8.1.1).
-* :class:`RadialWeigher` -- a boresight-centered Gaussian stand-in kept as a
-  dependency-light fallback for footprints with no ephemeris (the camera
-  pseudo-footprints).
+* :class:`RadialWeigher` -- a boresight-centered Gaussian stand-in. It sizes the
+  PSF from the satellite radius and viewing zenith angle but needs no viewing frame,
+  so it does not read the subsatellite point or the scan direction.
 
 The weight is evaluated at the sample's own location: no sample is averaged, binned
 or interpolated before it is weighted, and the aggregation engine is the only place
@@ -314,9 +314,9 @@ class RadialWeigher(PixelWeigher):
 
     The weight of a sample is a Gaussian in its distance from the boresight,
     truncated to zero beyond the PSF's ground radius. This is *not* the true
-    asymmetric CERES PSF; it is a smooth, centrally-peaked placeholder for footprints
-    that carry no ephemeris (the camera pseudo-footprints), where the angular frame
-    cannot be built (see :class:`AngularPSFWeigher`).
+    asymmetric CERES PSF; it is a smooth, centrally-peaked stand-in that sizes the PSF
+    from the satellite radius and viewing zenith angle without building the angular
+    frame (see :class:`AngularPSFWeigher`).
 
     Distances from the boresight use a fast local-tangent-plane formula
     (``_local_tangent_plane_km``) for normal footprint boxes -- within sub-meter of
