@@ -11,7 +11,7 @@ handful of parameters:
   reader set),
 * which product counts as their input (L1B ``RAD-4CH`` for the radiometer-timescale modes,
   CF-CAM-CAMTIME for the camera-timescale modes),
-* whether they consume the optional Camera Cloud Fraction product, and
+* whether they require the separate Camera Cloud Fraction product (CF-CAM, FMATCH-CAM only), and
 * for camera-timescale modes, whether they carry the cloud fraction read with the pseudo-footprints.
 
 Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
@@ -119,6 +119,103 @@ L1B_TIME_VARIABLE: str = "radiometer_time"
 # returns the decoded L1B times under).
 FMATCH_RADIOMETER_TIME_COORDINATE: str = "RADIOMETER_TIME"
 
+# Name of the per-footprint cloud fraction, in percent, in both Camera Cloud Fraction products: CF-CAM (one value
+# per radiometer footprint) and CF-CAM-CAMTIME (one value per camera pseudo-footprint).
+CF_CAM_CLOUD_FRACTION_VARIABLE: str = "Cloud_Fraction"
+
+# CF-CAM carries the L1B RAD-4CH time coordinate under its L1B name, and its rows are matched to the L1B footprints
+# by exact equality on it.
+CF_CAM_TIME_VARIABLE: str = L1B_TIME_VARIABLE
+
+
+class MissingCloudFractionInputError(ValueError):
+    """A FMATCH run that carries the Camera Cloud Fraction has no input carrying it.
+
+    Raised when a FMATCH-CAM run is given no CF-CAM product, or when a CF-CAM or CF-CAM-CAMTIME input lacks a
+    variable the cloud fraction is read from.
+    """
+
+
+class CloudFractionTimeMismatchError(ValueError):
+    """The CF-CAM rows do not line up with the L1B RAD-4CH footprints they are matched to.
+
+    Raised when two CF-CAM rows share a radiometer time, when a CF-CAM cloud fraction falls inside an L1B granule's
+    time span without matching one of its footprints, or when no footprint of the granule matches any CF-CAM row.
+    """
+
+
+@dataclass(frozen=True)
+class RadiometerCloudFraction:
+    """The CF-CAM cloud fraction of every CF-CAM input of one run, keyed by radiometer time.
+
+    Read once per run by :func:`load_cf_cam_cloud_fraction` and matched to each L1B input's footprints by
+    :meth:`values_for`.
+
+    Attributes
+    ----------
+    radiometer_time : numpy.ndarray
+        Sorted, unique ``datetime64[ns]`` radiometer times (UTC, decoded from nanoseconds since the CCSDS epoch,
+        1958-01-01) of the CF-CAM rows.
+    cloud_fraction : numpy.ndarray
+        ``float32`` cloud fraction in percent, aligned with ``radiometer_time``; ``NaN`` where CF-CAM wrote fill.
+    file_names : tuple[str, ...]
+        Names of the CF-CAM files the values were read from, recorded in each product's provenance.
+    """
+
+    radiometer_time: np.ndarray
+    cloud_fraction: np.ndarray
+    file_names: tuple[str, ...]
+
+    def values_for(self, footprint_time: np.ndarray) -> np.ndarray:
+        """Return the cloud fraction of each L1B footprint, matched by exact radiometer time.
+
+        CF-CAM covers only the footprints the camera sees, so a footprint with no CF-CAM row takes ``NaN``. A CF-CAM
+        row outside the granule's time span belongs to another granule and is ignored.
+
+        Parameters
+        ----------
+        footprint_time : numpy.ndarray
+            ``datetime64[ns]`` radiometer times of one L1B input's usable footprints.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``float32`` cloud fraction in percent, one per footprint; ``NaN`` where CF-CAM has no value.
+
+        Raises
+        ------
+        CloudFractionTimeMismatchError
+            If a CF-CAM row with a cloud fraction lies inside the span of ``footprint_time`` but matches none of its
+            footprints, which means the two products disagree on the radiometer times; or if no footprint matches
+            a CF-CAM row, which means the CF-CAM inputs do not cover this granule.
+        """
+        footprint_time = np.asarray(footprint_time, dtype="datetime64[ns]")
+        n_rows = self.radiometer_time.size
+        index = np.minimum(np.searchsorted(self.radiometer_time, footprint_time), max(n_rows - 1, 0))
+        matched = (self.radiometer_time[index] == footprint_time) if n_rows else np.zeros(footprint_time.shape, bool)
+
+        in_span = (self.radiometer_time >= footprint_time.min()) & (self.radiometer_time <= footprint_time.max())
+        unmatched_rows = in_span & np.isfinite(self.cloud_fraction)
+        unmatched_rows[index[matched]] = False
+        if unmatched_rows.any():
+            raise CloudFractionTimeMismatchError(
+                f"{int(unmatched_rows.sum())} CF-CAM cloud fraction value(s) fall inside the L1B granule "
+                f"{footprint_time.min()} to {footprint_time.max()} but match no usable L1B footprint time (first "
+                f"{self.radiometer_time[unmatched_rows][0]}). CF-CAM must carry the L1B RAD-4CH {CF_CAM_TIME_VARIABLE} "
+                f"values unchanged; regenerate CF-CAM ({', '.join(self.file_names)}) from this L1B RAD-4CH granule."
+            )
+        if not matched.any():
+            raise CloudFractionTimeMismatchError(
+                f"No CF-CAM row matches a footprint of the L1B granule {footprint_time.min()} to "
+                f"{footprint_time.max()}; the CF-CAM inputs ({', '.join(self.file_names)}) do not cover it. Stage the "
+                "CF-CAM product generated from this L1B RAD-4CH granule in the input manifest."
+            )
+
+        values = np.full(footprint_time.shape, np.nan, dtype=np.float32)
+        values[matched] = self.cloud_fraction[index[matched]]
+        logger.info("Matched CF-CAM cloud fraction to %d of %d footprints", int(matched.sum()), matched.size)
+        return values
+
 
 @dataclass(frozen=True)
 class FmatchRunnerConfig:
@@ -137,7 +234,7 @@ class FmatchRunnerConfig:
         cloud fraction) from that product. Manifest files with any other product id (or
         unparsable names) are skipped.
     cloud_fraction_product_id : DataProductIdentifier or None
-        The optional SEPARATE Camera Cloud Fraction product merged for radiometer-timescale
+        The separate Camera Cloud Fraction product a radiometer-timescale run requires and merges as
         ``cloud_fraction_camera`` (CF-CAM, ``l2_cf_cam``). ``None`` for the camera-timescale modes
         (FMATCH-CAM-CAMTIME's cloud fraction is bundled in ``input_product_id``) and the IMAGER modes.
     log_prefix : str
@@ -192,21 +289,21 @@ def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFoo
     ------
     MissingCamtimeVariablesError
         If the file lacks a variable needed to rebuild the pseudo-footprints.
-    ValueError
+    MissingCloudFractionInputError
         If the file has no ``Cloud_Fraction`` variable.
     """
     with xr.open_dataset(local_input_path) as cf_dataset:
         cf_dataset = cf_dataset.load()
     footprints = pseudofootprints_from_camtime_dataset(cf_dataset)
-    if "Cloud_Fraction" not in cf_dataset:
-        raise ValueError(
-            f"CF-CAM-CAMTIME input {local_input_path} has no Cloud_Fraction variable, which FMATCH-CAM-CAMTIME "
-            "writes as cloud_fraction_camera. Regenerate the input with the Camera Cloud Fraction algorithm so it "
-            "carries Cloud_Fraction."
+    if CF_CAM_CLOUD_FRACTION_VARIABLE not in cf_dataset:
+        raise MissingCloudFractionInputError(
+            f"CF-CAM-CAMTIME input {local_input_path} has no {CF_CAM_CLOUD_FRACTION_VARIABLE} variable, which "
+            "FMATCH-CAM-CAMTIME writes as cloud_fraction_camera. Regenerate the input with the Camera Cloud Fraction "
+            f"algorithm so it carries {CF_CAM_CLOUD_FRACTION_VARIABLE}."
         )
     # Boolean-mask indexing returns row-major order, matching the reconstruction order.
     mask = camtime_real_cell_mask(cf_dataset)
-    cloud_fraction_camera = np.asarray(cf_dataset["Cloud_Fraction"].values, dtype=np.float32)[mask]
+    cloud_fraction_camera = np.asarray(cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32)[mask]
     return footprints, cloud_fraction_camera
 
 
@@ -243,7 +340,7 @@ def _load_imager_camtime_footprints(local_input_path: Path) -> tuple[list[Pseudo
 # otherwise identical across all four.
 
 # FMATCH-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product; runs continuously from
-# mission start. Input is the L1B RAD-4CH product; the optional cloud fraction comes from CF-CAM (also radiometer
+# mission start. Input is the L1B RAD-4CH product; the required cloud fraction comes from CF-CAM (also radiometer
 # timescale). No RBSP-sourced readers are active at its latency rank.
 CAM_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM,
@@ -362,8 +459,12 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     ValueError
         If the ``PROCESSING_PATH`` or ``FMATCH_ANCILLARY_PATH`` environment variable is not
         set, if the manifest references no input of ``config.input_product_id``, if an
-        ancillary granule is staged in S3, if a FMATCH-CAM-CAMTIME input has no
-        ``Cloud_Fraction``, or if an L1B input has no usable footprints.
+        ancillary granule is staged in S3, or if an L1B input has no usable footprints.
+    MissingCloudFractionInputError
+        If a FMATCH-CAM manifest lists no CF-CAM input, or a CF-CAM or CF-CAM-CAMTIME input
+        lacks a variable its cloud fraction is read from.
+    CloudFractionTimeMismatchError
+        If the CF-CAM rows do not line up with an L1B input's footprints.
     FileNotFoundError
         If the ancillary root or an active reader's directory under it is missing or empty.
     MissingCamtimeVariablesError
@@ -399,7 +500,12 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     if not input_file_paths:
         raise ValueError(f"No {input_label} input files found in the input manifest")
 
-    cloud_fraction_file_paths = _collect_cloud_fraction_files(input_manifest, config)
+    # The CF-CAM inputs are read once here and matched to each L1B input below.
+    cloud_fraction = None
+    if config.cloud_fraction_product_id is not None:
+        cloud_fraction = load_cf_cam_cloud_fraction(
+            select_manifest_files_by_product_id(input_manifest, config.cloud_fraction_product_id)
+        )
 
     # Step 4: Run footprint matching and write data products.
     logger.info("Step 4: Running footprint matching and writing data products")
@@ -409,7 +515,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
             input_file_path=input_file_path,
             output_path=dropbox_path,
             config=config,
-            cloud_fraction_file_paths=cloud_fraction_file_paths,
+            cloud_fraction=cloud_fraction,
             ancillary_inputs=ancillary_inputs,
         )
         output_data_file_paths.append(output_file)
@@ -430,23 +536,69 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     return output_manifest_filepath
 
 
-def _collect_cloud_fraction_files(input_manifest: Manifest, config: FmatchRunnerConfig) -> list[str]:
-    """Select the optional Camera Cloud Fraction input files from the manifest.
+def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> RadiometerCloudFraction:
+    """Read the cloud fraction of every CF-CAM file of a run, keyed by radiometer time.
 
-    Only the CAM-family modes declare ``cloud_fraction_camera``; for the IMAGER modes
-    this returns an empty list without inspecting the manifest. A CAM run with no
-    cloud-fraction file staged is legal - the variable is then written as a
-    placeholder - so a missing input is logged, not raised.
+    The files are read once and their rows combined, so a run with several L1B inputs matches each against the same
+    values (see :meth:`RadiometerCloudFraction.values_for`). The ``_FillValue`` of ``Cloud_Fraction`` reads as
+    ``NaN``.
+
+    Parameters
+    ----------
+    cf_cam_file_paths : list[str] | list[pathlib.Path]
+        Paths (local or S3) to the CF-CAM files selected from the input manifest.
+
+    Returns
+    -------
+    RadiometerCloudFraction
+        The combined cloud fraction in percent, sorted by radiometer time.
+
+    Raises
+    ------
+    MissingCloudFractionInputError
+        If ``cf_cam_file_paths`` is empty, since FMATCH-CAM writes the CF-CAM cloud fraction and cannot run without
+        it, or if a file lacks ``Cloud_Fraction`` or ``radiometer_time``.
+    CloudFractionTimeMismatchError
+        If two CF-CAM rows share a radiometer time, which leaves the footprint's cloud fraction ambiguous.
     """
-    if config.cloud_fraction_product_id is None:
-        return []
-    paths = select_manifest_files_by_product_id(input_manifest, config.cloud_fraction_product_id)
-    if not paths:
-        logger.warning(
-            "No %s input found in the manifest; cloud_fraction_camera will be written as a placeholder.",
-            config.cloud_fraction_product_id.value,
+    if not cf_cam_file_paths:
+        raise MissingCloudFractionInputError(
+            "The input manifest lists no CF-CAM product, which FMATCH-CAM requires for Cloud_Fraction_Camera. Add "
+            "the CF-CAM file(s) generated from the run's L1B RAD-4CH input to the input manifest."
         )
-    return paths
+    times: list[np.ndarray] = []
+    values: list[np.ndarray] = []
+    for path in cf_cam_file_paths:
+        with _as_local_path(path) as local_path, xr.open_dataset(local_path) as cf_dataset:
+            missing = [
+                name for name in (CF_CAM_TIME_VARIABLE, CF_CAM_CLOUD_FRACTION_VARIABLE) if name not in cf_dataset
+            ]
+            if missing:
+                raise MissingCloudFractionInputError(
+                    f"CF-CAM input {AnyPath(path).name} has no {', '.join(missing)} variable, which FMATCH-CAM reads "
+                    "Cloud_Fraction_Camera from. Regenerate the input with the Camera Cloud Fraction algorithm so it "
+                    f"carries {CF_CAM_TIME_VARIABLE} and {CF_CAM_CLOUD_FRACTION_VARIABLE}."
+                )
+            times.append(np.asarray(cf_dataset[CF_CAM_TIME_VARIABLE].values, dtype="datetime64[ns]"))
+            values.append(np.asarray(cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32))
+
+    all_times = np.concatenate(times)
+    order = np.argsort(all_times, kind="stable")
+    all_times = all_times[order]
+    duplicated = all_times[1:] == all_times[:-1]
+    file_names = tuple(AnyPath(path).name for path in cf_cam_file_paths)
+    if duplicated.any():
+        raise CloudFractionTimeMismatchError(
+            f"{int(duplicated.sum())} CF-CAM radiometer time(s) appear more than once across {', '.join(file_names)} "
+            f"(first {all_times[1:][duplicated][0]}), so their footprints' cloud fraction is ambiguous. List each "
+            "CF-CAM granule in the input manifest once, and only granules whose time ranges do not overlap."
+        )
+    logger.info("Read %d CF-CAM cloud fraction row(s) from %d file(s)", all_times.size, len(file_names))
+    return RadiometerCloudFraction(
+        radiometer_time=all_times,
+        cloud_fraction=np.concatenate(values)[order],
+        file_names=file_names,
+    )
 
 
 def resolve_ancillary_inputs(
@@ -621,7 +773,8 @@ def run_footprint_matching(
       e.g. IMAGER-CAMTIME);
     * **radiometer-timescale** modes return the dict of L1B pass-through arrays (time, geolocation,
       viewing angles), whose footprints are the L1B radiometer footprints themselves, and ``None``
-      cloud fraction (the radiometer CF-CAM merge is handled separately from the manifest).
+      cloud fraction (FMATCH-CAM's CF-CAM cloud fraction is matched to these footprints by
+      :func:`create_and_write_data_product`).
 
     Parameters
     ----------
@@ -641,9 +794,11 @@ def run_footprint_matching(
     Raises
     ------
     ValueError
-        If a camera-timescale mode has no ``camera_footprint_loader`` configured, if a
-        FMATCH-CAM-CAMTIME input has no ``Cloud_Fraction``, or if a radiometer-timescale L1B
-        file has no usable footprints (raised by :func:`load_l1b_radiometer_inputs`).
+        If a camera-timescale mode has no ``camera_footprint_loader`` configured, or if a
+        radiometer-timescale L1B file has no usable footprints (raised by
+        :func:`load_l1b_radiometer_inputs`).
+    MissingCloudFractionInputError
+        If a FMATCH-CAM-CAMTIME input has no ``Cloud_Fraction``.
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
 
@@ -721,7 +876,7 @@ def create_and_write_data_product(
     output_path: str | Path | S3Path,
     config: FmatchRunnerConfig,
     ancillary_inputs: dict[str, list[Path | S3Path]],
-    cloud_fraction_file_paths: list[str] | None = None,
+    cloud_fraction: RadiometerCloudFraction | None = None,
 ) -> LiberaDataProductFilename:
     """Run footprint matching on one input file and write the FMATCH data product.
 
@@ -738,11 +893,10 @@ def create_and_write_data_product(
         The staged ancillary inventory from
         :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs`:
         at least one local granule for every reader active for the mode.
-    cloud_fraction_file_paths : list[str], optional
-        SEPARATE radiometer-timescale Camera Cloud Fraction files (CF-CAM) selected from the manifest,
-        if any. Reading them is not implemented yet (``TODO[LIBSDC-785]``); they are logged as
-        provenance and the ``cloud_fraction_camera`` variable is written as a placeholder. (Camera-
-        timescale modes read real cloud fraction from ``input_file_path`` instead.)
+    cloud_fraction : RadiometerCloudFraction, optional
+        The CF-CAM cloud fraction from :func:`load_cf_cam_cloud_fraction`. Required when
+        ``config.cloud_fraction_product_id`` is set (FMATCH-CAM), and must be ``None`` otherwise; the
+        camera-timescale modes read their cloud fraction from ``input_file_path`` instead.
 
     Returns
     -------
@@ -751,10 +905,17 @@ def create_and_write_data_product(
 
     Raises
     ------
+    MissingCloudFractionInputError
+        If ``config`` requires CF-CAM and ``cloud_fraction`` is ``None``, or a CF-CAM-CAMTIME input has no
+        ``Cloud_Fraction``.
+    CloudFractionTimeMismatchError
+        If the CF-CAM rows do not line up with the L1B footprints (see
+        :meth:`RadiometerCloudFraction.values_for`).
     ValueError
-        If ``ancillary_inputs`` is empty, a reader in it has no granule, or a granule is in S3; for a
-        camera-timescale mode, whose pseudo-footprints carry no ephemeris to size the PSF from
-        (``TODO[LIBSDC-884]``); or for any condition :func:`run_footprint_matching` raises it for.
+        If ``cloud_fraction`` is given for a mode that takes no CF-CAM input; if ``ancillary_inputs``
+        is empty, a reader in it has no granule, or a granule is in S3; for a camera-timescale mode,
+        whose pseudo-footprints carry no ephemeris to size the PSF from (``TODO[LIBSDC-884]``); or for
+        any condition :func:`run_footprint_matching` raises it for.
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
 
@@ -762,26 +923,29 @@ def create_and_write_data_product(
     -----
     The external-reader aggregates (``igbp_surface_type``, ``era5_*``, ``flashflux_*``,
     ``cldpix_*``, ...) and the ``psf_coverage_fraction`` and ``q_flags`` columns are computed by
-    the PSF aggregation engine from ``ancillary_inputs``. The one placeholder is the
-    radiometer-timescale ``cloud_fraction_camera``, written as fill until the CF-CAM read
-    lands (``TODO[LIBSDC-785]``); camera-timescale modes carry the real cloud fraction from
-    their CF-CAM-CAMTIME input.
+    the PSF aggregation engine from ``ancillary_inputs``. FMATCH-CAM's ``Cloud_Fraction_Camera``
+    is the CF-CAM value of each footprint, fill where CF-CAM has none; the camera-timescale modes
+    carry the cloud fraction from their CF-CAM-CAMTIME input.
     """
+    if config.cloud_fraction_product_id is None and cloud_fraction is not None:
+        raise ValueError(
+            f"A CF-CAM cloud fraction was given, but {config.mode.value} takes no CF-CAM input: pass "
+            "cloud_fraction=None."
+        )
+    if config.cloud_fraction_product_id is not None and cloud_fraction is None:
+        raise MissingCloudFractionInputError(
+            f"{config.mode.value} requires the CF-CAM cloud fraction for Cloud_Fraction_Camera: read the run's CF-CAM "
+            "files with load_cf_cam_cloud_fraction and pass the result as cloud_fraction."
+        )
+
     inputs, cloud_fraction_camera = run_footprint_matching(input_file_path, config)
 
     input_file_name = AnyPath(input_file_path).name
     # Provenance records every file that fed this product, so a written file names its own inputs.
     provenance = [input_file_name]
-    # Radiometer-timescale CAM merges its cloud fraction from a SEPARATE CF-CAM product listed in the
-    # manifest; reading it is still future work (camera-timescale modes already carry real cloud
-    # fraction from their CF-CAM-CAMTIME input, read in run_footprint_matching).
-    if cloud_fraction_file_paths:
-        provenance.extend(AnyPath(path).name for path in cloud_fraction_file_paths)
-        # TODO[LIBSDC-785]: read the radiometer-timescale CF-CAM values and pass them as cloud_fraction_camera.
-        logger.info(
-            "Radiometer-timescale Camera Cloud Fraction input(s) present but not yet ingested; "
-            "cloud_fraction_camera will be written as a placeholder."
-        )
+    if cloud_fraction is not None:
+        cloud_fraction_camera = cloud_fraction.values_for(inputs[FMATCH_RADIOMETER_TIME_COORDINATE])
+        provenance.extend(cloud_fraction.file_names)
 
     source_file_paths = _ancillary_source_file_paths(ancillary_inputs)
     provenance.extend(path.name for paths in source_file_paths.values() for path in paths)
@@ -796,9 +960,6 @@ def create_and_write_data_product(
         input_files=",".join(provenance),
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
-        # The ancillary columns always aggregate here, so the only placeholder this allows is a CAM product's
-        # cloud_fraction_camera while the radiometer-timescale CF-CAM read is missing (TODO[LIBSDC-785]).
-        allow_placeholders=cloud_fraction_camera is None,
     )
     logger.info("Wrote %s data product to %s", output_file_path.data_product_id.value, output_file_path.path)
     return output_file_path

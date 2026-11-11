@@ -2,6 +2,7 @@
 camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
+import functools
 from pathlib import Path
 
 import numpy as np
@@ -10,16 +11,21 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching import product
+from libera_utils.footprint_matching import footprint_match_algorithm, product
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
     CAM_CAMTIME_CONFIG,
     FMATCH_VARIANT_ENV,
     RUNNER_CONFIGS,
+    CloudFractionTimeMismatchError,
+    MissingCloudFractionInputError,
+    RadiometerCloudFraction,
     _ancillary_source_file_paths,
     _load_cam_camtime_footprints,
     _load_imager_camtime_footprints,
     create_and_write_data_product,
+    load_cf_cam_cloud_fraction,
+    load_l1b_radiometer_inputs,
     resolve_ancillary_inputs,
     resolve_runner_config_from_env,
     run_algorithm,
@@ -33,6 +39,7 @@ from libera_utils.io.manifest import Manifest, ManifestType
 from tests.plugins.footprint_matching_fixtures import (
     make_cf_cam_camtime_dataset,
     make_cf_cam_camtime_fixture,
+    make_cf_cam_fixture,
     make_l1b_radiometer_fixture,
 )
 
@@ -47,8 +54,17 @@ def _stage_empty_tree(root: Path, mode: OperationalMode) -> Path:
 
 @pytest.fixture
 def fake_aggregation(monkeypatch, fake_sources):
-    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files."""
+    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
+
+    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
+    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column.
+    """
     monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
+    monkeypatch.setattr(
+        footprint_match_algorithm,
+        "write_fmatch_product",
+        functools.partial(product.write_fmatch_product, allow_placeholders=True),
+    )
 
 
 def _write_input_manifest(directory: Path, *files: Path) -> Path:
@@ -107,7 +123,7 @@ class TestCameraTimescaleInputs:
     def test_cam_camtime_loader_raises_without_cloud_fraction(self, tmp_path):
         cf_file = make_cf_cam_camtime_fixture(tmp_path, with_cloud_fraction=False)
 
-        with pytest.raises(ValueError, match="Cloud_Fraction"):
+        with pytest.raises(MissingCloudFractionInputError, match="Cloud_Fraction"):
             _load_cam_camtime_footprints(cf_file)
 
     def test_camera_timescale_config_without_loader_raises(self, tmp_path):
@@ -225,6 +241,15 @@ class TestRunAlgorithm:
         with pytest.raises(ValueError, match="No RAD-4CH input files"):
             run_algorithm(manifest_path, config)
 
+    @pytest.mark.usefixtures("dropbox")
+    def test_cam_raises_when_manifest_has_no_cf_cam(self, tmp_path, monkeypatch):
+        config = RUNNER_CONFIGS["cam"]
+        monkeypatch.setenv(ANCILLARY_PATH_ENV, str(_stage_empty_tree(tmp_path / "ancillary", config.mode)))
+        manifest_path = _write_input_manifest(tmp_path, make_l1b_radiometer_fixture(tmp_path))
+
+        with pytest.raises(MissingCloudFractionInputError, match="lists no CF-CAM product"):
+            run_algorithm(manifest_path, config)
+
     @pytest.mark.usefixtures("fake_aggregation")
     @pytest.mark.parametrize("variant", ["cam", "imager"])
     def test_writes_one_product_per_input(self, tmp_path, monkeypatch, dropbox, variant):
@@ -232,7 +257,11 @@ class TestRunAlgorithm:
         ancillary_root = _stage_empty_tree(tmp_path / "ancillary", config.mode)
         monkeypatch.setenv(ANCILLARY_PATH_ENV, str(ancillary_root))
         input_file = make_l1b_radiometer_fixture(tmp_path)
-        manifest_path = _write_input_manifest(tmp_path, input_file)
+        manifest_files = [input_file]
+        if config.cloud_fraction_product_id is not None:
+            with xr.open_dataset(input_file) as l1b:
+                manifest_files.append(make_cf_cam_fixture(tmp_path, l1b["radiometer_time"].values))
+        manifest_path = _write_input_manifest(tmp_path, *manifest_files)
 
         output_manifest = Manifest.from_file(run_algorithm(manifest_path, config))
 
@@ -243,5 +272,129 @@ class TestRunAlgorithm:
         assert LiberaDataProductFilename.from_file_path(product_path).data_product_id.value == config.mode.value
         with xr.open_dataset(product_path) as written:
             granules = written.attrs["InputGranules"].split(",")
-        assert granules[0] == input_file.name
-        assert len(granules) == 1 + len(ReaderRegistry.get_readers_for_mode(config.mode))
+        assert granules[: len(manifest_files)] == [path.name for path in manifest_files]
+        assert len(granules) == len(manifest_files) + len(ReaderRegistry.get_readers_for_mode(config.mode))
+
+    @pytest.mark.usefixtures("fake_aggregation", "dropbox")
+    def test_cam_writes_cf_cam_cloud_fraction_matched_by_time(self, tmp_path, monkeypatch):
+        config = RUNNER_CONFIGS["cam"]
+        monkeypatch.setenv(ANCILLARY_PATH_ENV, str(_stage_empty_tree(tmp_path / "ancillary", config.mode)))
+        input_file = make_l1b_radiometer_fixture(tmp_path, n_footprints=8)
+        with xr.open_dataset(input_file) as l1b:
+            times = l1b["radiometer_time"].values
+        # CF-CAM covers only some footprints, listed out of time order, and writes one as fill.
+        cf_cam_file = make_cf_cam_fixture(tmp_path, times[[5, 1, 2]], np.array([50.0, 10.0, np.nan]))
+        manifest_path = _write_input_manifest(tmp_path, input_file, cf_cam_file)
+
+        output_manifest = Manifest.from_file(run_algorithm(manifest_path, config))
+
+        with xr.open_dataset(Path(str(output_manifest.files[0]))) as written:
+            cloud_fraction = written["Cloud_Fraction_Camera"].values
+        expected = np.full(8, np.nan, dtype=np.float32)
+        expected[[1, 5]] = [10.0, 50.0]
+        np.testing.assert_array_equal(cloud_fraction, expected)
+
+
+class TestLoadCfCamCloudFraction:
+    """CF-CAM is read once per run, sorted by radiometer time, and must carry Cloud_Fraction."""
+
+    TIMES = np.datetime64("2026-06-11T00:00:00", "ns") + np.arange(6) * np.timedelta64(10, "ms")
+
+    def test_no_files_raises(self):
+        with pytest.raises(MissingCloudFractionInputError, match="lists no CF-CAM product"):
+            load_cf_cam_cloud_fraction([])
+
+    def test_file_without_cloud_fraction_raises(self, tmp_path):
+        cf_cam_file = make_cf_cam_fixture(tmp_path, self.TIMES, cloud_fraction_variable="cam_cloud_fraction")
+
+        with pytest.raises(MissingCloudFractionInputError, match="no Cloud_Fraction variable"):
+            load_cf_cam_cloud_fraction([cf_cam_file])
+
+    def test_files_are_combined_in_time_order_with_fill_as_nan(self, tmp_path):
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        late = make_cf_cam_fixture(tmp_path / "a", self.TIMES[3:], np.array([30.0, np.nan, 50.0]))
+        early = make_cf_cam_fixture(tmp_path / "b", self.TIMES[:3], np.array([0.0, 10.0, 20.0]))
+
+        cloud_fraction = load_cf_cam_cloud_fraction([late, early])
+
+        np.testing.assert_array_equal(cloud_fraction.radiometer_time, self.TIMES)
+        np.testing.assert_array_equal(
+            cloud_fraction.cloud_fraction, np.array([0.0, 10.0, 20.0, 30.0, np.nan, 50.0], dtype=np.float32)
+        )
+        assert cloud_fraction.file_names == (late.name, early.name)
+
+    def test_duplicate_times_across_files_raise(self, tmp_path):
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        first = make_cf_cam_fixture(tmp_path / "a", self.TIMES[:4])
+        second = make_cf_cam_fixture(tmp_path / "b", self.TIMES[3:])
+
+        with pytest.raises(CloudFractionTimeMismatchError, match="appear more than once"):
+            load_cf_cam_cloud_fraction([first, second])
+
+
+class TestRadiometerCloudFractionValuesFor:
+    """CF-CAM rows match L1B footprints by exact radiometer time, and a misaligned input stops the run."""
+
+    FOOTPRINTS = np.datetime64("2026-06-11T00:00:00", "ns") + np.arange(5) * np.timedelta64(10, "ms")
+
+    @staticmethod
+    def _cloud_fraction(times, values) -> RadiometerCloudFraction:
+        return RadiometerCloudFraction(
+            radiometer_time=np.asarray(times, dtype="datetime64[ns]"),
+            cloud_fraction=np.asarray(values, dtype=np.float32),
+            file_names=("cf.nc",),
+        )
+
+    def test_unmatched_footprints_are_nan_and_rows_outside_the_granule_are_ignored(self):
+        before = self.FOOTPRINTS[0] - np.timedelta64(1, "s")
+        after = self.FOOTPRINTS[-1] + np.timedelta64(1, "s")
+        cloud_fraction = self._cloud_fraction(
+            [before, self.FOOTPRINTS[1], self.FOOTPRINTS[3], after], [99.0, 10.0, 30.0, 99.0]
+        )
+
+        values = cloud_fraction.values_for(self.FOOTPRINTS)
+
+        np.testing.assert_array_equal(values, np.array([np.nan, 10.0, np.nan, 30.0, np.nan], dtype=np.float32))
+
+    def test_row_inside_the_granule_matching_no_footprint_raises(self):
+        offset = self.FOOTPRINTS[2] + np.timedelta64(1, "us")
+        cloud_fraction = self._cloud_fraction([self.FOOTPRINTS[1], offset], [10.0, 20.0])
+
+        with pytest.raises(CloudFractionTimeMismatchError, match="match no usable L1B footprint time"):
+            cloud_fraction.values_for(self.FOOTPRINTS)
+
+    def test_fill_row_inside_the_granule_matching_no_footprint_is_ignored(self):
+        offset = self.FOOTPRINTS[2] + np.timedelta64(1, "us")
+        cloud_fraction = self._cloud_fraction([self.FOOTPRINTS[1], offset], [10.0, np.nan])
+
+        values = cloud_fraction.values_for(self.FOOTPRINTS)
+
+        assert values[1] == 10.0
+        assert np.isnan(np.delete(values, 1)).all()
+
+    @pytest.mark.parametrize("times", [[], [np.datetime64("2026-06-12T00:00:00", "ns")]])
+    def test_no_footprint_matched_raises(self, times):
+        cloud_fraction = self._cloud_fraction(times, [50.0] * len(times))
+
+        with pytest.raises(CloudFractionTimeMismatchError, match="do not cover it"):
+            cloud_fraction.values_for(self.FOOTPRINTS)
+
+
+class TestCreateAndWriteCloudFractionInput:
+    """The CF-CAM cloud fraction is required for FMATCH-CAM and refused for every other mode."""
+
+    def test_cam_without_cloud_fraction_raises(self, tmp_path):
+        with pytest.raises(MissingCloudFractionInputError, match="requires the CF-CAM cloud fraction"):
+            create_and_write_data_product(make_l1b_radiometer_fixture(tmp_path), tmp_path, RUNNER_CONFIGS["cam"], {})
+
+    def test_imager_with_cloud_fraction_raises(self, tmp_path):
+        l1b_file = make_l1b_radiometer_fixture(tmp_path)
+        times = load_l1b_radiometer_inputs(l1b_file)["RADIOMETER_TIME"]
+        cloud_fraction = load_cf_cam_cloud_fraction([make_cf_cam_fixture(tmp_path, times)])
+
+        with pytest.raises(ValueError, match="takes no CF-CAM input"):
+            create_and_write_data_product(
+                l1b_file, tmp_path, RUNNER_CONFIGS["imager"], {}, cloud_fraction=cloud_fraction
+            )
