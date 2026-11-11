@@ -342,10 +342,11 @@ Each path must be a properly named L0, ground CCSDS, Libera data product or exte
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
-record and (for Libera and daily external ancillary data products) a Data Availability record. A static ancillary
-product such as the land/ocean mask has no applicable date and cannot be verified. Verification needs only read
-permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested
-by then the command logs a per-file summary and exits with an error.
+record and (for Libera and daily external ancillary data products) a Data Availability record. A non-daily
+ancillary product (the land/ocean mask, IGBP) has no applicable date and cannot be verified yet: it is staged with
+the other files, which are verified, and the command then exits with an error naming it. Verification needs only
+read permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully
+ingested by then the command logs a per-file summary and exits with an error.
 
 ```shell
 usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]

@@ -1035,7 +1035,7 @@ ANCILLARY_SAMPLES = [
     ),
     pytest.param(
         "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
-        filenaming.ViirsL3Filename,
+        filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_aod,
         "021",
         dt.date(2026, 9, 27),
@@ -1044,7 +1044,7 @@ ANCILLARY_SAMPLES = [
     ),
     pytest.param(
         "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc",
-        filenaming.ViirsL3Filename,
+        filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_cloud_properties,
         "011",
         dt.date(2026, 5, 27),
@@ -1053,12 +1053,21 @@ ANCILLARY_SAMPLES = [
     ),
     pytest.param(
         "VJ143C1.A2026153.002.2026161161054_subset.h5",
-        filenaming.ViirsL3Filename,
+        filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_brdf,
         "002",
         dt.date(2026, 6, 2),
         "VIIRS-NOAA20-BRDF/2026/06/02",
         id="brdf",
+    ),
+    pytest.param(
+        "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
+        filenaming.ModisIgbpFilename,
+        DataProductIdentifier.anc_modis_igbp,
+        "061",
+        None,
+        "MODIS-IGBP/061/20250724",
+        id="igbp",
     ),
     pytest.param(
         "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5",
@@ -1105,7 +1114,8 @@ ALL_FILENAME_CLASSES = (
     filenaming.LiberaDataProductFilename,
     filenaming.ManifestFilename,
     filenaming.CeresFilename,
-    filenaming.ViirsL3Filename,
+    filenaming.ModisViirsDailyFilename,
+    filenaming.ModisIgbpFilename,
     filenaming.ViirsSdrFilename,
     filenaming.NsidcNiseFilename,
     filenaming.NsidcLandOceanMaskFilename,
@@ -1179,6 +1189,56 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
 
 
 @pytest.mark.parametrize(
+    ("name", "utc_start", "utc_end"),
+    [
+        pytest.param(
+            "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010123.nc",
+            dt.datetime(2023, 1, 1, 23, tzinfo=dt.UTC),
+            dt.datetime(2023, 1, 2, tzinfo=dt.UTC),
+            id="ceres-hour",
+        ),
+        pytest.param(
+            "VJ143C1.A2026153.002.2026161161054.h5",
+            dt.datetime(2026, 6, 2, tzinfo=dt.UTC),
+            dt.datetime(2026, 6, 3, tzinfo=dt.UTC),
+            id="modis-viirs-day",
+        ),
+        pytest.param(
+            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+            dt.datetime(2025, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
+            dt.datetime(2027, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
+            id="igbp-two-years-from-production",
+        ),
+        pytest.param(
+            "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+            dt.datetime(2024, 10, 2, 12, 44, 58, 700000, tzinfo=dt.UTC),
+            dt.datetime(2024, 10, 2, 12, 46, 22, 900000, tzinfo=dt.UTC),
+            id="sdr-granule",
+        ),
+        pytest.param(
+            "NISE_AMSR2_20260610.HDFEOS",
+            dt.datetime(2026, 6, 10, tzinfo=dt.UTC),
+            dt.datetime(2026, 6, 11, tzinfo=dt.UTC),
+            id="nise-day",
+        ),
+        pytest.param("EASE2_M36km.LOCImask_land50_coast0km.964x406.bin", None, None, id="mask-all-time"),
+        pytest.param(
+            "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            dt.datetime(2025, 1, 1, tzinfo=dt.UTC),
+            dt.datetime(2025, 1, 1, 23, tzinfo=dt.UTC),
+            id="era5-steps",
+        ),
+    ],
+)
+def test_ancillary_names_give_their_coverage(name, utc_start, utc_end):
+    """Every ancillary class gives the UTC range its file covers as utc_start and utc_end, or None for all time."""
+    fn = filenaming.AbstractValidFilename.from_file_path(name)
+
+    assert fn.filename_parts.utc_start == utc_start
+    assert fn.filename_parts.utc_end == utc_end
+
+
+@pytest.mark.parametrize(
     ("name", "filename_class", "expected"),
     [
         pytest.param(
@@ -1186,6 +1246,16 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
             filenaming.CeresFilename,
             {"version": "Edition1C", "configuration_code": "101103", "applicable_date": dt.date(2023, 1, 1)},
             id="ssf-edition",
+        ),
+        pytest.param(
+            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+            filenaming.ModisIgbpFilename,
+            {
+                "tile": "h21v07",
+                "acquisition_date": dt.date(2024, 1, 1),
+                "production_time": dt.datetime(2025, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
+            },
+            id="igbp-tile",
         ),
         pytest.param(
             "ICDBG_j01_d20240201_t0107372_e0113176_b63541_c20240201023927745000_oeac_ops.h5",
@@ -1245,13 +1315,29 @@ def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
             "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020041024.nc", filenaming.CeresFilename, id="ceres-hour-24"
         ),
         pytest.param(
-            "AERDB_D3_VIIRS_SNPP.A2026270.021.2026274001051.nc", filenaming.ViirsL3Filename, id="viirs-l3-platform"
+            "AERDB_D3_VIIRS_SNPP.A2026270.021.2026274001051.nc",
+            filenaming.ModisViirsDailyFilename,
+            id="viirs-l3-platform",
         ),
         pytest.param(
-            "AERDB_D3_VIIRS_NOAA20.A2025366.021.2026274001051.nc", filenaming.ViirsL3Filename, id="viirs-l3-doy-366"
+            "AERDB_D3_VIIRS_NOAA20.A2025366.021.2026274001051.nc",
+            filenaming.ModisViirsDailyFilename,
+            id="viirs-l3-doy-366",
         ),
         pytest.param(
-            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.h5", filenaming.ViirsL3Filename, id="viirs-l3-extension"
+            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.h5",
+            filenaming.ModisViirsDailyFilename,
+            id="viirs-l3-extension",
+        ),
+        pytest.param(
+            "AERDB_D3_VIIRS_NOAA20.A2026270.h21v07.021.2026274001051.nc",
+            filenaming.ModisViirsDailyFilename,
+            id="viirs-l3-tile-on-global-grid",
+        ),
+        pytest.param("MCD12Q1.A2024001.061.2025205222320.hdf", filenaming.ModisIgbpFilename, id="igbp-no-tile"),
+        pytest.param("MCD12Q1.A2024001.h21v07.061.2025205222320.nc", filenaming.ModisIgbpFilename, id="igbp-extension"),
+        pytest.param(
+            "MCD12Q1.A2024001.h21v07.061.2025366222320.hdf", filenaming.ModisIgbpFilename, id="igbp-production-doy-366"
         ),
         pytest.param(
             "IVCDB_npp_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",

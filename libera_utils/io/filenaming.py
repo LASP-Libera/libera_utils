@@ -115,7 +115,8 @@ LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 # identifiers name.
 
 # NOAA-20 CERES Level 2 products from NASA Langley ASDC: the product and instrument part of the name, mapped to its
-# identifier. FLASHFlux files carry the SSF name with an ``alpha`` production strategy.
+# identifier. FLASHFlux files carry the SSF name with an ``alpha`` production strategy; the footprint matching
+# FLASHFlux reader consumes those SSF files, and the CLDPIX reader the CLDPIX files.
 _CERES_PRODUCTS = {
     "SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_ssf,
     "CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
@@ -129,21 +130,29 @@ CERES_REGEX = re.compile(
     r"\.nc$"
 )
 
-# NOAA-20 VIIRS Level 3 daily products from NASA LAADS DAAC (Deep Blue aerosol, cloud properties) and LP DAAC
-# (BRDF/albedo): the short name, mapped to its identifier and the extension the provider gives it.
-_VIIRS_L3_PRODUCTS = {
-    "AERDB_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_aod, "nc"),
-    "CLDPROP_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_cloud_properties, "nc"),
-    "VJ143C1": (DataProductIdentifier.anc_viirs_noaa20_brdf, "h5"),
+# MODIS and VIIRS products from NASA LAADS DAAC (Deep Blue aerosol, cloud properties) and LP DAAC (BRDF/albedo,
+# IGBP land cover), in the EOSDIS short-name form: the short name, mapped to its identifier, the extension the
+# provider gives it, and whether the name carries a sinusoidal tile (``h21v07``). MCD12Q1 is a yearly tiled map;
+# the others are daily global grids.
+_MODIS_VIIRS_PRODUCTS = {
+    "AERDB_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_aod, "nc", False),
+    "CLDPROP_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_cloud_properties, "nc", False),
+    "VJ143C1": (DataProductIdentifier.anc_viirs_noaa20_brdf, "h5", False),
+    "MCD12Q1": (DataProductIdentifier.anc_modis_igbp, "hdf", True),
 }
 
-VIIRS_L3_REGEX = re.compile(
-    rf"^(?P<short_name>{'|'.join(map(re.escape, _VIIRS_L3_PRODUCTS))})"
+MODIS_VIIRS_REGEX = re.compile(
+    rf"^(?P<short_name>{'|'.join(map(re.escape, _MODIS_VIIRS_PRODUCTS))})"
     r"\.A(?P<year>[0-9]{4})(?P<doy>[0-9]{3})"
+    r"(?:\.(?P<tile>h[0-9]{2}v[0-9]{2}))?"
     r"\.(?P<version>[0-9]{3})"
     r"\.(?P<production_time>[0-9]{13})"
-    r"\.(?P<extension>nc|h5)$"
+    r"\.(?P<extension>nc|h5|hdf)$"
 )
+
+# How long an MCD12Q1 land cover release is valid from its production time. The map is yearly and its tiles are
+# reprocessed irregularly, so the SDC takes a release as valid for two years (decided on LIBSDC-865).
+IGBP_VALIDITY = timedelta(days=2 * 365)
 
 # NOAA-20 (j01) unaggregated VIIRS M-band SDR files from NOAA CLASS, in JPSS IDPS HDF5 naming (as described in the
 # JPSS VIIRS SDR Data Dictionary): radiances (IVCDB) and geolocation (ICDBG), operational (ops) domain only.
@@ -246,7 +255,8 @@ class AbstractValidFilename(ABC):
             LiberaDataProductFilename,
             ManifestFilename,
             CeresFilename,
-            ViirsL3Filename,
+            ModisViirsDailyFilename,
+            ModisIgbpFilename,
             ViirsSdrFilename,
             NsidcNiseFilename,
             NsidcLandOceanMaskFilename,
@@ -583,6 +593,12 @@ def _parse_doy_datetime(year: int, doy: int, hour: int = 0, minute: int = 0, sec
     if instant.year != year:
         raise ValueError(f"Day of year {doy} does not exist in {year}")
     return _ensure_utc_timezone(instant)
+
+
+def _utc_day_span(day: date) -> tuple[datetime, datetime]:
+    """The UTC range a daily file covers: midnight starting ``day`` to midnight starting the next day."""
+    utc_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+    return utc_start, utc_start + timedelta(days=1)
 
 
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
@@ -1083,7 +1099,9 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     not build them. Setting the path parses every field, so a name whose fields match the pattern but do not form
     a real date or time is rejected when the object is created.
 
-    Each concrete class's parsed parts include ``data_product_id`` and ``version``, the upstream version string.
+    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string) and
+    ``utc_start`` / ``utc_end``, the UTC range the file's data cover, so an ingester records every external file's
+    coverage the same way. They are ``None`` for a product valid for all time (the land/ocean mask).
     """
 
     @AbstractValidFilename.path.setter
@@ -1182,7 +1200,9 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
 class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
     """Abstract base for ancillary products whose filename names the UTC day the data apply to.
 
-    The file is archived under ``<ProductID>/YYYY/MM/DD`` for that day, keeping its upstream name.
+    The file is archived under ``<ProductID>/YYYY/MM/DD`` for that day, keeping its upstream name. ``utc_start`` /
+    ``utc_end`` are the applicable day where the name carries no span (VIIRS L3, NISE), and the span the name
+    carries otherwise (the CERES hour, the VIIRS SDR granule, the ERA5 steps).
     """
 
     @property
@@ -1211,7 +1231,8 @@ class CeresFilename(DailyAncillaryDataProductFilename):
 
     - ``version`` is the production strategy, e.g. ``Edition1C``, or ``alpha4`` for the FLASHFlux stream.
     - ``configuration_code`` is the six-digit CERES configuration code.
-    - ``utc_start`` is the start of the hour; ``applicable_date`` is its UTC date.
+    - ``utc_start`` is the start of the hour and ``utc_end`` the start of the next; ``applicable_date`` is the UTC
+      date of ``utc_start``.
     """
 
     _regex = CERES_REGEX
@@ -1241,23 +1262,76 @@ class CeresFilename(DailyAncillaryDataProductFilename):
             version=d["version"],
             configuration_code=d["configuration_code"],
             utc_start=utc_start,
+            utc_end=utc_start + timedelta(hours=1),
             applicable_date=utc_start.date(),
         )
 
 
-class ViirsL3Filename(DailyAncillaryDataProductFilename):
-    """Filename class for NOAA-20 VIIRS Level 3 daily products from NASA LAADS DAAC and LP DAAC.
+def _parse_modis_viirs_name(d: dict[str, Any]) -> SimpleNamespace:
+    """Parse the fields of an EOSDIS short-name filename into objects.
 
-    Form: ``<short name>.A<YYYYDDD>.<collection>.<production YYYYDDDHHMMSS>.<extension>``,
-    e.g. ``AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc``.
+    Parameters
+    ----------
+    d : dict
+        Named groups from matching ``MODIS_VIIRS_REGEX``
 
-    - ``applicable_date`` is the ``A`` date. For the 16-day BRDF composite (``VJ143C1``) it is the composite's
-      nominal date, which the provider issues daily.
+    Returns
+    -------
+    : types.SimpleNamespace
+        ``short_name``, ``data_product_id``, ``version`` (the collection), ``tile`` (``None`` for a global grid),
+        ``acquisition_date`` (the ``A`` date) and ``production_time``
+
+    Raises
+    ------
+    ValueError
+        If the extension is not its product's, the name carries a tile its product does not or lacks the tile its
+        product carries, or a date field is not a real UTC instant.
+    """
+    data_product_id, extension, tiled = _MODIS_VIIRS_PRODUCTS[d["short_name"]]
+    if d["extension"] != extension:
+        raise ValueError(
+            f"the extension is .{d['extension']}, but {d['short_name']} files are .{extension}. "
+            "Check that the file is the product its name says"
+        )
+    if (d["tile"] is not None) != tiled:
+        raise ValueError(
+            f"{d['short_name']} files {'carry' if tiled else 'do not carry'} a sinusoidal tile field "
+            f"(e.g. h21v07), but this name {'does not' if tiled else 'does'}. "
+            "Check that the file is the product its name says"
+        )
+    production = d["production_time"]
+    return SimpleNamespace(
+        short_name=d["short_name"],
+        data_product_id=data_product_id,
+        version=d["version"],
+        tile=d["tile"],
+        acquisition_date=_parse_doy_datetime(int(d["year"]), int(d["doy"])).date(),
+        production_time=_parse_doy_datetime(
+            int(production[:4]),
+            int(production[4:7]),
+            int(production[7:9]),
+            int(production[9:11]),
+            int(production[11:13]),
+        ),
+    )
+
+
+class ModisViirsDailyFilename(DailyAncillaryDataProductFilename):
+    """Filename class for the daily MODIS and VIIRS products from NASA LAADS DAAC and LP DAAC.
+
+    Form (EOSDIS short name): ``<short name>.A<YYYYDDD>.<collection>.<production YYYYDDDHHMMSS>.<extension>``,
+    e.g. ``AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc``. The products are the NOAA-20 VIIRS Deep Blue
+    aerosol (``AERDB_D3_VIIRS_NOAA20``), cloud properties (``CLDPROP_D3_VIIRS_NOAA20``) and BRDF (``VJ143C1``)
+    daily grids; the yearly MCD12Q1 land cover map in the same form is named by
+    :class:`~libera_utils.io.filenaming.ModisIgbpFilename`.
+
+    - ``applicable_date`` is the ``A`` date, and ``utc_start`` / ``utc_end`` span that day. For the 16-day BRDF
+      composite (``VJ143C1``) it is the composite's nominal date, which the provider issues daily.
     - ``version`` is the three-digit collection.
     - ``production_time`` is the UTC time the provider produced the file.
     """
 
-    _regex = VIIRS_L3_REGEX
+    _regex = MODIS_VIIRS_REGEX
 
     @staticmethod
     def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
@@ -1276,28 +1350,69 @@ class ViirsL3Filename(DailyAncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the extension is not its product's, or a date field is not a real UTC instant.
+            If the name is the yearly MCD12Q1 product, its extension or tile field is not its product's, or a date
+            field is not a real UTC instant.
         """
-        data_product_id, extension = _VIIRS_L3_PRODUCTS[d["short_name"]]
-        if d["extension"] != extension:
+        parts = _parse_modis_viirs_name(d)
+        if parts.data_product_id is DataProductIdentifier.anc_modis_igbp:
             raise ValueError(
-                f"the extension is .{d['extension']}, but {d['short_name']} files are .{extension}. "
-                "Check that the file is the product its name says"
+                f"{parts.short_name} is a yearly product with no applicable date, named by ModisIgbpFilename"
             )
-        production = d["production_time"]
-        return SimpleNamespace(
-            short_name=d["short_name"],
-            data_product_id=data_product_id,
-            version=d["version"],
-            applicable_date=_parse_doy_datetime(int(d["year"]), int(d["doy"])).date(),
-            production_time=_parse_doy_datetime(
-                int(production[:4]),
-                int(production[4:7]),
-                int(production[7:9]),
-                int(production[9:11]),
-                int(production[11:13]),
-            ),
-        )
+        parts.applicable_date = parts.acquisition_date
+        parts.utc_start, parts.utc_end = _utc_day_span(parts.applicable_date)
+        return parts
+
+
+class ModisIgbpFilename(AncillaryDataProductFilename):
+    """Filename class for the MODIS land cover type map (MCD12Q1) from NASA LP DAAC, the source of IGBP classes.
+
+    Form (EOSDIS short name): ``MCD12Q1.A<YYYYDDD>.<tile>.<collection>.<production YYYYDDDHHMMSS>.hdf``,
+    e.g. ``MCD12Q1.A2024001.h21v07.061.2025205222320.hdf``, one sinusoidal tile of the yearly map.
+
+    The map is yearly, not daily, so it has no applicable date. A release is valid from its production time for
+    ``IGBP_VALIDITY``: ``utc_start`` is the production time and ``utc_end`` is two years later. The tiles of one
+    production are archived together under ``<ProductID>/<collection>/<production YYYYMMDD>``.
+
+    - ``acquisition_date`` is the ``A`` date, 1 January of the year the map describes.
+    - ``tile`` is the sinusoidal tile, e.g. ``h21v07``.
+    - ``version`` is the three-digit collection.
+    - ``production_time`` is the UTC time the provider produced the file.
+    """
+
+    _regex = MODIS_VIIRS_REGEX
+
+    @property
+    def archive_prefix(self) -> str:
+        """Archive prefix ``<ProductID>/<collection>/<production YYYYMMDD>``"""
+        parts = self.filename_parts
+        return f"{self.data_product_id}/{parts.version}/{parts.production_time:%Y%m%d}"
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If the name is not the MCD12Q1 product, its extension or tile field is not MCD12Q1's, or a date field
+            is not a real UTC instant.
+        """
+        parts = _parse_modis_viirs_name(d)
+        if parts.data_product_id is not DataProductIdentifier.anc_modis_igbp:
+            raise ValueError(f"{parts.short_name} is a daily product, named by ModisViirsDailyFilename")
+        parts.utc_start = parts.production_time
+        parts.utc_end = parts.production_time + IGBP_VALIDITY
+        return parts
 
 
 class ViirsSdrFilename(DailyAncillaryDataProductFilename):
@@ -1357,8 +1472,8 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
     """Filename class for the NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2).
 
     Form: ``NISE_AMSR2_<YYYYMMDD>.HDFEOS``, e.g. ``NISE_AMSR2_20260610.HDFEOS``. ``applicable_date`` is the named
-    date. The name carries no version, so ``version`` is the NISE_A2 collection version, ``"1"``, the
-    ``VERSIONID`` in the files' core metadata.
+    date, which ``utc_start`` / ``utc_end`` span. The name carries no version, so ``version`` is the NISE_A2
+    collection version, ``"1"``, the ``VERSIONID`` in the files' core metadata.
     """
 
     _regex = NSIDC_NISE_REGEX
@@ -1382,11 +1497,15 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
         ValueError
             If the date is not a real date.
         """
+        applicable_date = datetime.strptime(d["date"], "%Y%m%d").date()
+        utc_start, utc_end = _utc_day_span(applicable_date)
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
             version=NISE_VERSION,
-            applicable_date=datetime.strptime(d["date"], "%Y%m%d").date(),
+            applicable_date=applicable_date,
+            utc_start=utc_start,
+            utc_end=utc_end,
         )
 
 
@@ -1397,8 +1516,9 @@ class NsidcLandOceanMaskFilename(AncillaryDataProductFilename):
     3, 6.25, 9, 12.5, 25 or 36 km, e.g. ``EASE2_M36km.LOCImask_land50_coast0km.964x406.bin``. The browse images
     (``.png``) and the temperate (``T``) grids are not accepted.
 
-    The mask is static: it has no applicable date and is archived under ``<ProductID>/<version>``. The name
-    carries no version, so ``version`` is the NSIDC-0609 dataset version, ``"1"``.
+    The mask is non-daily and valid for all time: it has no applicable date, ``utc_start`` / ``utc_end`` are
+    ``None``, and it is archived once under ``<ProductID>/<version>``. The name carries no version, so ``version``
+    is the NSIDC-0609 dataset version, ``"1"``.
     """
 
     _regex = NSIDC_LAND_OCEAN_MASK_REGEX
@@ -1426,6 +1546,8 @@ class NsidcLandOceanMaskFilename(AncillaryDataProductFilename):
             data_product_id=DataProductIdentifier.anc_nsidc_land_ocean_mask,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys the mask on
             version=NSIDC_LAND_OCEAN_MASK_VERSION,
+            utc_start=None,
+            utc_end=None,
             resolution_km=float(d["resolution_km"]),
             columns=int(d["columns"]),
             rows=int(d["rows"]),

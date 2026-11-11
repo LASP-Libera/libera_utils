@@ -375,8 +375,9 @@ def parse_cli_args(cli_args: list):
         "--verify",
         action="store_true",
         help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
-        "and, for dated data products, data availability records), then report the result. Static ancillary "
-        "products (the land/ocean mask) cannot be verified. Requires only read permissions.",
+        "and, for dated data products, data availability records), then report the result. A non-daily ancillary "
+        "product (the land/ocean mask, IGBP) is staged but cannot be verified yet, and the command then exits with "
+        "an error naming it. Requires only read permissions.",
     )
     s3_put_parser.add_argument(
         "--timeout",

@@ -51,18 +51,26 @@ External ancillary products (`DataLevel.ANC`) are ingested under the names their
 their classes parse those names and do not build them. ERA5 is the exception: the SDC names its CDS downloads.
 `AbstractValidFilename.from_file_path` recognizes every form below.
 
-| Class                        | Products                                         | Form                                                                                           | `version`                                       | Applicable date                           |
-| ---------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| `CeresFilename`              | `CERES-NOAA20-SSF`, `CERES-NOAA20-CLDPIX`        | `CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`                                      | Production strategy (`Edition1C`, `alpha4`)     | Date of the granule's start hour          |
-| `ViirsL3Filename`            | `VIIRS-NOAA20-AOD`, `-CLOUD-PROPERTIES`, `-BRDF` | `AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc`                                          | Collection (`021`)                              | The `A` date (BRDF: the composite's date) |
-| `ViirsSdrFilename`           | `VIIRS-NOAA20-M4-SDR`                            | `IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` (or `ICDBG_`) | Creation time (`c` field)                       | The `d` (start) date                      |
-| `NsidcNiseFilename`          | `NSIDC-ICE-SNOW`                                 | `NISE_AMSR2_20260610.HDFEOS`                                                                   | `1` (NISE_A2 collection version)                | The named date                            |
-| `NsidcLandOceanMaskFilename` | `NSIDC-LAND-OCEAN-MASK`                          | `EASE2_M36km.LOCImask_land50_coast0km.964x406.bin`                                             | `1` (NSIDC-0609 dataset version)                | None: the mask is static                  |
-| `Era5Filename`               | `ERA5-PRESSURE-LEVEL`, `ERA5-SINGLE-LEVEL`       | `ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc`      | Stream: `ERA5` (final) or `ERA5T` (preliminary) | Date of `utc_start`                       |
+| Class                        | Products                                         | Form                                                                                           | `version`                                       | Applicable date                           | `utc_start` / `utc_end`                 |
+| ---------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------- | --------------------------------------- |
+| `CeresFilename`              | `CERES-NOAA20-SSF`, `CERES-NOAA20-CLDPIX`        | `CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`                                      | Production strategy (`Edition1C`, `alpha4`)     | Date of the granule's start hour          | The hour                                |
+| `ModisViirsDailyFilename`    | `VIIRS-NOAA20-AOD`, `-CLOUD-PROPERTIES`, `-BRDF` | `AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc`                                          | Collection (`021`)                              | The `A` date (BRDF: the composite's date) | The applicable day                      |
+| `ModisIgbpFilename`          | `MODIS-IGBP`                                     | `MCD12Q1.A2024001.h21v07.061.2025205222320.hdf`                                                | Collection (`061`)                              | None: the map is yearly                   | Production time, and two years after it |
+| `ViirsSdrFilename`           | `VIIRS-NOAA20-M4-SDR`                            | `IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` (or `ICDBG_`) | Creation time (`c` field)                       | The `d` (start) date                      | The `t` and `e` times                   |
+| `NsidcNiseFilename`          | `NSIDC-ICE-SNOW`                                 | `NISE_AMSR2_20260610.HDFEOS`                                                                   | `1` (NISE_A2 collection version)                | The named date                            | The applicable day                      |
+| `NsidcLandOceanMaskFilename` | `NSIDC-LAND-OCEAN-MASK`                          | `EASE2_M36km.LOCImask_land50_coast0km.964x406.bin`                                             | `1` (NSIDC-0609 dataset version)                | None: the mask is valid for all time      | None                                    |
+| `Era5Filename`               | `ERA5-PRESSURE-LEVEL`, `ERA5-SINGLE-LEVEL`       | `ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc`      | Stream: `ERA5` (final) or `ERA5T` (preliminary) | Date of `utc_start`                       | The first and last hourly steps         |
 
-The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are rejected. A dated product is
-archived under `<ProductID>/YYYY/MM/DD` for its applicable date; the static land/ocean mask under
-`<ProductID>/<version>`. Only the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
+Every class gives `filename_parts.utc_start` and `utc_end`, the UTC range the file's data cover, so an ingester
+records every external file's coverage the same way; they are `None` for the land/ocean mask, which is valid for
+all time. The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are
+rejected. The FLASHFlux stream is the CERES SSF file with an `alpha` production strategy, and the footprint
+matching `FLASHFlux` reader consumes those files.
+
+A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date. A non-daily product has no
+applicable date: the land/ocean mask is archived once under `<ProductID>/<version>`, and the tiles of one IGBP
+production under `<ProductID>/<collection>/<production YYYYMMDD>`, valid for two years from that production. Only
+the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
 
 The ERA5 name follows the Libera data product form: `utc_start` and `utc_end` are the first and last hourly steps in
 the file (`YYYYMMDDTHHMMSS`), and `revision` is the time the SDC named it, `R` followed by `YYYYMMDDTHHMMSSffffff`.
