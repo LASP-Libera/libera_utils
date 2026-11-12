@@ -338,7 +338,7 @@ def _archive_object_exists(s3_client, bucket: str, key: str) -> bool:
 
 
 def verify_ingestion(
-    libera_filenames: list[ManualIngestFilename],
+    libera_filenames: list[VerifiableIngestFilename],
     *,
     boto_session: boto3.Session,
     timeout: float = DEFAULT_VERIFY_TIMEOUT_SECONDS,

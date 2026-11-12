@@ -1210,6 +1210,18 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
             id="igbp-two-years-from-production",
         ),
         pytest.param(
+            "MCD12Q1.A2026001.h21v07.061.2027100120000.hdf",
+            dt.datetime(2027, 4, 10, 12, tzinfo=dt.UTC),
+            dt.datetime(2029, 4, 10, 12, tzinfo=dt.UTC),
+            id="igbp-two-years-across-a-leap-day",
+        ),
+        pytest.param(
+            "MCD12Q1.A2027001.h21v07.061.2028060120000.hdf",
+            dt.datetime(2028, 2, 29, 12, tzinfo=dt.UTC),
+            dt.datetime(2030, 2, 28, 12, tzinfo=dt.UTC),
+            id="igbp-produced-on-a-leap-day",
+        ),
+        pytest.param(
             "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
             dt.datetime(2024, 10, 2, 12, 44, 58, 700000, tzinfo=dt.UTC),
             dt.datetime(2024, 10, 2, 12, 46, 22, 900000, tzinfo=dt.UTC),

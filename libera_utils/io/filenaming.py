@@ -116,9 +116,10 @@ LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
 # NOAA-20 CERES Level 2 products from NASA Langley ASDC: the collection part of the name, mapped to its identifier.
 # FLASHFlux is distributed as its own collection, FLASH_SSF_NOAA20-FM6-VIIRS (ASDC; Version1A, then Version1B from
-# 2023-10-01), in the CERES SSF layout. The standard CERES SSF (CER_SSF_...) is a different product and is not
-# accepted. The footprint matching FLASHFlux reader consumes the FLASH_SSF files, and the CLDPIX reader the CLDPIX
-# files.
+# 2023-10-01). The standard CERES SSF (CER_SSF_...) is a different product and is not accepted. The footprint
+# matching CLDPIX reader consumes the CLDPIX files. The FLASHFlux reader was built on a CER_SSF granule, whose
+# layout FLASH_SSF Version1B does not share.
+# TODO[LIBSDC-932]: read the FLASH_SSF Version1B layout in the footprint matching FLASHFlux reader.
 _CERES_PRODUCTS = {
     "FLASH_SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_flashflux,
     "CER_CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
@@ -152,9 +153,31 @@ MODIS_VIIRS_REGEX = re.compile(
     r"\.(?P<extension>nc|h5|hdf)$"
 )
 
-# How long an MCD12Q1 land cover release is valid from its production time. The map is yearly and its tiles are
-# reprocessed irregularly, so the SDC takes a release as valid for two years (decided on LIBSDC-865).
-IGBP_VALIDITY = timedelta(days=2 * 365)
+# How long, in calendar years, an MCD12Q1 land cover release is valid from its production time. The map is yearly
+# and its tiles are reprocessed irregularly, so the SDC takes a release as valid for two years.
+IGBP_VALIDITY_YEARS = 2
+
+
+def _add_calendar_years(instant: datetime, years: int) -> datetime:
+    """Return the same date and time ``years`` calendar years later, 29 February becoming 28 February.
+
+    Parameters
+    ----------
+    instant : datetime.datetime
+        The starting instant
+    years : int
+        Calendar years to add
+
+    Returns
+    -------
+    : datetime.datetime
+        ``instant`` with its year advanced by ``years``
+    """
+    try:
+        return instant.replace(year=instant.year + years)
+    except ValueError:  # 29 February in a year that has none
+        return instant.replace(year=instant.year + years, day=28)
+
 
 # NOAA-20 (j01) unaggregated VIIRS M-band SDR files from NOAA CLASS, in JPSS IDPS HDF5 naming (as described in the
 # JPSS VIIRS SDR Data Dictionary): radiances (IVCDB) and geolocation (ICDBG), operational (ops) domain only.
@@ -1373,7 +1396,7 @@ class ModisIgbpFilename(AncillaryDataProductFilename):
     e.g. ``MCD12Q1.A2024001.h21v07.061.2025205222320.hdf``, one sinusoidal tile of the yearly map.
 
     The map is yearly, not daily, so it has no applicable date. A release is valid from its production time for
-    ``IGBP_VALIDITY``: ``utc_start`` is the production time and ``utc_end`` is two years later. The tiles of one
+    ``IGBP_VALIDITY_YEARS``: ``utc_start`` is the production time and ``utc_end`` is two calendar years later. The tiles of one
     production are archived together under ``<ProductID>/<collection>/<production YYYYMMDD>``.
 
     - ``acquisition_date`` is the ``A`` date, 1 January of the year the map describes.
@@ -1414,7 +1437,7 @@ class ModisIgbpFilename(AncillaryDataProductFilename):
         if parts.data_product_id is not DataProductIdentifier.anc_modis_igbp:
             raise ValueError(f"{parts.short_name} is a daily product, named by ModisViirsDailyFilename")
         parts.utc_start = parts.production_time
-        parts.utc_end = parts.production_time + IGBP_VALIDITY
+        parts.utc_end = _add_calendar_years(parts.production_time, IGBP_VALIDITY_YEARS)
         return parts
 
 

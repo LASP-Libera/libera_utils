@@ -340,8 +340,7 @@ class DataProductIdentifier(StrEnum):
     # Each comment names the distributing provider and the upstream product.
     # NASA Langley ASDC, CERES Cloud Pixel L2 imager-resolution cloud retrievals (CER_CLDPIX, NOAA-20 FM6)
     anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC)
-    # NASA Langley ASDC, CERES FLASHFlux L2 rapid-release TOA and surface fluxes and clouds, in the CERES Single
-    # Scanner Footprint layout (FLASH_SSF, NOAA-20 FM6)
+    # NASA Langley ASDC, CERES FLASHFlux L2 rapid-release TOA and surface fluxes and clouds (FLASH_SSF, NOAA-20 FM6)
     anc_ceres_noaa20_flashflux = ("CERES-NOAA20-FLASHFLUX", DataLevel.ANC)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
     anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC)

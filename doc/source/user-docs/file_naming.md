@@ -65,7 +65,6 @@ Every class gives `filename_parts.utc_start` and `utc_end`, the UTC range the fi
 records every external file's coverage the same way; they are `None` for the land/ocean mask, which is valid for
 all time. The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are
 rejected. FLASHFlux files are named `FLASH_SSF_...`; a standard CERES SSF file (`CER_SSF_...`) is not accepted.
-The footprint matching `FLASHFlux` reader consumes the FLASHFlux files.
 
 A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date. A non-daily product has no
 applicable date: the land/ocean mask is archived once under `<ProductID>/<version>`, and the tiles of one IGBP

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`). The SSF-layout input is the FLASHFlux product, whose files are named `FLASH_SSF_NOAA20-FM6-VIIRS_...`, and is identified as `anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`).
+- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`). The CERES footprint input is the FLASHFlux product, whose files are named `FLASH_SSF_NOAA20-FM6-VIIRS_...`, and is identified as `anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`).
 
 ## [5.25.0] - 2026-11-11
 
