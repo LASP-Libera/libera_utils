@@ -368,10 +368,9 @@ def verify_ingestion(
 
     Parameters
     ----------
-    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or
-        DailyAncillaryDataProductFilename
-        The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``), less any
-        non-daily ancillary file.
+    libera_filenames : list of AbstractDataProductFilename
+        The L0, ground CCSDS, Libera data product and daily ancillary filenames staged for ingest, as returned by
+        ``manual_ingest_data_products`` less any non-daily ancillary file.
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
     timeout : float, optional
