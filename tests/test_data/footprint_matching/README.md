@@ -14,8 +14,11 @@ point is served as from the source, and the sample spacing the reader measures o
 granule differs by under 0.4% (CLDPIX 7.204 km against 7.177 km, SSF 43.737 km against
 43.700 km).
 
-The `flashflux` reader reads FLASHFlux, which comes in the CERES SSF file layout; the SSF
-granule stands in for it here because the two share that layout.
+The `flashflux` reader was built on the SSF granule, a CERES SSF Edition 5 development
+(`alpha4`) granule. The FLASHFlux granule is the product as distributed, in a different
+layout the reader does not read, so it has no reader below; each of its kept variables was
+checked value for value against the source granule instead. TODO[LIBSDC-932]: read this
+layout in the `flashflux` reader.
 
 | File                                                                                    | Reader             | Source granule                                                                   | Kept                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -28,6 +31,7 @@ granule stands in for it here because the two share that layout.
 | `CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc`                           | `cldpix`           | `CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc`                           | Scanlines 0..39, 8040..8079 and 16080..16119 (the start, middle and end of the hour), all 400 pixels. `Latitude`, `Longitude`, `Observation_Time`, the nine fields the reader reads, and the global attributes, including `time_coverage_start`/`time_coverage_end`.                                                                     |
 | `CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc`                           | `flashflux`        | `CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc`                           | Footprints 0..1499, 96878..98377 and 193756..195255 (the start, middle and end of the hour). From `Time_and_Position`: `instrument_fov_latitude`, `instrument_fov_longitude`, `time`, `sample_number`. Every group variable the reader reads, at full size on its other dimensions. The global attributes.                               |
 | `CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc`                          | `viirs_cldprop_d3` | `CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc`                          | The full 180 x 360 grid. `latitude`, `longitude`, `Cloud_Optical_Thickness_Combined/Mean` and `Cloud_Top_Pressure/Mean`, as stored (longitude, latitude), and the global attributes.                                                                                                                                                     |
+| `FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200_subset.nc`                      | none               | `FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc`                      | Footprints 0..1499, 51931..53430 and 103862..105361 (the start, middle and end of the hour). The 21 variables the FMATCH FLASHFlux fields come from, in 9 groups, the dimension variables they use, and the global attributes.                                                                                                           |
 | `IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5` | none               | `IVCDB_npp_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` | Scan 0 (rows 0..15), all 5024 columns, of `All_Data/VIIRS-DualGain-Cal-IP_All/radiance_3`, with the root and group attributes.                                                                                                                                                                                                           |
 | `ICDBG_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5` | none               | `ICDBG_npp_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` | Scan 0 (rows 0..15), all 5024 columns, of `Latitude` and `Longitude` in `All_Data/VIIRS-MOD-UNAGG-GEO_All`, with the root and group attributes.                                                                                                                                                                                          |
 | `EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin`                               | none               | `EASE2_M36km.LOCImask_land50_coast0km.964x406.bin`                               | Rows 200..209 of the 964 x 406 uint8 grid, as stored (row-major, 9640 bytes).                                                                                                                                                                                                                                                            |
@@ -37,7 +41,8 @@ NOAA-20 (`j01`) granules, so the filename tests have a NOAA-20 name to parse; th
 attributes still say NPP. They and the land/ocean mask have no reader yet.
 
 The filename tests parse each file's upstream name, which is its name here without
-`_subset`.
+`_subset`, except the SSF granule's: it is not a FLASHFlux (`FLASH_SSF_...`) file, so no
+filename class accepts its name.
 
 Sources:
 
@@ -46,7 +51,7 @@ Sources:
 - AERDB_D3_VIIRS_NOAA20: NASA LAADS DAAC, Deep Blue Level 3 daily aerosol.
 - VJ143C1 and MCD12Q1: NASA LP DAAC.
 - NISE: NSIDC, Near-real-time Ice and Snow Extent (NISE), AMSR-2.
-- CERES FLASHFlux and CLDPIX: NASA Langley ASDC.
+- CERES SSF, FLASHFlux (`FLASH_SSF_NOAA20-FM6-VIIRS` Version1B) and CLDPIX: NASA Langley ASDC.
 - CLDPROP_D3_VIIRS_NOAA20: NASA LAADS DAAC.
 - IVCDB and ICDBG: NOAA CLASS, unaggregated VIIRS M-band SDR radiances and geolocation.
 - EASE2_M36km.LOCImask: NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609).
