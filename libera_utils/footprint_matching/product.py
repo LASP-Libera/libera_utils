@@ -55,7 +55,9 @@ libera_utils.footprint_matching.footprint_match_algorithm : Manifest-driven runn
 
 from __future__ import annotations
 
+import logging
 import multiprocessing
+import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,6 +105,8 @@ if TYPE_CHECKING:
     from libera_utils.footprint_matching.types import VariableSpec
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
+logger = logging.getLogger(__name__)
+
 # L1B RAD-4CH variables FMATCH copies straight out of L1B rather than computing. They keep
 # their L1B name in the product, which follows CERES BDS, so each is also the FMATCH product
 # variable name and the key the L1B input dict carries it under.
@@ -145,9 +149,25 @@ L1B_CONE_ANGLE_RATE_VARIABLE: str = "Cone_Angle_Rate"
 # coordinate for the radiometer-timescale modes). Each footprint carries it so the readers
 # can match ancillary samples to it in time.
 RADIOMETER_TIME_KEY: str = "RADIOMETER_TIME"
-# Configuration key for the number of worker processes the external aggregation runs on.
-# ``1`` (the default in ``config.json``) keeps everything in the calling process.
+# Configuration key for the number of worker processes the external aggregation runs on: a positive
+# integer (``1`` keeps everything in the calling process), or ``"auto"`` (the default in ``config.json``)
+# to size the pool from the CPUs and memory available to the process.
 FMATCH_WORKERS_CONFIG_KEY: str = "FMATCH_WORKERS"
+FMATCH_WORKERS_AUTO: str = "auto"
+# Configuration key for the memory, in bytes, one worker is assumed to need when FMATCH_WORKERS is
+# "auto": an object keyed by operational mode value in config.json, or one integer for every mode when
+# set through the environment variable of the same name. config.json's defaults (CAM modes 512 MiB,
+# IMAGER modes 2 GiB) are estimates from the ERA5 surface and pressure-level grids a worker reloads, plus
+# headroom, until peak worker RSS is measured on a full-day L1B with full-size granules.
+FMATCH_WORKER_MEMORY_CONFIG_KEY: str = "FMATCH_WORKER_MEMORY_BYTES"  # TODO[LIBSDC-928]: measure the per-mode defaults
+# Memory, in bytes, left to the calling process when FMATCH_WORKERS is "auto".
+_PARENT_MEMORY_RESERVE_BYTES: int = 512 * 1024**2
+# Where the process's cgroup limits and the host's free memory are read from (Linux).
+_CGROUP_ROOT: Path = Path("/sys/fs/cgroup")
+_PROC_MEMINFO: Path = Path("/proc/meminfo")
+# A cgroup v1 memory limit at or above this means "no limit" (the kernel writes a page-aligned
+# near-2**63 sentinel).
+_CGROUP_V1_NO_LIMIT: int = 2**60
 # Chunks per worker: footprints are split into this many contiguous ranges per worker so
 # a slow chunk (a stepped source reloading, a dense swath) does not idle the others.
 _CHUNKS_PER_WORKER: int = 4  # TODO[LIBSDC-928]: Define the best value of this variable
@@ -443,7 +463,8 @@ def aggregate_external_variables(
     n_workers : int, optional
         Worker processes to run the footprints on. ``None`` (the default) reads the
         ``FMATCH_WORKERS`` configuration key (``config.json``, overridable through the
-        environment variable of the same name); ``1`` runs in the calling process. Fewer
+        environment variable of the same name), whose ``"auto"`` sizes the pool from the
+        available CPUs and memory (see ``_auto_worker_count``); ``1`` runs in the calling process. Fewer
         than ``_MIN_FOOTPRINTS_PER_WORKER`` footprints per worker also runs in the
         calling process, since the pool would cost more than it saves.
 
@@ -468,7 +489,9 @@ def aggregate_external_variables(
         has no finite viewing zenith angle; if an on-Earth footprint has no usable cone-angle
         rate and ``weigher`` is the default ``AngularPSFWeigher``; if a footprint's time is NaT and a
         source selects by time; if ``n_workers``, or the ``FMATCH_WORKERS`` configuration
-        key it defaults to, is below one or not an integer; or if the pool must be
+        key it defaults to, is below one or neither an integer nor ``"auto"``; if
+        ``FMATCH_WORKERS`` is ``"auto"`` and ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive
+        integer for ``mode``; or if the pool must be
         spawned (no fork on this platform) and ``source_file_paths`` was not given, so a
         worker cannot build its sources.
     KeyError
@@ -496,7 +519,7 @@ def aggregate_external_variables(
     n_footprints = len(footprints)
 
     if n_workers is None:
-        n_workers = _configured_worker_count()
+        n_workers = _configured_worker_count(mode)
     if n_workers < 1:
         raise ValueError(f"n_workers must be at least 1, got {n_workers}.")
     if n_workers > 1 and n_footprints >= _MIN_FOOTPRINTS_PER_WORKER * n_workers:
@@ -504,18 +527,31 @@ def aggregate_external_variables(
     return _aggregate_footprints(mode, footprints, sources, weigher, return_coverage)
 
 
-def _configured_worker_count() -> int:
+def _configured_worker_count(mode: OperationalMode) -> int:
     """Read the worker count from the ``FMATCH_WORKERS`` configuration key.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated, whose per-worker memory sizes an ``"auto"`` pool.
+
+    Returns
+    -------
+    int
+        The configured count, or the count ``_auto_worker_count`` computes for ``"auto"``.
 
     Raises
     ------
     ValueError
-        If the configured value is not a positive integer.
+        If the configured value is neither a positive integer nor ``"auto"``, or is ``"auto"`` and
+        ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive integer for ``mode``.
     """
     raw = config.get(FMATCH_WORKERS_CONFIG_KEY)
+    if isinstance(raw, str) and raw.strip().lower() == FMATCH_WORKERS_AUTO:
+        return _auto_worker_count(mode)
     message = (
-        f"{FMATCH_WORKERS_CONFIG_KEY} must be a positive integer, got {raw!r}: set it in config.json or the "
-        f"{FMATCH_WORKERS_CONFIG_KEY} environment variable."
+        f"{FMATCH_WORKERS_CONFIG_KEY} must be a positive integer or {FMATCH_WORKERS_AUTO!r}, got {raw!r}: set it in "
+        f"config.json or the {FMATCH_WORKERS_CONFIG_KEY} environment variable."
     )
     try:
         n_workers = int(raw)
@@ -524,6 +560,164 @@ def _configured_worker_count() -> int:
     if n_workers < 1:
         raise ValueError(message)
     return n_workers
+
+
+def _auto_worker_count(mode: OperationalMode, cgroup_root: Path | None = None, meminfo: Path | None = None) -> int:
+    """Size the aggregation pool from the CPUs and memory available to this process.
+
+    The count is the smaller of the CPUs the process may use and the number of workers whose
+    ``FMATCH_WORKER_MEMORY_BYTES`` fits in the available memory after a reserve for the calling
+    process, and at least one. CPUs are the process's affinity set capped by its cgroup CPU quota;
+    memory is the lower of the cgroup's remaining limit and the host's ``MemAvailable``. When no
+    memory figure can be read (a platform without ``/proc`` or cgroups), the pool is one worker.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated, which selects the per-worker memory.
+    cgroup_root : pathlib.Path, optional
+        Root of the cgroup filesystem. Defaults to ``_CGROUP_ROOT`` (``/sys/fs/cgroup``).
+    meminfo : pathlib.Path, optional
+        The kernel's memory summary. Defaults to ``_PROC_MEMINFO`` (``/proc/meminfo``).
+
+    Returns
+    -------
+    int
+        The number of workers, at least one.
+
+    Raises
+    ------
+    ValueError
+        If ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive integer for ``mode``.
+    """
+    cgroup_root = _CGROUP_ROOT if cgroup_root is None else cgroup_root
+    meminfo = _PROC_MEMINFO if meminfo is None else meminfo
+    per_worker = _worker_memory_bytes(mode)
+    cpus = _available_cpus(cgroup_root)
+    memory = _available_memory_bytes(cgroup_root, meminfo)
+    if memory is None:
+        n_workers = 1
+    else:
+        n_workers = max(1, min(cpus, (memory - _PARENT_MEMORY_RESERVE_BYTES) // per_worker))
+    logger.info(
+        {
+            "msg": f"{FMATCH_WORKERS_CONFIG_KEY} is {FMATCH_WORKERS_AUTO!r}",
+            "mode": mode.value,
+            "workers": n_workers,
+            "cpus": cpus,
+            "available_memory_bytes": memory,
+            "worker_memory_bytes": per_worker,
+        }
+    )
+    return n_workers
+
+
+def _worker_memory_bytes(mode: OperationalMode) -> int:
+    """Read the memory one worker of ``mode`` is assumed to need from ``FMATCH_WORKER_MEMORY_BYTES``.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated.
+
+    Returns
+    -------
+    int
+        Bytes per worker.
+
+    Raises
+    ------
+    ValueError
+        If the configured value has no positive integer for ``mode``.
+    """
+    raw = config.get(FMATCH_WORKER_MEMORY_CONFIG_KEY)
+    value = raw.get(mode.value) if isinstance(raw, dict) else raw
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(
+            f"{FMATCH_WORKER_MEMORY_CONFIG_KEY} must give a positive integer number of bytes for {mode.value}, got "
+            f"{value!r}: set it per mode in config.json, or for every mode in the {FMATCH_WORKER_MEMORY_CONFIG_KEY} "
+            "environment variable."
+        )
+    return value
+
+
+def _available_cpus(cgroup_root: Path) -> int:
+    """Return the CPUs this process may use: its affinity set, capped by its cgroup CPU quota.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem.
+
+    Returns
+    -------
+    int
+        At least one.
+    """
+    cpus = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    quota = _cgroup_cpu_quota(cgroup_root)
+    if quota is not None:
+        cpus = min(cpus, int(quota))
+    return max(1, cpus)
+
+
+def _cgroup_cpu_quota(cgroup_root: Path) -> float | None:
+    """Return the cgroup CPU quota in CPUs, or ``None`` when there is none.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem: ``cpu.max`` under it (cgroup v2), or
+        ``cpu/cpu.cfs_quota_us`` and ``cpu/cpu.cfs_period_us`` (cgroup v1).
+
+    Returns
+    -------
+    float or None
+        Quota divided by period.
+    """
+    cpu_max = cgroup_root / "cpu.max"
+    if cpu_max.is_file():
+        quota, period = cpu_max.read_text().split()[:2]
+        return None if quota == "max" else int(quota) / int(period)
+    quota_file, period_file = cgroup_root / "cpu" / "cpu.cfs_quota_us", cgroup_root / "cpu" / "cpu.cfs_period_us"
+    if quota_file.is_file() and period_file.is_file():
+        quota = int(quota_file.read_text())
+        return None if quota < 0 else quota / int(period_file.read_text())
+    return None
+
+
+def _available_memory_bytes(cgroup_root: Path, meminfo: Path) -> int | None:
+    """Return the memory this process can still use: the lower of its cgroup headroom and ``MemAvailable``.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem: ``memory.max`` and ``memory.current`` under it (cgroup v2), or
+        ``memory/memory.limit_in_bytes`` and ``memory/memory.usage_in_bytes`` (cgroup v1).
+    meminfo : pathlib.Path
+        The kernel's memory summary, read for ``MemAvailable``.
+
+    Returns
+    -------
+    int or None
+        Bytes, or ``None`` when neither a cgroup limit nor ``MemAvailable`` can be read.
+    """
+    figures = []
+    for limit_file, usage_file in (
+        (cgroup_root / "memory.max", cgroup_root / "memory.current"),
+        (cgroup_root / "memory" / "memory.limit_in_bytes", cgroup_root / "memory" / "memory.usage_in_bytes"),
+    ):
+        if limit_file.is_file() and usage_file.is_file():
+            limit = limit_file.read_text().strip()
+            if limit != "max" and int(limit) < _CGROUP_V1_NO_LIMIT:
+                figures.append(int(limit) - int(usage_file.read_text()))
+            break
+    if meminfo.is_file():
+        for line in meminfo.read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                figures.append(int(line.split()[1]) * 1024)
+                break
+    return min(figures) if figures else None
 
 
 def _aggregate_footprints(

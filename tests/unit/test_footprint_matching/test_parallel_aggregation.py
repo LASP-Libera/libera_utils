@@ -88,7 +88,7 @@ class TestWorkerCount:
     @pytest.mark.parametrize("raw", ["four", "0"])
     def test_bad_configured_count_names_the_key(self, fake_sources, monkeypatch, raw):
         monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, raw)
-        with pytest.raises(ValueError, match="FMATCH_WORKERS must be a positive integer, got"):
+        with pytest.raises(ValueError, match="FMATCH_WORKERS must be a positive integer or 'auto', got"):
             aggregate_external_variables(OperationalMode.CAM, _footprints(3), fake_sources)
 
     def test_zero_workers_rejected(self, fake_sources):
@@ -99,6 +99,77 @@ class TestWorkerCount:
         monkeypatch.setattr(product.multiprocessing, "get_all_start_methods", lambda: ["spawn"])
         with pytest.raises(ValueError, match="source_file_paths"):
             aggregate_external_variables(OperationalMode.CAM, _footprints(200), fake_sources, n_workers=2)
+
+
+class TestAutoWorkerCount:
+    """``FMATCH_WORKERS="auto"`` sizes the pool from the CPUs and memory a cgroup grants the process."""
+
+    GIB = 1024**3
+
+    @pytest.fixture
+    def cgroup(self, tmp_path, monkeypatch):
+        """A fake cgroup v2 tree with four CPUs and 6 GiB free, on a host with 8 CPUs and 100 GiB available."""
+        root = tmp_path / "cgroup"
+        root.mkdir()
+        (root / "cpu.max").write_text("400000 100000\n")
+        (root / "memory.max").write_text(f"{8 * self.GIB}\n")
+        (root / "memory.current").write_text(f"{2 * self.GIB}\n")
+        meminfo = tmp_path / "meminfo"
+        meminfo.write_text(f"MemTotal: {128 * 1024**2} kB\nMemAvailable: {100 * 1024**2} kB\n")
+        monkeypatch.setattr(product, "_CGROUP_ROOT", root)
+        monkeypatch.setattr(product, "_PROC_MEMINFO", meminfo)
+        monkeypatch.setattr(product.os, "sched_getaffinity", lambda pid: set(range(8)), raising=False)
+        monkeypatch.setenv(product.FMATCH_WORKERS_CONFIG_KEY, "auto")
+        return root
+
+    def test_cpu_quota_bounds_the_pool(self, cgroup, monkeypatch):
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, str(self.GIB // 2))
+        assert product._configured_worker_count(OperationalMode.CAM) == 4
+
+    def test_memory_bounds_the_pool(self, cgroup, monkeypatch):
+        # 6 GiB free less the 0.5 GiB reserve leaves room for two 2 GiB workers.
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, str(2 * self.GIB))
+        assert product._configured_worker_count(OperationalMode.IMAGER) == 2
+
+    def test_host_memory_bounds_an_unlimited_cgroup(self, cgroup, tmp_path, monkeypatch):
+        (cgroup / "memory.max").write_text("max\n")
+        (tmp_path / "meminfo").write_text(f"MemAvailable: {3 * 1024**2} kB\n")
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, str(self.GIB))
+        assert product._configured_worker_count(OperationalMode.CAM) == 2
+
+    def test_pool_is_at_least_one_worker(self, cgroup, monkeypatch):
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, str(64 * self.GIB))
+        assert product._configured_worker_count(OperationalMode.IMAGER) == 1
+
+    def test_no_memory_figure_runs_one_worker(self, cgroup, tmp_path, monkeypatch):
+        monkeypatch.setattr(product, "_CGROUP_ROOT", tmp_path / "absent")
+        monkeypatch.setattr(product, "_PROC_MEMINFO", tmp_path / "absent")
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, str(self.GIB))
+        assert product._configured_worker_count(OperationalMode.CAM) == 1
+
+    def test_cgroup_v1_quota_and_limit_are_read(self, tmp_path, monkeypatch):
+        root = tmp_path / "v1"
+        (root / "cpu").mkdir(parents=True)
+        (root / "memory").mkdir()
+        (root / "cpu" / "cpu.cfs_quota_us").write_text("300000\n")
+        (root / "cpu" / "cpu.cfs_period_us").write_text("100000\n")
+        (root / "memory" / "memory.limit_in_bytes").write_text(f"{4 * self.GIB}\n")
+        (root / "memory" / "memory.usage_in_bytes").write_text("0\n")
+        monkeypatch.setattr(product.os, "sched_getaffinity", lambda pid: set(range(8)), raising=False)
+
+        assert product._available_cpus(root) == 3
+        assert product._available_memory_bytes(root, tmp_path / "absent") == 4 * self.GIB
+
+    @pytest.mark.parametrize("mode", list(OperationalMode))
+    def test_config_json_gives_every_mode_a_worker_memory(self, mode, monkeypatch):
+        monkeypatch.delenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, raising=False)
+        assert product._worker_memory_bytes(mode) > 0
+
+    @pytest.mark.parametrize("raw", ["0", "lots"])
+    def test_bad_worker_memory_names_the_key(self, cgroup, monkeypatch, raw):
+        monkeypatch.setenv(product.FMATCH_WORKER_MEMORY_CONFIG_KEY, raw)
+        with pytest.raises(ValueError, match="FMATCH_WORKER_MEMORY_BYTES must give a positive integer"):
+            product._configured_worker_count(OperationalMode.CAM)
 
 
 class TestWorkerSources:
