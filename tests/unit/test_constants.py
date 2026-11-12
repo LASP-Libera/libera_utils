@@ -230,7 +230,7 @@ class TestDataProductIdentifier:
             "aux_adm_imager",
             # ANC Products — externally produced inputs
             "anc_ceres_noaa20_cldpix",
-            "anc_ceres_noaa20_ssf",
+            "anc_ceres_noaa20_flashflux",
             "anc_nsidc_land_ocean_mask",
             "anc_nsidc_ice_snow",
             "anc_modis_igbp",
@@ -302,7 +302,7 @@ class TestDataProductIdentifier:
         """Test that each ancillary product has its ProductID, the ANC level and no producing processing step."""
         expected_products = {
             DataProductIdentifier.anc_ceres_noaa20_cldpix: "CERES-NOAA20-CLDPIX",
-            DataProductIdentifier.anc_ceres_noaa20_ssf: "CERES-NOAA20-SSF",
+            DataProductIdentifier.anc_ceres_noaa20_flashflux: "CERES-NOAA20-FLASHFLUX",
             DataProductIdentifier.anc_nsidc_land_ocean_mask: "NSIDC-LAND-OCEAN-MASK",
             DataProductIdentifier.anc_nsidc_ice_snow: "NSIDC-ICE-SNOW",
             DataProductIdentifier.anc_modis_igbp: "MODIS-IGBP",

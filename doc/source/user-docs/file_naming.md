@@ -53,7 +53,7 @@ their classes parse those names and do not build them. ERA5 is the exception: th
 
 | Class                        | Products                                         | Form                                                                                           | `version`                                       | Applicable date                           | `utc_start` / `utc_end`                 |
 | ---------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------- | --------------------------------------- |
-| `CeresFilename`              | `CERES-NOAA20-SSF`, `CERES-NOAA20-CLDPIX`        | `CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`                                      | Production strategy (`Edition1C`, `alpha4`)     | Date of the granule's start hour          | The hour                                |
+| `CeresFilename`              | `CERES-NOAA20-FLASHFLUX`, `CERES-NOAA20-CLDPIX`  | `FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc`                                    | Production strategy (`Version1B`, `1P9test`)    | Date of the granule's start hour          | The hour                                |
 | `ModisViirsDailyFilename`    | `VIIRS-NOAA20-AOD`, `-CLOUD-PROPERTIES`, `-BRDF` | `AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc`                                          | Collection (`021`)                              | The `A` date (BRDF: the composite's date) | The applicable day                      |
 | `ModisIgbpFilename`          | `MODIS-IGBP`                                     | `MCD12Q1.A2024001.h21v07.061.2025205222320.hdf`                                                | Collection (`061`)                              | None: the map is yearly                   | Production time, and two years after it |
 | `ViirsSdrFilename`           | `VIIRS-NOAA20-M4-SDR`                            | `IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` (or `ICDBG_`) | Creation time (`c` field)                       | The `d` (start) date                      | The `t` and `e` times                   |
@@ -64,8 +64,8 @@ their classes parse those names and do not build them. ERA5 is the exception: th
 Every class gives `filename_parts.utc_start` and `utc_end`, the UTC range the file's data cover, so an ingester
 records every external file's coverage the same way; they are `None` for the land/ocean mask, which is valid for
 all time. The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are
-rejected. The FLASHFlux stream is the CERES SSF file with an `alpha` production strategy, and the footprint
-matching `FLASHFlux` reader consumes those files.
+rejected. FLASHFlux files are named `FLASH_SSF_...`; a standard CERES SSF file (`CER_SSF_...`) is not accepted.
+The footprint matching `FLASHFlux` reader consumes the FLASHFlux files.
 
 A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date. A non-daily product has no
 applicable date: the land/ocean mask is archived once under `<ProductID>/<version>`, and the tiles of one IGBP

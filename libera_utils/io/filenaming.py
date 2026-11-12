@@ -114,16 +114,18 @@ LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 # downloads the SDC names (see Era5Filename). The CERES and VIIRS patterns fix the NOAA-20 platform their
 # identifiers name.
 
-# NOAA-20 CERES Level 2 products from NASA Langley ASDC: the product and instrument part of the name, mapped to its
-# identifier. FLASHFlux files carry the SSF name with an ``alpha`` production strategy; the footprint matching
-# FLASHFlux reader consumes those SSF files, and the CLDPIX reader the CLDPIX files.
+# NOAA-20 CERES Level 2 products from NASA Langley ASDC: the collection part of the name, mapped to its identifier.
+# FLASHFlux is distributed as its own collection, FLASH_SSF_NOAA20-FM6-VIIRS (ASDC; Version1A, then Version1B from
+# 2023-10-01), in the CERES SSF layout. The standard CERES SSF (CER_SSF_...) is a different product and is not
+# accepted. The footprint matching FLASHFlux reader consumes the FLASH_SSF files, and the CLDPIX reader the CLDPIX
+# files.
 _CERES_PRODUCTS = {
-    "SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_ssf,
-    "CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
+    "FLASH_SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_flashflux,
+    "CER_CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
 }
 
 CERES_REGEX = re.compile(
-    rf"^CER_(?P<product>{'|'.join(map(re.escape, _CERES_PRODUCTS))})"
+    rf"^(?P<product>{'|'.join(map(re.escape, _CERES_PRODUCTS))})"
     r"_(?P<version>[A-Za-z0-9]+)"
     r"_(?P<configuration_code>[0-9]{6})"
     r"\.(?P<utc_start>[0-9]{10})"
@@ -1226,10 +1228,11 @@ class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
 class CeresFilename(DailyAncillaryDataProductFilename):
     """Filename class for NOAA-20 CERES Level 2 products from NASA Langley ASDC.
 
-    Form: ``CER_<product>_<platform and instruments>_<production strategy>_<configuration code>.<YYYYMMDDHH>.nc``,
-    e.g. ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc``. One file holds one hour of footprints.
+    Form: ``<CER|FLASH>_<product>_<platform and instruments>_<production strategy>_<configuration code>.<YYYYMMDDHH>.nc``,
+    e.g. ``FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc`` (FLASHFlux) or
+    ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc`` (CLDPIX). One file holds one hour of footprints.
 
-    - ``version`` is the production strategy, e.g. ``Edition1C``, or ``alpha4`` for the FLASHFlux stream.
+    - ``version`` is the production strategy, e.g. ``Version1B`` for FLASHFlux.
     - ``configuration_code`` is the six-digit CERES configuration code.
     - ``utc_start`` is the start of the hour and ``utc_end`` the start of the next; ``applicable_date`` is the UTC
       date of ``utc_start``.

@@ -1025,13 +1025,13 @@ ANCILLARY_SAMPLES = [
         id="cldpix",
     ),
     pytest.param(
-        "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc",
+        "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200_subset.nc",
         filenaming.CeresFilename,
-        DataProductIdentifier.anc_ceres_noaa20_ssf,
-        "alpha4",
-        dt.date(2020, 4, 1),
-        "CERES-NOAA20-SSF/2020/04/01",
-        id="ssf",
+        DataProductIdentifier.anc_ceres_noaa20_flashflux,
+        "Version1B",
+        dt.date(2026, 7, 12),
+        "CERES-NOAA20-FLASHFLUX/2026/07/12",
+        id="flashflux",
     ),
     pytest.param(
         "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
@@ -1192,9 +1192,9 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
     ("name", "utc_start", "utc_end"),
     [
         pytest.param(
-            "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010123.nc",
-            dt.datetime(2023, 1, 1, 23, tzinfo=dt.UTC),
-            dt.datetime(2023, 1, 2, tzinfo=dt.UTC),
+            "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071223.nc",
+            dt.datetime(2026, 7, 12, 23, tzinfo=dt.UTC),
+            dt.datetime(2026, 7, 13, tzinfo=dt.UTC),
             id="ceres-hour",
         ),
         pytest.param(
@@ -1242,10 +1242,10 @@ def test_ancillary_names_give_their_coverage(name, utc_start, utc_end):
     ("name", "filename_class", "expected"),
     [
         pytest.param(
-            "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc",
+            "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc",
             filenaming.CeresFilename,
-            {"version": "Edition1C", "configuration_code": "101103", "applicable_date": dt.date(2023, 1, 1)},
-            id="ssf-edition",
+            {"configuration_code": "405410"},
+            id="ceres-configuration-code",
         ),
         pytest.param(
             "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
@@ -1309,10 +1309,17 @@ def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
     ("name", "filename_class"),
     [
         pytest.param(
-            "CER_SSF_Aqua-FM3-MODIS_Edition4A_403406.2020040115.nc", filenaming.CeresFilename, id="ceres-platform"
+            "FLASH_SSF_Aqua-FM3-MODIS_Version4A_000000.2020040115.nc", filenaming.CeresFilename, id="ceres-platform"
         ),
         pytest.param(
-            "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020041024.nc", filenaming.CeresFilename, id="ceres-hour-24"
+            "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071224.nc", filenaming.CeresFilename, id="ceres-hour-24"
+        ),
+        # The standard CERES SSF is not FLASHFlux, whatever its production strategy
+        pytest.param(
+            "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc", filenaming.CeresFilename, id="ceres-ssf-edition"
+        ),
+        pytest.param(
+            "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc", filenaming.CeresFilename, id="ceres-ssf-alpha"
         ),
         pytest.param(
             "AERDB_D3_VIIRS_SNPP.A2026270.021.2026274001051.nc",
@@ -1372,7 +1379,7 @@ def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
             id="era5-stream",
         ),
         pytest.param(
-            "ECMWF_CERES-NOAA20-SSF_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            "ECMWF_CERES-NOAA20-FLASHFLUX_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
             filenaming.Era5Filename,
             id="era5-product",
         ),

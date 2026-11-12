@@ -90,7 +90,7 @@ class TestManualIngestPut:
             (
                 [
                     "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc",
-                    "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc",
+                    "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc",
                     "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
                     "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc",
                     "VJ143C1.A2026153.002.2026161161054.h5",
