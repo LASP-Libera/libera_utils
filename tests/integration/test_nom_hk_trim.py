@@ -1,5 +1,6 @@
 """Integration tests for NOM-HK ObsID trimming against real L1A fixtures."""
 
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +48,7 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
         # Load so the Dataset outlives the closed file handle
         ds = ds.load()
         written = write_trimmed_nom_hk_products(
-            ds, tmp_path, source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
+            ds, tmp_path, day=date(2028, 2, 13), source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
         )
 
     assert len(written) == 3
@@ -81,7 +82,7 @@ def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_s
         present = set(np.unique(ds["ICIE__SW_OBSID_RAD"].values).tolist())
         ds = ds.load()
         written = write_trimmed_nom_hk_products(
-            ds, tmp_path, source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
+            ds, tmp_path, day=date(2028, 2, 13), source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
         )
 
     # Fixture includes non-cal pads (e.g. 128) that must not be trimmed
