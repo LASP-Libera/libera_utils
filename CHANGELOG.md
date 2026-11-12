@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add one TRIMMED NOM-HK `DataProductIdentifier` per calibration ObsID, `l1a_icie_nom_hk_<x>_trimmed` (`NOM-HK-<CAL ProductID>-TRIMMED`, e.g. `NOM-HK-SWC-365NM-TRIMMED`), 1:1 with the ObsID's CAL product, for all 40 radiometer and camera calibration ObsIDs.
+- Add one combiner `ProcessingStepIdentifier` per CAL product, `cal_combine_<x>` (`cal-combine-<x>`, e.g. `cal-combine-swc-365nm`), producing only that CAL product, all with the shared ECR repository `cal-rad-docker-repo`, camera steps included.
+- Add `libera_utils.obsids.get_trimmed_obsid_spec(trimmed_product)` and `get_combiner_step(trimmed_product)`, which go from a TRIMMED product to the ObsID that owns it and to its combiner step, raising `KeyError` for any other product, and `is_calibration_event_product(product)`, which says whether a ProductID is a calibration ObsID's TRIMMED or CAL product.
+- Add `libera_utils.obsids.COMBINER_INPUTS` and `get_combiner_inputs(trimmed_product)`, loaded from `data/cal_combiner_inputs.csv`, which list the L1A products each combiner consumes besides its TRIMMED product, keyed by that TRIMMED product.
+- Importing `libera_utils.obsids` (and so `libera_utils`) raises `ValueError` when two ObsIDs claim one TRIMMED product, or when no `ProcessingStepIdentifier` produces a registered CAL product.
+
+### Changed
+
+- **BREAKING:** Each calibration ObsID in `data/obsid_registry.csv` names its own TRIMMED product, so `nom_hk_trim.write_trimmed_nom_hk_products` stamps each run with its ObsID's TRIMMED ProductID instead of a family's, and `get_trimmed_nom_hk_product_definition` accepts only those products.
+- **BREAKING:** `LiberaDataProductFilename.applicable_date`, and so `archive_prefix`, dates a calibration event file, the TRIMMED or CAL product of a calibration ObsID, by the UTC day of its `utc_start` instead of the midpoint of its time range, and no longer warns when its time range exceeds 24 hours. An event that crosses midnight is archived under the day it started. Keeping a TRIMMED file's time range to its event's is the L1A trim's job (LIBSDC-900), and a CAL file's time range to its TRIMMED file's is the combiner's (LIBSDC-902).
+- **BREAKING:** `data/trim_family_inputs.csv` is renamed `data/cal_combiner_inputs.csv` and keyed by TRIMMED product, one row per calibration ObsID.
+
+### Removed
+
+- **BREAKING:** Remove the ten calibration family TRIMMED products `l1a_icie_nom_hk_{gain,swc,lwc,solar,lunar,rad_viirs_lunar,ct_video,raps_video,darks,wfov_viirs_lunar}_family_trimmed` (`NOM-HK-*-FAMILY-TRIMMED`) and the four family steps `ProcessingStepIdentifier.cal_{gain,swc,lwc,solar}_family`; use the per-ObsID TRIMMED products and `cal_combine_*` steps.
+- **BREAKING:** Remove `libera_utils.obsids.TRIM_FAMILIES`, `get_family_specs`, `FAMILY_INPUTS`, `get_family_inputs` and `TRIM_FAMILY_INPUTS_CSV`; use `get_trimmed_obsid_spec`, `get_combiner_step`, `COMBINER_INPUTS` and `get_combiner_inputs`. A calibration family is no longer recorded in any catalog file.
+
 ## [5.25.0] - 2026-11-11
 
 ### Added

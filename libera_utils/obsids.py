@@ -5,30 +5,33 @@ integer can mean different events depending on whether it appears in
 ``ICIE__SW_OBSID_RAD`` or ``ICIE__SW_OBSID_WFOV``. Registry keys are therefore
 ``(NomHkObsidSource, obsid)``.
 
-Several ObsIDs share one TRIMMED product. A TRIMMED product names a *calibration
-dependency family* — ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED
-ObsIDs — and one processing step is deployed per family, not per ObsID. The trimmed
-file carries the source NOM-HK ObsID field, so a consumer recovers the exact ObsID
-from the data rather than from the ProductID. Each ObsID keeps its own CAL product,
-which is what a family step dispatches on.
+Each calibration ObsID has its own TRIMMED NOM-HK product, its own CAL product and one
+combiner processing step that turns the first into the second, so the three are 1:1:1.
+A TRIMMED or CAL file holds one calibration event: an ObsID can occur more than once a
+day, and each occurrence is its own file, told apart by the time range in its filename.
 
 The catalog itself lives in ``OBSID_REGISTRY_CSV`` (``libera_utils/data``)
 rather than in this module. Product columns hold
 :class:`~libera_utils.constants.DataProductIdentifier` *member names* (e.g.
 ``cal_gain``), which are resolved and validated when this module is imported.
 An unknown member name, a product named at the wrong data level, a ``kind`` that
-disagrees with ``source``, a duplicate ``(source, obsid)`` key, a CAL product claimed
-by more than one ObsID, or a TRIMMED family spanning more than one NOM-HK ObsID field
-all raise :class:`ValueError` at import time.
+disagrees with ``source``, a duplicate ``(source, obsid)`` key, or a TRIMMED or CAL
+product claimed by more than one ObsID all raise :class:`ValueError` at import time, as
+does a CAL product that no :class:`~libera_utils.constants.ProcessingStepIdentifier`
+produces.
 
-A companion file, ``TRIM_FAMILY_INPUTS_CSV``, records the L1A products each family's
-cal step consumes *besides* its own TRIMMED product, exposed as :data:`FAMILY_INPUTS` /
-:func:`get_family_inputs`. The two files must cover exactly the same set of families, which
-is checked at import; an empty ``required_inputs`` cell means the dependency set is still
-undecided. A cal step is expected to take its family's NOM-HK already trimmed as the family
-product, so ``required_inputs`` normally names only the other APIDs. Trimming is not applied
-to those inputs here: a cal container reads its run's time range off the TRIMMED NOM-HK
-filename it was handed and subsets the full daily L1A products itself.
+A companion file, ``CAL_COMBINER_INPUTS_CSV``, records the L1A products each combiner
+consumes *besides* its own TRIMMED product, keyed by that TRIMMED product and exposed as
+:data:`COMBINER_INPUTS` / :func:`get_combiner_inputs`. It must list exactly the TRIMMED
+products registered here, which is checked at import; an empty ``required_inputs`` cell
+means the dependency set is still undecided. ``required_inputs`` normally omits the
+full-day NOM-HK, since the combiner gets its NOM-HK already trimmed. Trimming is not
+applied to those inputs here: a combiner reads its event's time range off the TRIMMED
+NOM-HK filename it was handed and subsets the full daily L1A products itself.
+
+ObsIDs whose combiners take the same inputs, such as the six shortwave LED ObsIDs, are
+often called a calibration family. A family is a way to talk about calibration events;
+it is neither a product nor a processing step, and no file here records it.
 
 The list of ObsIDs in this repo is meant for practical purposes of science data
 processing and is a subset of the instrument level source of truth of all ObsIDs, which
@@ -40,18 +43,21 @@ upstream, this registry has to be reconciled against it.
 from __future__ import annotations
 
 import csv
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.resources import files
+from typing import TypeVar
 
-from libera_utils.constants import DataLevel, DataProductIdentifier
+from libera_utils.constants import DataLevel, DataProductIdentifier, ProcessingStepIdentifier
+
+_T = TypeVar("_T")
 
 #: Package resource holding the ObsID catalog.
 OBSID_REGISTRY_CSV = files("libera_utils.data") / "obsid_registry.csv"
 
-#: Package resource holding the per-family calibration input catalog.
-TRIM_FAMILY_INPUTS_CSV = files("libera_utils.data") / "trim_family_inputs.csv"
+#: Package resource holding the calibration combiner input catalog.
+CAL_COMBINER_INPUTS_CSV = files("libera_utils.data") / "cal_combiner_inputs.csv"
 
 
 class NomHkObsidSource(StrEnum):
@@ -83,8 +89,8 @@ _CAL_KINDS = tuple(_SOURCE_BY_CAL_KIND)
 #: Columns every ObsID catalog row must provide.
 _COLUMNS = ("source", "obsid", "kind", "trimmed_product", "cal_product", "description")
 
-#: Columns every family-inputs catalog row must provide.
-_FAMILY_INPUT_COLUMNS = ("trimmed_product", "required_inputs")
+#: Columns every combiner-inputs catalog row must provide.
+_COMBINER_INPUT_COLUMNS = ("trimmed_product", "required_inputs")
 
 #: Separator between product names inside the ``required_inputs`` cell.
 _INPUT_SEPARATOR = ";"
@@ -223,7 +229,7 @@ def _parse_row(row: dict[str, str], line: int) -> ObsIdSpec:
 
 def _load_registry() -> tuple[
     dict[tuple[NomHkObsidSource, int], ObsIdSpec],
-    dict[DataProductIdentifier, tuple[ObsIdSpec, ...]],
+    dict[DataProductIdentifier, ObsIdSpec],
 ]:
     """Read and validate the ObsID catalog CSV.
 
@@ -231,19 +237,17 @@ def _load_registry() -> tuple[
     -------
     registry : dict
         Mapping of ``(source, obsid)`` to :class:`ObsIdSpec`, in catalog order.
-    families : dict
-        Mapping of each TRIMMED family ProductID to the ObsIDs that belong to it, in
-        catalog order.
+    by_trimmed : dict
+        Mapping of each TRIMMED ProductID to the one ObsID that owns it, in catalog order.
 
     Raises
     ------
     ValueError
-        If the catalog is malformed, if two rows share a ``(source, obsid)`` key, if two
-        rows claim the same CAL product, or if one TRIMMED family spans both NOM-HK ObsID
-        fields.
+        If the catalog is malformed, if two rows share a ``(source, obsid)`` key, or if two
+        rows claim the same TRIMMED or CAL product.
     """
     registry: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = {}
-    families: dict[DataProductIdentifier, list[ObsIdSpec]] = {}
+    by_trimmed: dict[DataProductIdentifier, ObsIdSpec] = {}
     cal_owner: dict[DataProductIdentifier, ObsIdSpec] = {}
     with OBSID_REGISTRY_CSV.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, restkey=_EXTRA_COLUMNS_KEY)
@@ -258,105 +262,121 @@ def _load_registry() -> tuple[
                     f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: "
                     f"duplicate entry for ObsID {spec.obsid} on {spec.source.name}"
                 )
-            if spec.cal_product is not None:
-                owner = cal_owner.get(spec.cal_product)
+            for product, owners, column in (
+                (spec.cal_product, cal_owner, "CAL"),
+                (spec.trimmed_product, by_trimmed, "TRIMMED"),
+            ):
+                if product is None:
+                    continue
+                owner = owners.get(product)
                 if owner is not None:
                     raise ValueError(
-                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: CAL product "
-                        f"{spec.cal_product.name!r} is already claimed by ObsID {owner.obsid} on "
-                        f"{owner.source.name}. Each ObsID needs its own CAL product."
+                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: {column} product "
+                        f"{product.name!r} is already claimed by ObsID {owner.obsid} on "
+                        f"{owner.source.name}. Each ObsID needs its own {column} product."
                     )
-                cal_owner[spec.cal_product] = spec
-            if spec.trimmed_product is not None:
-                members = families.setdefault(spec.trimmed_product, [])
-                if members and members[0].source is not spec.source:
-                    raise ValueError(
-                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: TRIMMED family "
-                        f"{spec.trimmed_product.name!r} is registered on {members[0].source.name} by ObsID "
-                        f"{members[0].obsid} but on {spec.source.name} by ObsID {spec.obsid}. A family is "
-                        "trimmed by scanning a single NOM-HK ObsID field; register a separate family "
-                        "per source."
-                    )
-                members.append(spec)
+                owners[product] = spec
             registry[key] = spec
-    return registry, {product: tuple(members) for product, members in families.items()}
+    return registry, by_trimmed
 
 
-def _load_family_inputs(
-    families: Collection[DataProductIdentifier],
-) -> dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]]:
-    """Read and validate the per-family calibration input catalog.
+def _combiner_steps(
+    by_trimmed: dict[DataProductIdentifier, ObsIdSpec],
+) -> dict[DataProductIdentifier, ProcessingStepIdentifier]:
+    """Map each TRIMMED ProductID to the processing step that produces its ObsID's CAL product.
 
     Parameters
     ----------
-    families : collection of DataProductIdentifier
-        TRIMMED family ProductIDs registered in ``OBSID_REGISTRY_CSV``. The two catalogs
-        must cover exactly the same families.
+    by_trimmed : dict
+        Mapping of each TRIMMED ProductID to the ObsID that owns it.
 
     Returns
     -------
     dict
-        Mapping of each TRIMMED family ProductID to the L1A products a cal step for that family
-        consumes, in catalog order. An empty tuple means the dependency set has not been settled
-        yet.
+        Mapping of each TRIMMED ProductID to its combiner step, in the order of ``by_trimmed``.
 
     Raises
     ------
     ValueError
-        If the catalog is malformed, if a family is listed twice, if a cell names something
-        other than an L1A DataProductIdentifier member, or if the families listed here do not
-        exactly match ``families``.
+        If no :class:`~libera_utils.constants.ProcessingStepIdentifier` produces an ObsID's CAL
+        product.
     """
-    inputs: dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]] = {}
-    with TRIM_FAMILY_INPUTS_CSV.open(newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, restkey=_EXTRA_COLUMNS_KEY)
-        missing_columns = set(_FAMILY_INPUT_COLUMNS).difference(reader.fieldnames or ())
-        if missing_columns:
+    steps: dict[DataProductIdentifier, ProcessingStepIdentifier] = {}
+    for trimmed, spec in by_trimmed.items():
+        step = ProcessingStepIdentifier.from_data_product(spec.cal_product)
+        if step is None:
             raise ValueError(
-                f"{TRIM_FAMILY_INPUTS_CSV.name} is missing column(s): {', '.join(sorted(missing_columns))}"
+                f"No ProcessingStepIdentifier produces {spec.cal_product.name!r}, the CAL product of ObsID "
+                f"{spec.obsid} on {spec.source.name}. Add a cal_combine_* step for it in libera_utils/constants.py."
             )
+        steps[trimmed] = step
+    return steps
+
+
+def _load_combiner_inputs(
+    trimmed_products: Collection[DataProductIdentifier],
+) -> dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]]:
+    """Read and validate the calibration combiner input catalog.
+
+    Parameters
+    ----------
+    trimmed_products : collections.abc.Collection[DataProductIdentifier]
+        TRIMMED ProductIDs registered in ``OBSID_REGISTRY_CSV``. The two catalogs must cover
+        exactly the same TRIMMED products.
+
+    Returns
+    -------
+    dict
+        Mapping of each TRIMMED ProductID to the L1A products its combiner consumes besides it, in
+        catalog order. An empty tuple means the dependency set has not been settled yet.
+
+    Raises
+    ------
+    ValueError
+        If the catalog is malformed, if a TRIMMED product is listed twice, if a cell names something
+        other than an L1A DataProductIdentifier member, or if the TRIMMED products listed here do not
+        exactly match ``trimmed_products``.
+    """
+    catalog = CAL_COMBINER_INPUTS_CSV.name
+    inputs: dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]] = {}
+    with CAL_COMBINER_INPUTS_CSV.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh, restkey=_EXTRA_COLUMNS_KEY)
+        missing_columns = set(_COMBINER_INPUT_COLUMNS).difference(reader.fieldnames or ())
+        if missing_columns:
+            raise ValueError(f"{catalog} is missing column(s): {', '.join(sorted(missing_columns))}")
         for row in reader:
-            where = f"{TRIM_FAMILY_INPUTS_CSV.name}:{reader.line_num}"
-            missing = [column for column in _FAMILY_INPUT_COLUMNS if row.get(column) is None]
+            where = f"{catalog}:{reader.line_num}"
+            missing = [column for column in _COMBINER_INPUT_COLUMNS if row.get(column) is None]
             if missing or row.get(_EXTRA_COLUMNS_KEY):
                 raise ValueError(
-                    f"{where}: expected exactly {len(_FAMILY_INPUT_COLUMNS)} columns "
-                    f"({', '.join(_FAMILY_INPUT_COLUMNS)}); missing {missing}, "
+                    f"{where}: expected exactly {len(_COMBINER_INPUT_COLUMNS)} columns "
+                    f"({', '.join(_COMBINER_INPUT_COLUMNS)}); missing {missing}, "
                     f"surplus {row.get(_EXTRA_COLUMNS_KEY) or []}."
                 )
-            family = _resolve_product(
-                row["trimmed_product"],
-                "trimmed_product",
-                DataLevel.L1A,
-                reader.line_num,
-                TRIM_FAMILY_INPUTS_CSV.name,
+            trimmed = _resolve_product(
+                row["trimmed_product"], "trimmed_product", DataLevel.L1A, reader.line_num, catalog
             )
-            if family is None:
-                raise ValueError(f"{where} column 'trimmed_product': a family ProductID is required")
-            if family in inputs:
-                raise ValueError(f"{where}: duplicate entry for TRIMMED family {family.name!r}")
-            required = tuple(
+            if trimmed is None:
+                raise ValueError(f"{where} column 'trimmed_product': a TRIMMED ProductID is required")
+            if trimmed in inputs:
+                raise ValueError(f"{where}: duplicate entry for TRIMMED product {trimmed.name!r}")
+            inputs[trimmed] = tuple(
                 product
                 for cell in row["required_inputs"].split(_INPUT_SEPARATOR)
-                if (
-                    product := _resolve_product(
-                        cell, "required_inputs", DataLevel.L1A, reader.line_num, TRIM_FAMILY_INPUTS_CSV.name
-                    )
-                )
+                if (product := _resolve_product(cell, "required_inputs", DataLevel.L1A, reader.line_num, catalog))
                 is not None
             )
-            inputs[family] = required
 
     listed = set(inputs)
-    registered = set(families)
+    registered = set(trimmed_products)
     if listed != registered:
         undeclared = sorted(product.name for product in registered - listed)
         unregistered = sorted(product.name for product in listed - registered)
         raise ValueError(
-            f"{TRIM_FAMILY_INPUTS_CSV.name} must list exactly the TRIMMED families registered in "
-            f"{OBSID_REGISTRY_CSV.name}. Families with no declared inputs: {undeclared}. "
-            f"Families declared here but registered against no ObsID: {unregistered}. "
-            "Add the family to both files (an empty 'required_inputs' cell is allowed while the "
+            f"{catalog} must list exactly the TRIMMED products registered in {OBSID_REGISTRY_CSV.name}. "
+            f"TRIMMED products with no row here: {undeclared}. "
+            f"Rows here for TRIMMED products registered against no ObsID: {unregistered}. "
+            "Add the TRIMMED product to both files (an empty 'required_inputs' cell is allowed while the "
             "dependency set is still undecided)."
         )
     return inputs
@@ -367,19 +387,25 @@ def _load_family_inputs(
 #: Loaded from ``OBSID_REGISTRY_CSV``; edit that file to register a new ObsID.
 OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec]
 
-#: Inverse view of the TRIMMED column. Each calibration dependency family ProductID is mapped to
-#: the ObsIDs it covers. This is the membership a downstream cal step dispatches over.
-TRIM_FAMILIES: dict[DataProductIdentifier, tuple[ObsIdSpec, ...]]
+#: Each TRIMMED ProductID mapped to the one ObsID that owns it.
+_SPEC_BY_TRIMMED: dict[DataProductIdentifier, ObsIdSpec]
 
-#: L1A products each calibration dependency family's cal step consumes *besides* its own TRIMMED
-#: product, loaded from ``TRIM_FAMILY_INPUTS_CSV``. Together with the family product these are
-#: the dependency set a family step is deployed against; an empty tuple means it has not been
-#: settled yet. Cal containers subset these daily products themselves using the time range on the
-#: TRIMMED NOM-HK filename they are handed.
-FAMILY_INPUTS: dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]]
+#: L1A products each calibration combiner consumes *besides* its own TRIMMED product, keyed by
+#: that TRIMMED product and loaded from ``CAL_COMBINER_INPUTS_CSV``. Together with the TRIMMED
+#: product these are the input products a combiner step is deployed against; an empty tuple
+#: means they have not been settled yet. Combiners subset these daily products themselves using
+#: the time range on the TRIMMED NOM-HK filename they are handed.
+COMBINER_INPUTS: dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]]
 
-OBSID_REGISTRY, TRIM_FAMILIES = _load_registry()
-FAMILY_INPUTS = _load_family_inputs(TRIM_FAMILIES)
+OBSID_REGISTRY, _SPEC_BY_TRIMMED = _load_registry()
+_COMBINER_BY_TRIMMED = _combiner_steps(_SPEC_BY_TRIMMED)
+COMBINER_INPUTS = _load_combiner_inputs(_SPEC_BY_TRIMMED)
+
+#: TRIMMED and CAL ProductIDs of every calibration ObsID: the products whose files each hold one
+#: calibration event.
+_CALIBRATION_EVENT_PRODUCTS = frozenset(_SPEC_BY_TRIMMED) | frozenset(
+    spec.cal_product for spec in _SPEC_BY_TRIMMED.values()
+)
 
 
 def get_obsid_spec(source: NomHkObsidSource, obsid: int) -> ObsIdSpec:
@@ -408,68 +434,118 @@ def get_obsid_spec(source: NomHkObsidSource, obsid: int) -> ObsIdSpec:
         raise KeyError(f"Unknown ObsID {obsid} for source {source.name} ({source.value})") from exc
 
 
-def get_family_specs(trimmed_product: DataProductIdentifier) -> tuple[ObsIdSpec, ...]:
-    """Return every ObsID belonging to a TRIMMED calibration dependency family.
-
-    A TRIMMED ProductID covers a family of ObsIDs that downstream algorithms process the same
-    way (``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED ObsIDs), so this is how a
-    cal step enumerates the ObsIDs — and the CAL products — it is responsible for.
+def _by_trimmed(table: Mapping[DataProductIdentifier, _T], trimmed_product: DataProductIdentifier) -> _T:
+    """Look up a TRIMMED ProductID in one of the registry's tables keyed by TRIMMED product.
 
     Parameters
     ----------
+    table : collections.abc.Mapping
+        A mapping keyed by every TRIMMED ProductID in the registry.
     trimmed_product : DataProductIdentifier
-        A TRIMMED family ProductID from the registry.
+        The TRIMMED ProductID to look up.
 
     Returns
     -------
-    tuple of ObsIdSpec
-        Family members in catalog order. Always at least one entry.
+    object
+        The value ``table`` holds for ``trimmed_product``.
 
     Raises
     ------
     KeyError
-        If ``trimmed_product`` is not a registered TRIMMED family ProductID.
+        If ``trimmed_product`` is not a TRIMMED ProductID in the registry.
     """
     try:
-        return TRIM_FAMILIES[trimmed_product]
+        return table[trimmed_product]
     except KeyError as exc:
-        raise KeyError(
-            f"{trimmed_product.name!r} is not a TRIMMED calibration family ProductID in {OBSID_REGISTRY_CSV.name}"
-        ) from exc
+        raise KeyError(f"{trimmed_product.name!r} is not a TRIMMED ProductID in {OBSID_REGISTRY_CSV.name}") from exc
 
 
-def get_family_inputs(trimmed_product: DataProductIdentifier) -> tuple[DataProductIdentifier, ...]:
-    """Return the L1A products a calibration dependency family's cal step consumes.
-
-    These are the *other* L1A products a family's algorithm needs: a step's full
-    ``input-products`` set is ``trimmed_product`` itself plus this tuple. The family's NOM-HK is
-    expected to arrive already trimmed as ``trimmed_product``, so the full-day ``NOM-HK-DECODED``
-    granule is normally not listed here. The cal container subsets these to the calibration run
-    itself, using the time range carried by the TRIMMED NOM-HK filename it was handed; no other
-    APID is trimmed by the L1A preprocessor.
+def get_trimmed_obsid_spec(trimmed_product: DataProductIdentifier) -> ObsIdSpec:
+    """Return the registry entry of the ObsID that owns a TRIMMED ProductID.
 
     Parameters
     ----------
     trimmed_product : DataProductIdentifier
-        A TRIMMED family ProductID from the registry.
+        A TRIMMED NOM-HK ProductID from the registry.
+
+    Returns
+    -------
+    ObsIdSpec
+        The one catalog entry whose ``trimmed_product`` is ``trimmed_product``.
+
+    Raises
+    ------
+    KeyError
+        If ``trimmed_product`` is not a TRIMMED ProductID in the registry.
+    """
+    return _by_trimmed(_SPEC_BY_TRIMMED, trimmed_product)
+
+
+def get_combiner_step(trimmed_product: DataProductIdentifier) -> ProcessingStepIdentifier:
+    """Return the combiner processing step that consumes a TRIMMED ProductID.
+
+    The step produces the CAL product of the ObsID that owns ``trimmed_product``, and nothing else.
+
+    Parameters
+    ----------
+    trimmed_product : DataProductIdentifier
+        A TRIMMED NOM-HK ProductID from the registry.
+
+    Returns
+    -------
+    ProcessingStepIdentifier
+        The ``cal_combine_*`` step for that ObsID.
+
+    Raises
+    ------
+    KeyError
+        If ``trimmed_product`` is not a TRIMMED ProductID in the registry.
+    """
+    return _by_trimmed(_COMBINER_BY_TRIMMED, trimmed_product)
+
+
+def get_combiner_inputs(trimmed_product: DataProductIdentifier) -> tuple[DataProductIdentifier, ...]:
+    """Return the L1A products a calibration combiner consumes besides its TRIMMED product.
+
+    A combiner step's full input product set is ``trimmed_product`` itself plus this tuple. Its
+    NOM-HK arrives already trimmed as ``trimmed_product``, so the full-day ``NOM-HK-DECODED``
+    granule is normally not listed here. The combiner subsets these to the calibration event
+    itself, using the time range carried by the TRIMMED NOM-HK filename it was handed.
+
+    Parameters
+    ----------
+    trimmed_product : DataProductIdentifier
+        A TRIMMED NOM-HK ProductID from the registry.
 
     Returns
     -------
     tuple of DataProductIdentifier
-        L1A input products in catalog order. Empty for families whose dependency set is still
-        undecided.
+        L1A input products in catalog order. Empty while the dependency set is still undecided.
 
     Raises
     ------
     KeyError
-        If ``trimmed_product`` is not a registered TRIMMED family ProductID.
+        If ``trimmed_product`` is not a TRIMMED ProductID in the registry.
     """
-    try:
-        return FAMILY_INPUTS[trimmed_product]
-    except KeyError as exc:
-        raise KeyError(
-            f"{trimmed_product.name!r} is not a TRIMMED calibration family ProductID in {OBSID_REGISTRY_CSV.name}"
-        ) from exc
+    return _by_trimmed(COMBINER_INPUTS, trimmed_product)
+
+
+def is_calibration_event_product(product: DataProductIdentifier) -> bool:
+    """Return whether a ProductID is a calibration ObsID's TRIMMED or CAL product.
+
+    Each file of such a product holds one calibration event rather than one day.
+
+    Parameters
+    ----------
+    product : DataProductIdentifier
+        Any ProductID.
+
+    Returns
+    -------
+    bool
+        True if ``product`` is the TRIMMED or CAL product of an ObsID in the registry.
+    """
+    return product in _CALIBRATION_EVENT_PRODUCTS
 
 
 def iter_trim_eligible(source: NomHkObsidSource | None = None) -> Iterator[ObsIdSpec]:

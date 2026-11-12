@@ -58,20 +58,20 @@ class TestGetTrimmedNomHkProductDefinition:
     """Product-definition ProductID override."""
 
     def test_overrides_product_id(self):
-        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
-        assert definition.attributes["ProductID"] == "NOM-HK-SWC-FAMILY-TRIMMED"
+        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
+        assert definition.attributes["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
 
     def test_rejects_non_trimmed_product(self):
-        with pytest.raises(ValueError, match="not a known TRIMMED"):
+        with pytest.raises(ValueError, match="is not a TRIMMED NOM-HK product in the ObsID registry"):
             get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_decoded)
 
     def test_callers_get_independent_definitions(self):
-        """Stamping one family's ProductID must not leak into another's definition."""
-        swc = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
-        gain = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed)
+        """Stamping one ProductID must not leak into another's definition."""
+        swc = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed)
+        gain = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_gain_trimmed)
         assert swc is not gain
-        assert swc.attributes["ProductID"] == "NOM-HK-SWC-FAMILY-TRIMMED"
-        assert gain.attributes["ProductID"] == "NOM-HK-GAIN-FAMILY-TRIMMED"
+        assert swc.attributes["ProductID"] == "NOM-HK-SWC-365NM-TRIMMED"
+        assert gain.attributes["ProductID"] == "NOM-HK-GAIN-TRIMMED"
 
 
 class TestFindObsidRuns:
@@ -103,8 +103,8 @@ class TestFindObsidRuns:
         )
         runs = find_obsid_runs(ds)
         products = {spec.trimmed_product for spec, _ in runs}
-        assert DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed in products
-        assert DataProductIdentifier.l1a_icie_nom_hk_darks_family_trimmed in products
+        assert DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed in products
+        assert DataProductIdentifier.l1a_icie_nom_hk_darks_of_darks_trimmed in products
 
     def test_source_filter(self):
         ds = _synthetic_nom_hk(
@@ -144,7 +144,7 @@ class TestWriteTrimmedNomHkProducts:
         # Two disjoint 257 runs
         ds = _synthetic_nom_hk(rad_obsids=[257, 257, 128, 257, 257])
         mock_filename = MagicMock()
-        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
+        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-405NM-TRIMMED_fake.nc"
 
         with (
             patch(
@@ -173,11 +173,10 @@ class TestWriteTrimmedNomHkProducts:
             write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
         product_ids = {call.args[1].attrs["ProductID"] for call in mock_write.call_args_list}
-        assert "NOM-HK-SWC-FAMILY-TRIMMED" in product_ids
-        assert "NOM-HK-DARKS-FAMILY-TRIMMED" in product_ids
+        assert product_ids == {"NOM-HK-SWC-405NM-TRIMMED", "NOM-HK-DARKS-OF-DARKS-TRIMMED"}
 
-    def test_family_siblings_each_get_their_own_file(self, tmp_path):
-        """Two ObsIDs in one family write two files that share the family ProductID."""
+    def test_two_obsids_get_two_product_ids(self, tmp_path):
+        """Two ObsIDs whose combiners take the same inputs still write their own ProductIDs."""
         ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
@@ -189,15 +188,15 @@ class TestWriteTrimmedNomHkProducts:
 
         assert len(written) == 2
         product_ids = [call.args[1].attrs["ProductID"] for call in mock_write.call_args_list]
-        assert product_ids == ["NOM-HK-SWC-FAMILY-TRIMMED", "NOM-HK-SWC-FAMILY-TRIMMED"]
+        assert product_ids == ["NOM-HK-SWC-365NM-TRIMMED", "NOM-HK-SWC-405NM-TRIMMED"]
         # Each file still covers exactly one ObsID, recoverable from the retained ObsID field
         obsids_per_file = [
             np.unique(call.args[1]["ICIE__SW_OBSID_RAD"].values).tolist() for call in mock_write.call_args_list
         ]
         assert obsids_per_file == [[256], [257]]
 
-    def test_family_siblings_do_not_warn_about_disjoint_runs(self, tmp_path, caplog):
-        """Different ObsIDs of one family are not the same ObsID appearing twice."""
+    def test_different_obsids_do_not_warn_about_disjoint_runs(self, tmp_path, caplog):
+        """Different ObsIDs are not the same ObsID appearing twice."""
         ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
         mock_filename = MagicMock()
         mock_filename.path.name = "fake.nc"
@@ -256,12 +255,12 @@ class TestWriteTrimmedNomHkProducts:
 
         assert mock_write.call_args_list[0].args[1].attrs["algorithm_version"] == libera_utils_version()
 
-    def test_definition_is_built_once_per_family_not_once_per_run(self, tmp_path):
-        """Four runs across three families cost three definitions, not four."""
-        # 256/257 -> SWC family, 512 -> GAIN family, 320 (contiguous pair) -> LWC family
-        ds = _synthetic_nom_hk(rad_obsids=[256, 257, 512, 320, 320])
+    def test_definition_is_built_once_per_product_not_once_per_run(self, tmp_path):
+        """Three runs of two ObsIDs cost two definitions, not three."""
+        # 256 twice (disjoint runs) and 512 once
+        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 512, 128, 256])
         mock_filename = MagicMock()
-        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
+        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-365NM-TRIMMED_fake.nc"
 
         with (
             patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename),
@@ -276,6 +275,6 @@ class TestWriteTrimmedNomHkProducts:
         ):
             written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
-        assert len(written) == 4, "one file per contiguous ObsID run"
-        assert mock_definition.call_count == 3, "definition built once per family, not once per run"
-        assert mock_from_yaml.call_count == 3, "definition YAML parsed once per family, not once per run"
+        assert len(written) == 3, "one file per contiguous ObsID run"
+        assert mock_definition.call_count == 2, "definition built once per ProductID, not once per run"
+        assert mock_from_yaml.call_count == 2, "definition YAML parsed once per ProductID, not once per run"

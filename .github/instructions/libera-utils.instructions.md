@@ -16,17 +16,17 @@ generation, Libera file naming, and AWS pipeline integration.
 
 ## Package Layout (`libera_utils/`)
 
-| Module          | Responsibility                                                               |
-| --------------- | ---------------------------------------------------------------------------- |
-| `aws/`          | S3, ECR, and Step Functions helpers — CLI-facing only; see restrictions      |
-| `io/`           | NetCDF product definitions (Pydantic), file naming, UMM-G, cloud-aware I/O   |
-| `l1a/`          | Packet parsing, XTCE configs, packet slicing, day-window trim, day coverage  |
-| `libera_spice/` | SPICE kernel generation via SpiceyPy + Curryer                               |
-| `constants.py`  | Canonical enums: `DataLevel`, `DataProductIdentifier`, `LiberaApid`          |
-| `obsids.py`     | Loader/API over the ObsID catalog CSVs in `data/` (registry + family inputs) |
-| `logutil.py`    | Structured JSON logging; use `configure_task_logging()` for task-level setup |
-| `config.py`     | JSON config with env-var override and templated string formatting            |
-| `cli.py`        | `libera-utils` CLI entry point                                               |
+| Module          | Responsibility                                                                 |
+| --------------- | ------------------------------------------------------------------------------ |
+| `aws/`          | S3, ECR, and Step Functions helpers — CLI-facing only; see restrictions        |
+| `io/`           | NetCDF product definitions (Pydantic), file naming, UMM-G, cloud-aware I/O     |
+| `l1a/`          | Packet parsing, XTCE configs, packet slicing, day-window trim, day coverage    |
+| `libera_spice/` | SPICE kernel generation via SpiceyPy + Curryer                                 |
+| `constants.py`  | Canonical enums: `DataLevel`, `DataProductIdentifier`, `LiberaApid`            |
+| `obsids.py`     | Loader/API over the ObsID catalog CSVs in `data/` (registry + combiner inputs) |
+| `logutil.py`    | Structured JSON logging; use `configure_task_logging()` for task-level setup   |
+| `config.py`     | JSON config with env-var override and templated string formatting              |
+| `cli.py`        | `libera-utils` CLI entry point                                                 |
 
 ## Code Standards
 
@@ -82,46 +82,42 @@ generation, Libera file naming, and AWS pipeline integration.
   product named at the wrong data level (TRIMMED cells must be L1A, CAL cells must be CAL), a row
   with the wrong number of columns, a `kind`/product mismatch, a `rad_cal` row registered on WFOV
   (or `cam_cal` on RAD), a duplicate `(source, obsid)` row, a CAL product claimed by more than one
-  ObsID, or a TRIMMED family registered on both the RAD and WFOV ObsID fields. The in-memory
-  `OBSID_REGISTRY` is keyed by
+  ObsID, a TRIMMED product claimed by more than one ObsID, or a CAL product that no
+  `ProcessingStepIdentifier` produces. The in-memory `OBSID_REGISTRY` is keyed by
   `(NomHkObsidSource, obsid)`, not `obsid` alone, because RAD and WFOV ObsID numbers collide
   (e.g. `256` means SWC-365NM on RAD but Darks-of-Darks on WFOV). This is more than a lookup
   table of "what ObsIDs exist" — it drives real behavior:
-  - Downstream repos (e.g. `libera_rad`'s cal-combine dispatch) derive their own
-    ObsID → product/family mappings directly from this registry (via `get_obsid_spec` /
-    `get_family_specs` / `iter_trim_eligible`) instead of hand-maintaining a duplicate mapping per repo — this is
-    what lets multiple calibration steps share one Docker/ECR image, dispatched at runtime by
-    ObsID.
-  - A companion catalog, `data/trim_family_inputs.csv`, maps each TRIMMED family to the L1A
-    products its cal step consumes _besides its own TRIMMED product_ (`FAMILY_INPUTS` /
-    `get_family_inputs()`). The two files are cross-checked at import and must list exactly the
-    same families, so a new TRIMMED family needs a row in both; an empty `required_inputs` cell
-    means the dependency set is still undecided. A family product plus its `required_inputs` is
-    what a libera_cdk `cal-*-family` node should declare as its `input-products`. A cal step is
-    expected to take its family's NOM-HK already trimmed as the family product, so
-    `required_inputs` normally omits `l1a_icie_nom_hk_decoded`; listing the full-day granule would
-    stage a redundant second NOM-HK input.
-    NOM-HK is the only product the L1A preprocessor trims — a cal container subsets the full daily
-    L1A inputs itself, using the time range on the TRIMMED NOM-HK filename it was handed.
-  - When adding a new calibration ObsID, add a row to `data/obsid_registry.csv` first rather
-    than adding a parallel ObsID → product mapping in a downstream repo. Edit the CSV with a
+  - Each calibration ObsID has its own TRIMMED NOM-HK product (`NOM-HK-<CAL ProductID>-TRIMMED`),
+    its own CAL product, and one combiner `ProcessingStepIdentifier` (`cal_combine_<x>`,
+    `cal-combine-<x>`) that produces only that CAL product: the three are 1:1:1. All combiner steps
+    share the `cal-rad-docker-repo` ECR repository. `get_trimmed_obsid_spec` and
+    `get_combiner_step` go from a TRIMMED product to its ObsID and its step.
+  - Downstream repos (e.g. `libera_rad`'s combiner) derive their ObsID → product mappings directly
+    from this registry (via `get_trimmed_obsid_spec` / `get_obsid_spec` / `iter_trim_eligible`)
+    instead of hand-maintaining a duplicate mapping per repo.
+  - A companion catalog, `data/cal_combiner_inputs.csv`, maps each TRIMMED product to the L1A
+    products its combiner consumes _besides that TRIMMED product_ (`COMBINER_INPUTS` /
+    `get_combiner_inputs()`). The two files are cross-checked at import and must list exactly the
+    same TRIMMED products, so a new calibration ObsID needs a row in both; an empty
+    `required_inputs` cell means the dependency set is still undecided. A TRIMMED product plus its
+    `required_inputs` is what a libera_cdk `cal-combine-*` node should declare as its
+    `input-products`. `required_inputs` normally omits `l1a_icie_nom_hk_decoded`, since the
+    combiner gets its NOM-HK already trimmed; listing the full-day granule would stage a redundant
+    second NOM-HK input. NOM-HK is the only product the L1A preprocessor trims — a combiner subsets
+    the full daily L1A inputs itself, using the time range on the TRIMMED NOM-HK filename it was
+    handed.
+  - A "calibration family" (e.g. the six SWC LED ObsIDs) is a way to talk about ObsIDs whose
+    combiners take the same inputs. It is not a product or a step, and no catalog file records it.
+  - A TRIMMED or CAL file holds one calibration event; an ObsID can recur within a day, and each
+    occurrence is its own file, told apart by its filename time range. `applicable_date` (and so
+    `archive_prefix`) dates these files by the UTC day of `utc_start`, not the midpoint
+    (`is_calibration_event_product`). The exact ObsID is also in the `ICIE__SW_OBSID_*` variable
+    the trimmed file carries.
+  - When adding a new calibration ObsID, add its CAL, TRIMMED and `cal_combine_*` members in
+    `constants.py`, then its rows in `data/obsid_registry.csv` and `data/cal_combiner_inputs.csv`,
+    rather than adding a parallel ObsID → product mapping in a downstream repo. Edit the CSVs with a
     text editor or the `csv` module, never a spreadsheet app that may rewrite quoting —
-    descriptions contain commas. An ObsID joining an existing family needs no new TRIMMED product
-    or processing step — just its own CAL product, added to that family step's `products` list. A
-    new TRIMMED family member is warranted only when the ObsID introduces a genuinely new input
-    dependency, which is also when a new `ProcessingStepIdentifier` is warranted.
-  - The TRIMMED column names a **calibration dependency family**, not a single ObsID: ObsIDs a
-    downstream algorithm processes identically share one `NOM-HK-<FAMILY>-FAMILY-TRIMMED` product
-    (all six SWC LEDs share `NOM-HK-SWC-FAMILY-TRIMMED`) — one processing step per family, not
-    per ObsID, since what libera_cdk deploys against is a step's set of input products.
-    Each ObsID still gets its own CAL product, and a family never spans both ObsID fields (VIIRS
-    lunar 513/514 is registered as two families, `NOM-HK-RAD-VIIRS-LUNAR-...` and
-    `NOM-HK-WFOV-VIIRS-LUNAR-...`) so a trimmed file always attributes to one source. Use
-    `TRIM_FAMILIES` / `get_family_specs()` to go from a family product to its ObsIDs and CAL
-    products.
-  - `nom_hk_trim` still writes one file per contiguous ObsID run, so several files per day normally
-    share a family `ProductID` and are told apart by their filename time ranges; the exact ObsID is
-    recovered from the `ICIE__SW_OBSID_*` variable the trimmed file carries, not from its name.
+    descriptions contain commas.
   - **Note**: the list of ObsIDs in this repo is meant for practical purposes of science data
     processing and is a subset of the instrument level source of truth of all ObsIDs which is owned
     by the engineering team and is available in internal team documentation

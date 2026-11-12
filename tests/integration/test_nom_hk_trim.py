@@ -16,13 +16,11 @@ pytestmark = pytest.mark.integration
 # TODO[LIBSDC-567]: Add integration coverage for WFOV/camera ObsID trimming once
 # NOM-HK fixtures containing ICIE__SW_OBSID_WFOV cal events are available.
 
-# Expected RAD cal runs in test_l1a_nom_hk_obsid_trim_subset, as ObsID -> (family ProductID, packets).
-# ObsIDs 385 and 386 are both solar-diffuser cals, so they share one TRIMMED family ProductID and are
-# told apart by the ObsID field inside each file rather than by the filename.
+# Expected RAD cal runs in test_l1a_nom_hk_obsid_trim_subset, as ObsID -> (TRIMMED ProductID, packets).
 _EXPECTED_RAD_RUNS = {
-    257: ("NOM-HK-SWC-FAMILY-TRIMMED", 236),
-    385: ("NOM-HK-SOLAR-FAMILY-TRIMMED", 81),
-    386: ("NOM-HK-SOLAR-FAMILY-TRIMMED", 81),
+    257: ("NOM-HK-SWC-405NM-TRIMMED", 236),
+    385: ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", 81),
+    386: ("NOM-HK-SOLAR-LW-PRI-TRIMMED", 81),
 }
 
 
@@ -44,7 +42,7 @@ def test_find_obsid_runs_on_fixture(test_l1a_nom_hk_obsid_trim_subset: Path):
 
 
 def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_subset: Path, tmp_path: Path):
-    """End-to-end write produces one TRIMMED file per RAD cal ObsID run, stamped with its family."""
+    """End-to-end write produces one TRIMMED file per RAD cal ObsID run, stamped with its ObsID's ProductID."""
     with xr.open_dataset(test_l1a_nom_hk_obsid_trim_subset) as ds:
         # Load so the Dataset outlives the closed file handle
         ds = ds.load()
@@ -53,7 +51,7 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
         )
 
     assert len(written) == 3
-    # Files are keyed by the ObsID they actually contain; two of them share a family ProductID
+    # Files are keyed by the ObsID they actually contain
     by_obsid = {}
     for path in written:
         with xr.open_dataset(path.path) as trimmed:
@@ -75,9 +73,6 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
         # Provenance points at the parent granule, not the L0 packet files it was decoded from
         assert by_obsid[obsid]["input_files"] == [test_l1a_nom_hk_obsid_trim_subset.name]
         assert by_obsid[obsid]["algorithm_version"] == libera_utils_version()
-    # Both solar ObsIDs landed in the one solar family product, under distinct filenames
-    solar_names = {path.path.name for path in written if "SOLAR-FAMILY" in path.path.name}
-    assert len(solar_names) == 2
 
 
 def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_subset: Path, tmp_path: Path):
