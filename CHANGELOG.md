@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.26.0] - 2026-11-12
+
 ### Added
 
 - `libera_utils.footprint_matching.footprint_match_algorithm`, the manifest-driven runner for the four FMATCH products, run by the `libera-utils fmatch <manifest>` command and the `libera-utils-fmatch` Docker target (#92).
@@ -1080,7 +1082,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...HEAD
+[5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
