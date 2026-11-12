@@ -483,19 +483,30 @@ def test_scene_id_cli_dispatch(variant, monkeypatch):
     assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]
 
 
-@pytest.mark.parametrize("variant", ["cam", "cam-camtime", "imager", "imager-camtime"])
-def test_fmatch_cli_dispatch(variant, monkeypatch):
-    """``fmatch`` runs the variant named by LIBERA_FMATCH_VARIANT, passing ``run_algorithm`` the manifest path."""
+@pytest.mark.parametrize("flag", [None, *[str(step) for step in footprint_match_algorithm.RUNNER_CONFIGS]])
+def test_fmatch_cli_dispatch(flag, monkeypatch):
+    """``fmatch`` passes ``run_algorithm`` the manifest path and the ``--processing_step_id`` value, if any."""
     called_with = {}
     monkeypatch.setattr(
         footprint_match_algorithm,
         "run_algorithm",
-        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
+        lambda manifest_path, processing_step_id: called_with.update(
+            manifest_path=manifest_path, processing_step_id=processing_step_id
+        ),
     )
-    monkeypatch.setenv(footprint_match_algorithm.FMATCH_VARIANT_ENV, variant)
+    argv = ["fmatch", "file.manifest"] + ([] if flag is None else ["--processing_step_id", flag])
 
-    args = cli.parse_cli_args(["fmatch", "file.manifest"])
+    args = cli.parse_cli_args(argv)
     args.func(args)
 
-    assert called_with["manifest_path"] == Path("file.manifest")
-    assert called_with["config"] is footprint_match_algorithm.RUNNER_CONFIGS[variant]
+    assert called_with == {"manifest_path": Path("file.manifest"), "processing_step_id": flag}
+
+
+def test_fmatch_cli_rejects_a_step_that_is_not_fmatch(capsys):
+    """``--processing_step_id`` accepts only the FMATCH processing steps."""
+    with pytest.raises(SystemExit):
+        cli.parse_cli_args(["fmatch", "file.manifest", "--processing_step_id", "aux-scene-id-cam"])
+
+    stderr = capsys.readouterr().err
+    assert "invalid choice: 'aux-scene-id-cam'" in stderr
+    assert "aux-fmatch-cam" in stderr

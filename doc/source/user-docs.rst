@@ -21,3 +21,4 @@ all of it.
     user-docs/l1a_processing
     user-docs/packet_ordering
     user-docs/obsid_registry
+    user-docs/fmatch

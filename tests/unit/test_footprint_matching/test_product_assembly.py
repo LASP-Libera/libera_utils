@@ -63,7 +63,6 @@ from tests.plugins.footprint_matching_fixtures import (
     FakeMeanReader,
     era5_pressure_fixture_value,
     fake_radiometer_footprint,
-    make_cf_cam_camtime_dataset,
     make_era5_pressure_netcdf_fixture,
     make_era5_surface_netcdf_fixture,
 )
@@ -812,8 +811,8 @@ class TestStackedProductVariables:
 class TestPseudofootprintsFromCamtime:
     """Camera pseudo-footprints are rebuilt from the CF-CAM-CAMTIME grid the Camera Cloud Fraction algorithm writes."""
 
-    def test_rebuilds_one_footprint_per_real_cell_in_row_major_order(self):
-        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2)
+    def test_rebuilds_one_footprint_per_real_cell_in_row_major_order(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=2, n_pixels_x=2, n_pixels_y=2)
 
         footprints = pseudofootprints_from_camtime_dataset(dataset)
 
@@ -821,19 +820,19 @@ class TestPseudofootprintsFromCamtime:
         assert [f.time for f in footprints] == [dataset["CAMERA_TIME"].values[i] for i in (0, 0, 0, 0, 1, 1, 1, 1)]
         assert [(f.center_ix, f.center_iy) for f in footprints[:4]] == [(0, 0), (0, 1), (1, 0), (1, 1)]
 
-    def test_inclusive_pixel_bounds_become_half_open_slices(self):
-        footprint = pseudofootprints_from_camtime_dataset(make_cf_cam_camtime_dataset(n_images=1))[0]
+    def test_inclusive_pixel_bounds_become_half_open_slices(self, cf_cam_camtime_dataset_factory):
+        footprint = pseudofootprints_from_camtime_dataset(cf_cam_camtime_dataset_factory(n_images=1))[0]
 
         assert footprint.slice_x == slice(0, 1)
         assert footprint.slice_y == slice(0, 1)
 
-    def test_padded_cells_are_skipped(self):
-        dataset = make_cf_cam_camtime_dataset(n_images=2, n_pixels_x=2, n_pixels_y=2, n_padded=3)
+    def test_padded_cells_are_skipped(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=2, n_pixels_x=2, n_pixels_y=2, n_padded=3)
 
         assert len(pseudofootprints_from_camtime_dataset(dataset)) == 5
 
-    def test_bbox_and_quality_flags_are_decoded(self):
-        dataset = make_cf_cam_camtime_dataset(n_images=1, n_pixels_x=1, n_pixels_y=2)
+    def test_bbox_and_quality_flags_are_decoded(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=1, n_pixels_x=1, n_pixels_y=2)
         dataset["PSF_Bbox_Flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
         dataset["Quality_Flag"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
 
@@ -844,8 +843,8 @@ class TestPseudofootprintsFromCamtime:
         assert clean.q_flags == CameraFootprintQualityFlag(0)
         assert flagged.q_flags == CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
 
-    def test_missing_variable_raises_naming_it(self):
-        dataset = make_cf_cam_camtime_dataset().drop_vars(["PSF_Bbox_Flags", "Camera_Pixel_X_Min"])
+    def test_missing_variable_raises_naming_it(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory().drop_vars(["PSF_Bbox_Flags", "Camera_Pixel_X_Min"])
 
         with pytest.raises(MissingCamtimeVariablesError, match="Camera_Pixel_X_Min, PSF_Bbox_Flags"):
             pseudofootprints_from_camtime_dataset(dataset)

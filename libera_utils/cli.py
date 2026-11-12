@@ -86,11 +86,18 @@ def parse_cli_args(cli_args: list):
     # =========================
     fmatch_parser = subparsers.add_parser(
         "fmatch",
-        help="run the Libera FMATCH footprint-matching algorithm variant named by LIBERA_FMATCH_VARIANT "
-        "from a manifest file",
+        help="run the Libera FMATCH footprint-matching algorithm from a manifest file, writing the product of the "
+        "processing step the manifest's configuration or --processing_step_id names",
     )
     fmatch_parser.set_defaults(func=footprint_match_algorithm.fmatch_cli_handler)
     fmatch_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+    fmatch_parser.add_argument(
+        "--processing_step_id",
+        choices=[str(step) for step in footprint_match_algorithm.RUNNER_CONFIGS],
+        default=None,
+        help="the FMATCH processing step to run; must match the input manifest's configuration processing_step_id "
+        "when both are given",
+    )
 
     # ==============
     # AWS CLI TOOLS
