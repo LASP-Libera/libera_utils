@@ -86,6 +86,24 @@ class TestManualIngestPut:
             ),
             # Demuxed ground CCSDS basename (single APID, no extension)
             (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
+            # External ancillary products, under their upstream names (ERA5 under the SDC's scheme)
+            (
+                [
+                    "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc",
+                    "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc",
+                    "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
+                    "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc",
+                    "VJ143C1.A2026153.002.2026161161054.h5",
+                    "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+                    "ICDBG_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+                    "NISE_AMSR2_20260610.HDFEOS",
+                    "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin",
+                    "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+                    "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+                    "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+                ],
+                3,
+            ),
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -235,7 +253,7 @@ class TestManualIngestPut:
         Path.touch(tmp_path / bad_name)
 
         session, captured = make_event_capturing_session()
-        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
+        with pytest.raises(ValueError, match="cannot be manually ingested"):
             s3_utilities.manual_ingest_data_products([tmp_path / good_name, tmp_path / bad_name], boto_session=session)
 
         # Nothing was staged and no event was emitted.
@@ -250,7 +268,7 @@ class TestManualIngestPut:
         filenaming.ManifestFilename(manifest_name)
 
         session = boto3.Session(profile_name="test-profile")
-        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
+        with pytest.raises(ValueError, match="cannot be manually ingested"):
             s3_utilities.manual_ingest_data_products([AnyPath(manifest_name)], boto_session=session)
 
     def test_put_event_raises_on_failed_entry(self, make_sdc_event_bus):
@@ -275,11 +293,16 @@ class TestManualIngestPut:
     @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     def test_cli_handler_verify_invokes_verification(self, mock_get_session, mock_manual_ingest, mock_verify):
         """When --verify is set, the handler verifies ingestion using the ingest function's returned filenames."""
-        returned_filenames = ["filename-1", "filename-2"]
+        returned_filenames = [
+            filenaming.LiberaDataProductFilename(
+                "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
+            ),
+            filenaming.ModisViirsDailyFilename("AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc"),
+        ]
         mock_manual_ingest.return_value = returned_filenames
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
-            file_paths=["some/file/path.nc"],
+            file_paths=["some/file/path.nc", "some/other/path.nc"],
             profile=None,
             verify=True,
             timeout=42.0,
@@ -291,6 +314,55 @@ class TestManualIngestPut:
             returned_filenames, boto_session=mock_get_session.return_value, timeout=42.0
         )
 
+    @patch("libera_utils.aws.s3_utilities.verify_ingestion")
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
+    def test_cli_handler_verify_stages_non_daily_files_then_raises_naming_them(
+        self, mock_get_session, mock_manual_ingest, mock_verify
+    ):
+        """With --verify, non-daily ancillary files are staged, the rest verified, then the handler raises."""
+        daily = filenaming.ModisViirsDailyFilename("AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc")
+        mask = filenaming.NsidcLandOceanMaskFilename("EASE2_M36km.LOCImask_land50_coast0km.964x406.bin")
+        igbp = filenaming.ModisIgbpFilename("MCD12Q1.A2024001.h21v07.061.2025205222320.hdf")
+        mock_manual_ingest.return_value = [mask, daily, igbp]
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=[mask.path.name, daily.path.name, igbp.path.name],
+            profile=None,
+            verify=True,
+            timeout=42.0,
+        )
+
+        with pytest.raises(s3_utilities.IngestionNotVerifiedError, match="Staged 2 non-daily file") as excinfo:
+            s3_utilities.s3_put_cli_handler(args)
+
+        assert mask.path.name in str(excinfo.value)
+        assert igbp.path.name in str(excinfo.value)
+        mock_manual_ingest.assert_called_once()
+        mock_verify.assert_called_once_with([daily], boto_session=mock_get_session.return_value, timeout=42.0)
+
+    @patch("libera_utils.aws.s3_utilities.verify_ingestion")
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
+    def test_cli_handler_verify_with_only_non_daily_files_verifies_nothing(
+        self, mock_get_session, mock_manual_ingest, mock_verify
+    ):
+        """With --verify and only non-daily files, nothing is verified and the handler raises after staging."""
+        mask = filenaming.NsidcLandOceanMaskFilename("EASE2_M36km.LOCImask_land50_coast0km.964x406.bin")
+        mock_manual_ingest.return_value = [mask]
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=[mask.path.name],
+            profile=None,
+            verify=True,
+            timeout=42.0,
+        )
+
+        with pytest.raises(s3_utilities.IngestionNotVerifiedError, match=mask.path.name):
+            s3_utilities.s3_put_cli_handler(args)
+
+        mock_verify.assert_not_called()
+
 
 class TestVerifyIngestion:
     """Tests for ``verify_ingestion``, the blocking post-ingest verification used by ``s3-utils put --verify``."""
@@ -299,6 +371,8 @@ class TestVerifyIngestion:
     L0_PDS_FILE = "P1590011SOMESCIENCEAAA99030231459001.PDS"
     L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
     GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_13_53_06"
+    ANCILLARY_DAILY_FILE = "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc"
+    ANCILLARY_NON_DAILY_FILE = "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin"
 
     @staticmethod
     def _seed_archive_object(session, libera_filename):
@@ -435,6 +509,51 @@ class TestVerifyIngestion:
 
         with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
             s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+    def test_verify_daily_ancillary_requires_product_and_availability_records(
+        self, make_test_archive_buckets, make_data_availability_table, make_file_metadata_table
+    ):
+        """A daily ancillary file is verified as a data product: archive, product record and availability record."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.ModisViirsDailyFilename(self.ANCILLARY_DAILY_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(
+            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, libera_filename.applicable_date.isoformat()
+        )
+        self._seed_availability_record(session, make_data_availability_table, libera_filename)
+
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_daily_ancillary_times_out_without_availability_record(
+        self, make_test_archive_buckets, make_data_availability_table, make_file_metadata_table
+    ):
+        """A daily ancillary file with no Data Availability record does not verify."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.ModisViirsDailyFilename(self.ANCILLARY_DAILY_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(
+            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, libera_filename.applicable_date.isoformat()
+        )
+
+        with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            pytest.param(filenaming.NsidcLandOceanMaskFilename(ANCILLARY_NON_DAILY_FILE), id="non-daily-ancillary"),
+            pytest.param(
+                filenaming.ManifestFilename("LIBERA_INPUT_MANIFEST_0123456789ABCDEFGHJKMNPQRS.json"), id="manifest"
+            ),
+        ],
+    )
+    def test_verify_rejects_a_filename_class_it_has_no_checks_for(self, filename):
+        """A filename class verify has no checks for is rejected before any lookup, not verified as L0."""
+        # No AWS resources exist: the rejection must come before any lookup.
+        with pytest.raises(TypeError, match="only L0, ground CCSDS, Libera data product and daily ancillary"):
+            s3_utilities.verify_ingestion([filename], boto_session=boto3.Session(), timeout=30, poll_interval=0)
 
     def test_verify_raises_immediately_when_table_missing(self, make_test_archive_buckets):
         """A missing required resource (the file metadata table) raises immediately, before any polling."""

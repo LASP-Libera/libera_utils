@@ -359,7 +359,7 @@ def parse_cli_args(cli_args: list):
     # ============================
     s3_put_parser = s3_utilities_subparser.add_parser(
         "put",
-        help="Stage Libera data product files for full SDC ingest (archiving + metadata + data availability)",
+        help="Stage data product files for full SDC ingest (archiving + metadata + data availability)",
     )
     s3_put_parser.set_defaults(func=s3_utilities.s3_put_cli_handler)
     s3_put_parser.add_argument(
@@ -367,14 +367,17 @@ def parse_cli_args(cli_args: list):
         type=str,
         nargs="+",
         metavar="file_path",
-        help="Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file. "
+        help="Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data product "
+        "or external ancillary product file. "
         "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata.",
     )
     s3_put_parser.add_argument(
         "--verify",
         action="store_true",
         help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
-        "and data availability records), then report the result. Requires only read permissions.",
+        "and, for dated data products, data availability records), then report the result. A non-daily ancillary "
+        "product (the land/ocean mask, IGBP) is staged but cannot be verified yet, and the command then exits with "
+        "an error naming it. Requires only read permissions.",
     )
     s3_put_parser.add_argument(
         "--timeout",
