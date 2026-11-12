@@ -1396,8 +1396,8 @@ class ModisIgbpFilename(AncillaryDataProductFilename):
     e.g. ``MCD12Q1.A2024001.h21v07.061.2025205222320.hdf``, one sinusoidal tile of the yearly map.
 
     The map is yearly, not daily, so it has no applicable date. A release is valid from its production time for
-    ``IGBP_VALIDITY_YEARS``: ``utc_start`` is the production time and ``utc_end`` is two calendar years later. The tiles of one
-    production are archived together under ``<ProductID>/<collection>/<production YYYYMMDD>``.
+    ``IGBP_VALIDITY_YEARS``: ``utc_start`` is the production time and ``utc_end`` is two calendar years later.
+    The tiles of one production are archived together under ``<ProductID>/<collection>/<production YYYYMMDD>``.
 
     - ``acquisition_date`` is the ``A`` date, 1 January of the year the map describes.
     - ``tile`` is the sinusoidal tile, e.g. ``h21v07``.
@@ -1407,6 +1407,8 @@ class ModisIgbpFilename(AncillaryDataProductFilename):
 
     _regex = MODIS_VIIRS_REGEX
 
+    # TODO[LIBSDC-872]: archive and date the tiles of a release as non-daily products are, rather than per tile by
+    # each tile's own production time
     @property
     def archive_prefix(self) -> str:
         """Archive prefix ``<ProductID>/<collection>/<production YYYYMMDD>``"""
