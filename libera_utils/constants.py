@@ -71,7 +71,7 @@ class PartitionScheme(StrEnum):
       is archived under that date. Named by LiberaDataProductFilename.
     - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
       carries no time range, and it is archived once under its product ID and version. Named by
-      LiberaDynamicDataProductFilename.
+      LiberaVersionPartitionedDataProductFilename.
 
     ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class for each scheme. A new
     scheme needs a member here, a filename class, an entry in that mapping, and the arguments
@@ -97,8 +97,8 @@ class DataProductIdentifier(StrEnum):
 
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
-    - partition_scheme: The PartitionScheme of the product's files, such as PartitionScheme.VERSION for a non-daily
-      product. Omitted, and therefore PartitionScheme.DAILY, for a daily product.
+    - partition_scheme: The PartitionScheme of the product's files, such as PartitionScheme.VERSION for a
+      version-partitioned product. Omitted, and therefore PartitionScheme.DAILY, for a daily product.
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -460,7 +460,7 @@ class DataProductIdentifier(StrEnum):
         Returns
         -------
         PartitionScheme
-            PartitionScheme.VERSION for a non-daily product, PartitionScheme.DAILY otherwise
+            PartitionScheme.VERSION for a version-partitioned product, PartitionScheme.DAILY otherwise
         """
         return self._partition_scheme
 

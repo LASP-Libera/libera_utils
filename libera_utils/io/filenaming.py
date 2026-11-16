@@ -122,7 +122,8 @@ _LIBERA_DATA_PRODUCT_BODY_REGEX = (
 
 LIBERA_DATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>nc|bsp|bc)$")
 
-# TODO[LIBSDC-776]: UMM-G metadata filenames for non-daily data products (LiberaDynamicDataProductFilename).
+# TODO[LIBSDC-776]: UMM-G metadata filenames for version-partitioned data products
+# (LiberaVersionPartitionedDataProductFilename).
 LIBERA_METADATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>cmr\.json)$")
 
 MANIFEST_FILE_REGEX = re.compile(
@@ -135,10 +136,11 @@ MANIFEST_FILE_REGEX = re.compile(
 
 LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
-# A non-daily data product filename carries no time range. The product name group admits every DataProductIdentifier,
-# daily ones included, so that a daily product named in this form matches and LiberaDynamicDataProductFilename rejects
-# it with an error that says to use LiberaDataProductFilename instead.
-LIBERA_DYNAMIC_DATA_PRODUCT_REGEX = re.compile(
+# A version-partitioned data product filename carries no time range. The product name group admits every
+# DataProductIdentifier, daily ones included, so that a daily product named in this form matches and
+# LiberaVersionPartitionedDataProductFilename rejects it with an error that says to use LiberaDataProductFilename
+# instead.
+LIBERA_VERSION_PARTITIONED_DATA_PRODUCT_REGEX = re.compile(
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
     rf"_(?P<version>{LIBERA_SEM_VER_REGEX.pattern})"
@@ -192,7 +194,7 @@ class AbstractValidFilename(ABC):
         -------
         AbstractValidFilename
             An instance of the first class that accepts the path, trying in order L0Filename,
-            LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaDynamicDataProductFilename, and
+            LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename, and
             ManifestFilename.
 
         Raises
@@ -204,7 +206,7 @@ class AbstractValidFilename(ABC):
             L0Filename,
             LiberaGroundCcsdsFilename,
             LiberaDataProductFilename,
-            LiberaDynamicDataProductFilename,
+            LiberaVersionPartitionedDataProductFilename,
             ManifestFilename,
         ):
             try:
@@ -953,16 +955,16 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         return SimpleNamespace(**d)
 
 
-class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
-    """Filename validation class for non-daily Libera SDC data products.
+class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
+    """Filename validation class for version-partitioned Libera SDC data products.
 
-    A non-daily product, such as an ADM, is valid over more than one day (indefinitely until the next version
+    A version-partitioned product, such as an ADM, is valid over more than one day (indefinitely until the next version
     update). Its filename carries no time range, so it has no applicable date. The period it covers is recorded in
     the file's variables and metadata. Only a DataProductIdentifier whose ``partition_scheme`` is
     ``PartitionScheme.VERSION`` is accepted. A daily product is named by
     :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
 
-    Non-daily data product filenames follow the convention::
+    Version-partitioned data product filenames follow the convention::
 
         LIBERA_{data_level}_{product_name}_{version}_{revision}.nc
 
@@ -976,7 +978,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
     - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
     """
 
-    _regex = LIBERA_DYNAMIC_DATA_PRODUCT_REGEX
+    _regex = LIBERA_VERSION_PARTITIONED_DATA_PRODUCT_REGEX
     _fmt = "LIBERA_{data_level}_{product_name}_{version}_{revision}.nc"
 
     @AbstractValidFilename.path.setter
@@ -990,7 +992,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         Parameters
         ----------
         new_path : str | PathType
-            Path to the non-daily data product file.
+            Path to the version-partitioned data product file.
 
         Raises
         ------
@@ -1011,10 +1013,10 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
             ) from err
         product_id = DataProductIdentifier(parsed.product_name)
         expected_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
-        if expected_class is not LiberaDynamicDataProductFilename:
+        if expected_class is not LiberaVersionPartitionedDataProductFilename:
             raise ValueError(
                 f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a "
-                f"valid non-daily filename. Name it with {expected_class.__name__}."
+                f"valid version-partitioned filename. Name it with {expected_class.__name__}."
             )
         if DataLevel(parsed.data_level) != product_id.data_level:
             raise ValueError(
@@ -1050,7 +1052,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         Parameters
         ----------
         product_name : str | DataProductIdentifier
-            Non-daily product type, e.g. ADM-CAM.
+            Version-partitioned product type, e.g. ADM-CAM.
         version : str
             Software version that the file was created with, as VM-m-p or a semantic version M.m.p. Corresponds to
             the algorithm version as determined by the algorithm software.
@@ -1061,7 +1063,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
 
         Returns
         -------
-        : LiberaDynamicDataProductFilename
+        : LiberaVersionPartitionedDataProductFilename
 
         Raises
         ------
@@ -1096,7 +1098,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
         data_level : str
             Data level of the product, e.g. AUX.
         product_name : str
-            Non-daily product type, e.g. ADM-CAM.
+            Version-partitioned product type, e.g. ADM-CAM.
         version : str
             Software version that the file was created with, as VM-m-p or a semantic version M.m.p.
         revision : datetime.datetime
@@ -1153,7 +1155,7 @@ class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
 # The filename class that names the products of each partition scheme.
 PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
     PartitionScheme.DAILY: LiberaDataProductFilename,
-    PartitionScheme.VERSION: LiberaDynamicDataProductFilename,
+    PartitionScheme.VERSION: LiberaVersionPartitionedDataProductFilename,
 }
 
 

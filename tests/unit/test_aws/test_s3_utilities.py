@@ -86,7 +86,7 @@ class TestManualIngestPut:
             ),
             # Demuxed ground CCSDS basename (single APID, no extension)
             (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
-            # Non-daily data product
+            # Version-partitioned data product
             (["LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"], 1),
         ],
     )
@@ -297,17 +297,17 @@ class TestManualIngestPut:
     @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
     @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     @pytest.mark.parametrize("with_daily_file", [True, False])
-    def test_cli_handler_verify_stages_all_and_raises_for_unverified_dynamic(
+    def test_cli_handler_verify_stages_all_and_raises_for_unverified_version_partitioned(
         self, mock_get_session, mock_manual_ingest, mock_verify, with_daily_file
     ):
-        """--verify stages every file, verifies only the verifiable ones, then raises naming the non-daily files."""
+        """--verify stages every file, verifies only the verifiable ones, then raises naming the rest."""
         daily = filenaming.LiberaDataProductFilename(
             "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
         )
-        dynamic = filenaming.LiberaDynamicDataProductFilename(
+        version_partitioned = filenaming.LiberaVersionPartitionedDataProductFilename(
             "some/dir/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"
         )
-        filenames = [daily, dynamic] if with_daily_file else [dynamic]
+        filenames = [daily, version_partitioned] if with_daily_file else [version_partitioned]
         mock_manual_ingest.return_value = filenames
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,

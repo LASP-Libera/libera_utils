@@ -107,8 +107,8 @@ def test_data_dict():
 
 
 @pytest.fixture
-def dynamic_product_definition(test_product_definition):
-    """The unit test product definition, with the ProductID of a non-daily product (ADM-CAM)"""
+def version_partitioned_product_definition(test_product_definition):
+    """The unit test product definition, with the ProductID of a version-partitioned product (ADM-CAM)"""
     with test_product_definition.open("r") as f:
         definition_contents = yaml.safe_load(f)
     definition_contents["attributes"]["ProductID"] = "ADM-CAM"

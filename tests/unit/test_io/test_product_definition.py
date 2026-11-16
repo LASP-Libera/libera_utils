@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from libera_utils.config import config
-from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename
+from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename
 from libera_utils.io.product_definition import (
     DATE_CREATED_ATTRIBUTE,
     LiberaDataProductDefinition,
@@ -135,20 +135,24 @@ class TestLiberaDataProductDefinition:
         assert fn.filename_parts.utc_start == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
 
-    def test_generate_filename_dynamic(self, dynamic_product_definition, test_dataset):
-        """A non-daily product is named without a time range and needs no time variable"""
+    def test_generate_filename_version_partitioned(self, version_partitioned_product_definition, test_dataset):
+        """A version-partitioned product is named without a time range and needs no time variable"""
         dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
-        fn = dynamic_product_definition.generate_data_product_filename(dataset)
-        assert type(fn) is LiberaDynamicDataProductFilename
+        fn = version_partitioned_product_definition.generate_data_product_filename(dataset)
+        assert type(fn) is LiberaVersionPartitionedDataProductFilename
         assert fn.path.name.startswith("LIBERA_AUX_ADM-CAM_V0-0-1_R")
         assert fn.filename_parts.revision == datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
-    def test_generate_filename_dynamic_warns_on_unused_time_variable(self, dynamic_product_definition, test_dataset):
-        """A time variable given for a non-daily product is unused and warned about"""
+    def test_generate_filename_version_partitioned_warns_on_unused_time_variable(
+        self, version_partitioned_product_definition, test_dataset
+    ):
+        """A time variable given for a version-partitioned product is unused and warned about"""
         dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
         with pytest.warns(UserWarning, match="time_variable 'radiometer_time' is not used"):
-            fn = dynamic_product_definition.generate_data_product_filename(dataset, time_variable="radiometer_time")
-        assert type(fn) is LiberaDynamicDataProductFilename
+            fn = version_partitioned_product_definition.generate_data_product_filename(
+                dataset, time_variable="radiometer_time"
+            )
+        assert type(fn) is LiberaVersionPartitionedDataProductFilename
 
     def test_generate_filename_daily_requires_time_variable(self, test_product_definition, test_dataset):
         """A daily product without a time variable raises, naming the missing argument"""

@@ -24,8 +24,8 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
     L0Filename,
     LiberaDataProductFilename,
-    LiberaDynamicDataProductFilename,
     LiberaGroundCcsdsFilename,
+    LiberaVersionPartitionedDataProductFilename,
     PathType,
 )
 from libera_utils.io.smart_open import smart_copy_file
@@ -55,7 +55,7 @@ VERIFY_POLL_INTERVAL_SECONDS = 10.0
 MAX_FILES_PER_INGEST_EVENT = 5
 
 ManualIngestFilename = (
-    L0Filename | LiberaDataProductFilename | LiberaDynamicDataProductFilename | LiberaGroundCcsdsFilename
+    L0Filename | LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename | LiberaGroundCcsdsFilename
 )
 
 
@@ -68,7 +68,9 @@ class IngestionNotVerifiedError(RuntimeError):
 
 
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
-    """Validate a path as a Libera L0, ground CCSDS, daily or non-daily data product filename eligible for manual ingest.
+    """Validate a path as a Libera filename eligible for manual ingest.
+
+    Eligible filenames are L0, ground CCSDS, daily data product, and version-partitioned data product filenames.
 
     Manifest and any other filename types are rejected.
 
@@ -79,7 +81,7 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
 
     Returns
     -------
-    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaDynamicDataProductFilename
+    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaVersionPartitionedDataProductFilename
         The parsed filename object.
 
     Raises
@@ -91,7 +93,7 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
         L0Filename,
         LiberaGroundCcsdsFilename,
         LiberaDataProductFilename,
-        LiberaDynamicDataProductFilename,
+        LiberaVersionPartitionedDataProductFilename,
     ):
         try:
             return filename_class(path)
@@ -112,13 +114,14 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     ingest that happens for files produced by SDC processing steps.
 
     With ``--verify``, every file is staged and the ingestion of each daily data product, L0, and ground CCSDS file is
-    verified. Non-daily data product files are staged but not verified, and the handler then raises naming them.
+    verified. Version-partitioned data product files are staged but not verified, and the handler then raises naming
+    them.
 
     Raises
     ------
     IngestionNotVerifiedError
-        If ``--verify`` is given and any of the files is a non-daily data product file, which ingestion verification
-        does not yet support. Every file has still been staged.
+        If ``--verify`` is given and any of the files is a version-partitioned data product file, which ingestion
+        verification does not yet support. Every file has still been staged.
     TimeoutError
         If ``--verify`` is given and the verifiable files are not fully ingested within ``--timeout`` seconds.
     """
@@ -138,12 +141,12 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 
     if parsed_args.verify:
-        # TODO[LIBSDC-880]: verify ingestion of non-daily data products, then verify every staged file.
-        unverified = [f for f in libera_filenames if isinstance(f, LiberaDynamicDataProductFilename)]
-        verifiable = [f for f in libera_filenames if not isinstance(f, LiberaDynamicDataProductFilename)]
+        # TODO[LIBSDC-880]: verify ingestion of version-partitioned data products, then verify every staged file.
+        unverified = [f for f in libera_filenames if isinstance(f, LiberaVersionPartitionedDataProductFilename)]
+        verifiable = [f for f in libera_filenames if not isinstance(f, LiberaVersionPartitionedDataProductFilename)]
         if unverified:
             logger.warning(
-                "Staged %d non-daily data product file(s) that --verify cannot yet verify: %s",
+                "Staged %d version-partitioned data product file(s) that --verify cannot yet verify: %s",
                 len(unverified),
                 [f.path.name for f in unverified],
             )
@@ -155,7 +158,8 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
             logger.info("Verified full ingestion of %d file(s).", len(verifiable))
         if unverified:
             raise IngestionNotVerifiedError(
-                f"Staged {len(unverified)} non-daily data product file(s) whose ingestion --verify cannot yet confirm: "
+                f"Staged {len(unverified)} version-partitioned data product file(s) whose ingestion --verify cannot "
+                "yet confirm: "
                 f"{[f.path.name for f in unverified]}. Their NewFilesAvailable events were emitted. Confirm each one "
                 "is archived under its <ProductID>/<Version> prefix in the archive bucket."
             )
@@ -186,14 +190,14 @@ def manual_ingest_data_products(
     ----------
     paths_to_files : list of Path
         Local filesystem paths to the files to ingest. Each must be a validly named Libera L0, ground CCSDS, or
-        daily or non-daily data product file.
+        daily or version-partitioned data product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.
 
     Returns
     -------
-    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaDynamicDataProductFilename
+    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaVersionPartitionedDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
 
     Raises

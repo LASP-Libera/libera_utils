@@ -30,7 +30,7 @@ from xarray.backends import H5NetCDFStore
 from xarray.backends.common import ArrayWriter
 
 from libera_utils.config import config
-from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename, PathType
+from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename, PathType
 from libera_utils.io.product_definition import LiberaDataProductDefinition, _set_date_created
 
 T_XarrayNetcdfEngine = Literal["netcdf4", "h5netcdf"]
@@ -64,7 +64,7 @@ def write_libera_data_product(
     strict: bool = True,
     add_archive_path_prefix: bool = False,
     worker_compressed_variables: tuple[str, ...] = (),
-) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
+) -> LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
 
     Steps:
@@ -91,8 +91,9 @@ def write_libera_data_product(
         Base path (directory or S3 prefix) at which to write the product file
     time_variable : str | None
         Name of the datetime64 variable that indicates time. Required for a daily product, whose filename carries
-        the start and end time of this variable. Not used for a non-daily product, one whose DataProductIdentifier
-        has partition scheme ``PartitionScheme.VERSION``, and a ``UserWarning`` is issued if it is given.
+        the start and end time of this variable. Not used for a version-partitioned product, one whose
+        DataProductIdentifier has partition scheme ``PartitionScheme.VERSION``, and a ``UserWarning`` is issued if it
+        is given.
     dynamic_product_attributes : dict[str, Any] | None
         Optional dictionary of additional global attributes to add to the data product file. Must conform to the data
         product definition.
@@ -114,9 +115,10 @@ def write_libera_data_product(
 
     Returns
     -------
-    : LiberaDataProductFilename | LiberaDynamicDataProductFilename
+    : LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename
         Filename object containing the full path to the written NetCDF4 data product file:
-        LiberaDynamicDataProductFilename for a non-daily product, LiberaDataProductFilename otherwise.
+        LiberaVersionPartitionedDataProductFilename for a version-partitioned product, LiberaDataProductFilename
+        otherwise.
 
     Raises
     ------

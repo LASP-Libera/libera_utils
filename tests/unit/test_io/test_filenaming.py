@@ -47,11 +47,11 @@ from libera_utils.io import filenaming
         ),
         (
             "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
-            filenaming.LiberaDynamicDataProductFilename,
+            filenaming.LiberaVersionPartitionedDataProductFilename,
         ),
         (
             "s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V1-0-0_R20270102T112233000000.nc",
-            filenaming.LiberaDynamicDataProductFilename,
+            filenaming.LiberaVersionPartitionedDataProductFilename,
         ),
         (
             "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_20270102T000000_20270103T000000_R20270102T112233000000.nc",
@@ -1088,9 +1088,9 @@ def test_hash_changes_when_path_is_reassigned():
         S3Path("s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V3-14-159_R20270102T112233000000.nc"),
     ],
 )
-def test_LiberaDynamicDataProductFilename(filename):
-    """A non-daily product filename parses, with no applicable date and its product's data level"""
-    fn = filenaming.LiberaDynamicDataProductFilename(filename)
+def test_LiberaVersionPartitionedDataProductFilename(filename):
+    """A version-partitioned product filename parses, with no applicable date and its product's data level"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(filename)
     assert fn.data_product_id.partition_scheme is PartitionScheme.VERSION
     assert not hasattr(fn, "applicable_date")
     assert fn.filename_parts.data_level == "AUX"
@@ -1101,8 +1101,8 @@ def test_LiberaDynamicDataProductFilename(filename):
     "product_id",
     [dpi for dpi in DataProductIdentifier if dpi.data_level != DataLevel.L0],
 )
-def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
-    """No daily filename, of any non-L0 product, parses as a non-daily filename"""
+def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(product_id):
+    """No daily filename, of any non-L0 product, parses as a version-partitioned filename"""
     daily = filenaming.LiberaDataProductFilename.from_filename_parts(
         product_name=product_id,
         version="V1-2-3",
@@ -1110,7 +1110,7 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
         utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
     )
     with pytest.raises(ValueError, match="failed validation against regex pattern"):
-        filenaming.LiberaDynamicDataProductFilename(daily.path)
+        filenaming.LiberaVersionPartitionedDataProductFilename(daily.path)
     assert isinstance(filenaming.AbstractValidFilename.from_file_path(daily.path), filenaming.LiberaDataProductFilename)
 
 
@@ -1121,12 +1121,12 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
         "LIBERA_L2_CF-CAM_V1-2-3_R20270102T112233000000.nc",
     ],
 )
-def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
-    """A daily product named in the non-daily form is rejected where it is constructed"""
+def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_products(filename):
+    """A daily product named in the version-partitioned form is rejected where it is constructed"""
     with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
-        filenaming.LiberaDynamicDataProductFilename(filename)
+        filenaming.LiberaVersionPartitionedDataProductFilename(filename)
     with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
-        filenaming.LiberaDynamicDataProductFilename.from_filename_parts(
+        filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
             product_name=filename.split("_")[2], version="V1-2-3"
         )
     with pytest.raises(ValueError, match="Unable to create a valid filename"):
@@ -1155,14 +1155,14 @@ def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
         ),
     ],
 )
-def test_LiberaDynamicDataProductFilename_from_filename_parts(parts, expected):
-    """Creating a non-daily filename from parts round-trips through parsing"""
-    fn = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(**parts)
+def test_LiberaVersionPartitionedDataProductFilename_from_filename_parts(parts, expected):
+    """Creating a version-partitioned filename from parts round-trips through parsing"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(**parts)
     assert str(fn.path) == expected
-    assert filenaming.LiberaDynamicDataProductFilename(fn.path) == fn
+    assert filenaming.LiberaVersionPartitionedDataProductFilename(fn.path) == fn
 
 
-def test_LiberaDynamicDataProductFilename_revision_defaults_to_call_time():
+def test_LiberaVersionPartitionedDataProductFilename_revision_defaults_to_call_time():
     """The default revision is the time of each call, not a single time fixed at import"""
     first, second = (
         dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
@@ -1170,15 +1170,19 @@ def test_LiberaDynamicDataProductFilename_revision_defaults_to_call_time():
     )
     with mock.patch.object(filenaming, "datetime", wraps=dt.datetime) as mock_datetime:
         mock_datetime.now.side_effect = [first, second]
-        fn1 = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(product_name="ADM-CAM", version="V1-2-3")
-        fn2 = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(product_name="ADM-CAM", version="V1-2-3")
+        fn1 = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+            product_name="ADM-CAM", version="V1-2-3"
+        )
+        fn2 = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+            product_name="ADM-CAM", version="V1-2-3"
+        )
     assert fn1.filename_parts.revision == first
     assert fn2.filename_parts.revision == second
 
 
-def test_LiberaDynamicDataProductFilename_archive_prefix():
-    """A non-daily file has one archive location, its product name and version"""
-    fn = filenaming.LiberaDynamicDataProductFilename(
+def test_LiberaVersionPartitionedDataProductFilename_archive_prefix():
+    """A version-partitioned file has one archive location, its product name and version"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(
         "s3://dropbox/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"
     )
     assert fn.archive_prefix == "ADM-CAM/V3-14-159"
@@ -1201,16 +1205,16 @@ def test_LiberaDynamicDataProductFilename_archive_prefix():
         ("LIBERA_L1B_ADM-CAM_V3-14-159_R20270103T080910123456.nc", "has data level L1B, but the data level of ADM-CAM"),
     ],
 )
-def test_LiberaDynamicDataProductFilename_invalid(filename, match):
-    """Test that malformed non-daily data product filenames are rejected"""
+def test_LiberaVersionPartitionedDataProductFilename_invalid(filename, match):
+    """Test that malformed version-partitioned data product filenames are rejected"""
     with pytest.raises(ValueError, match=match):
-        filenaming.LiberaDynamicDataProductFilename(filename)
+        filenaming.LiberaVersionPartitionedDataProductFilename(filename)
 
 
-def test_LiberaDynamicDataProductFilename_impossible_date_leaves_path_unchanged():
+def test_LiberaVersionPartitionedDataProductFilename_impossible_date_leaves_path_unchanged():
     """Test that assigning a name with an impossible revision raises and keeps the original path"""
     original = "LIBERA_AUX_ADM-CAM_V3-14-159_R20270103T080910123456.nc"
-    fn = filenaming.LiberaDynamicDataProductFilename(original)
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(original)
     with pytest.raises(ValueError, match="is not a real UTC time"):
         fn.path = "LIBERA_AUX_ADM-CAM_V3-14-159_R20271303T080910123456.nc"
     assert fn.path.name == original
@@ -1223,9 +1227,9 @@ def test_LiberaDynamicDataProductFilename_impossible_date_leaves_path_unchanged(
         ("LIBERA_AUX_ADM-IMAGER_V3-14-159_R20270103T080910123456.nc", ProcessingStepIdentifier.aux_adm_imager),
     ],
 )
-def test_LiberaDynamicDataProductFilename_processing_step_id(filename, expected):
-    """A non-daily file names the processing step that produces its product"""
-    assert filenaming.LiberaDynamicDataProductFilename(filename).processing_step_id == expected
+def test_LiberaVersionPartitionedDataProductFilename_processing_step_id(filename, expected):
+    """A version-partitioned file names the processing step that produces its product"""
+    assert filenaming.LiberaVersionPartitionedDataProductFilename(filename).processing_step_id == expected
 
 
 def test_partition_scheme_filename_classes_cover_every_scheme():
@@ -1234,5 +1238,5 @@ def test_partition_scheme_filename_classes_cover_every_scheme():
     assert filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.DAILY] is filenaming.LiberaDataProductFilename
     assert (
         filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.VERSION]
-        is filenaming.LiberaDynamicDataProductFilename
+        is filenaming.LiberaVersionPartitionedDataProductFilename
     )

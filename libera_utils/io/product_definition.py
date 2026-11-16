@@ -19,7 +19,7 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
     PARTITION_SCHEME_FILENAME_CLASSES,
     LiberaDataProductFilename,
-    LiberaDynamicDataProductFilename,
+    LiberaVersionPartitionedDataProductFilename,
     PathType,
 )
 from libera_utils.version import ALGORITHM_VERSION_REGEX
@@ -767,13 +767,14 @@ class LiberaDataProductDefinition(BaseModel):
 
     def generate_data_product_filename(
         self, dataset: Dataset, *, time_variable: str | None = None
-    ) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
+    ) -> LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename:
         """Generate a standardized Libera data product filename.
 
         The product's partition scheme selects its filename class through ``PARTITION_SCHEME_FILENAME_CLASSES``. A
         daily product is named with its data level and the time range of its data, taken from `time_variable`. A
-        non-daily product, one whose DataProductIdentifier has partition scheme ``PartitionScheme.VERSION`` (such as an
-        ADM), is named with its data level, product ID, version, and revision, so it needs no time variable.
+        version-partitioned product, one whose DataProductIdentifier has partition scheme
+        ``PartitionScheme.VERSION`` (such as an ADM), is named with its data level, product ID, version, and revision,
+        so it needs no time variable.
 
         Parameters
         ----------
@@ -783,19 +784,19 @@ class LiberaDataProductDefinition(BaseModel):
             attribute.
         time_variable : str | None
             Name of the datetime64 time variable whose minimum and maximum are the filename's start and end times.
-            It need not be sorted. Required for a daily product. Not used for a non-daily product, and a
+            It need not be sorted. Required for a daily product. Not used for a version-partitioned product, and a
             ``UserWarning`` is issued if it is given.
 
         Returns
         -------
-        LiberaDataProductFilename | LiberaDynamicDataProductFilename
-            Properly formatted filename object: LiberaDynamicDataProductFilename for a non-daily product,
-            LiberaDataProductFilename otherwise.
+        LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename
+            Properly formatted filename object: LiberaVersionPartitionedDataProductFilename for a
+            version-partitioned product, LiberaDataProductFilename otherwise.
 
         Warns
         -----
         UserWarning
-            If `time_variable` is given for a non-daily product.
+            If `time_variable` is given for a version-partitioned product.
 
         Raises
         ------
@@ -810,16 +811,16 @@ class LiberaDataProductDefinition(BaseModel):
         revision = datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
         filename_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
-        if filename_class is LiberaDynamicDataProductFilename:
+        if filename_class is LiberaVersionPartitionedDataProductFilename:
             if time_variable is not None:
                 # stacklevel 3 points the warning at the caller of write_libera_data_product.
                 warnings.warn(
-                    f"time_variable {time_variable!r} is not used: {product_id} is a non-daily product, whose filename "
-                    "carries no time range. Omit time_variable when writing it.",
+                    f"time_variable {time_variable!r} is not used: {product_id} is a version-partitioned product, "
+                    "whose filename carries no time range. Omit time_variable when writing it.",
                     UserWarning,
                     stacklevel=3,
                 )
-            return LiberaDynamicDataProductFilename.from_filename_parts(
+            return LiberaVersionPartitionedDataProductFilename.from_filename_parts(
                 product_name=product_id, version=version, revision=revision
             )
 
