@@ -277,7 +277,12 @@ class TestManualIngestPut:
     @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     def test_cli_handler_verify_invokes_verification(self, mock_get_session, mock_manual_ingest, mock_verify):
         """When --verify is set, the handler verifies ingestion using the ingest function's returned filenames."""
-        returned_filenames = ["filename-1", "filename-2"]
+        returned_filenames = [
+            filenaming.LiberaDataProductFilename(
+                "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
+            ),
+            filenaming.L0Filename("some/dir/P1590011SOMESCIENCEAAA99030231459001.PDS"),
+        ]
         mock_manual_ingest.return_value = returned_filenames
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,

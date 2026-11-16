@@ -58,6 +58,10 @@ ManualIngestFilename = (
     L0Filename | LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename | LiberaGroundCcsdsFilename
 )
 
+# The filename types whose ingestion verify_ingestion can confirm.
+# TODO[LIBSDC-880]: add LiberaVersionPartitionedDataProductFilename once verification supports it.
+VerifiableIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
+
 
 class IngestionNotVerifiedError(RuntimeError):
     """Files were staged for ingest, but ``s3-utils put --verify`` could not verify their ingestion.
@@ -142,8 +146,8 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
     if parsed_args.verify:
         # TODO[LIBSDC-880]: verify ingestion of version-partitioned data products, then verify every staged file.
-        unverified = [f for f in libera_filenames if isinstance(f, LiberaVersionPartitionedDataProductFilename)]
-        verifiable = [f for f in libera_filenames if not isinstance(f, LiberaVersionPartitionedDataProductFilename)]
+        verifiable = [f for f in libera_filenames if isinstance(f, VerifiableIngestFilename)]
+        unverified = [f for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
         if unverified:
             logger.warning(
                 "Staged %d version-partitioned data product file(s) that --verify cannot yet verify: %s",
@@ -253,7 +257,7 @@ def _chunk_files_for_ingest_events(
     ----------
     files : list of dict
         File descriptors in the same order as ``libera_filenames``.
-    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaVersionPartitionedDataProductFilename
         The parsed filenames corresponding to ``files``.
 
     Returns
@@ -339,7 +343,7 @@ def _archive_object_exists(s3_client, bucket: str, key: str) -> bool:
 
 
 def verify_ingestion(
-    libera_filenames: list[ManualIngestFilename],
+    libera_filenames: list[VerifiableIngestFilename],
     *,
     boto_session: boto3.Session,
     timeout: float = DEFAULT_VERIFY_TIMEOUT_SECONDS,
