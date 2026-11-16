@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `libera_utils.obsids.get_trimmed_obsid_spec(trimmed_product)` and `get_combiner_step(trimmed_product)`, which go from a TRIMMED product to the ObsID that owns it and to its combiner step, raising `KeyError` for any other product, and `is_calibration_event_product(product)`, which says whether a ProductID is a calibration ObsID's TRIMMED or CAL product.
 - Add `libera_utils.obsids.COMBINER_INPUTS` and `get_combiner_inputs(trimmed_product)`, loaded from `data/cal_combiner_inputs.csv`, which list the L1A products each combiner consumes besides its TRIMMED product, keyed by that TRIMMED product.
 - Importing `libera_utils.obsids` (and so `libera_utils`) raises `ValueError` when two ObsIDs claim one TRIMMED product, or when no `ProcessingStepIdentifier` produces a registered CAL product.
+- `LiberaVersionPartitionedDataProductFilename` names a version-partitioned data product, such as an ADM, as
+  `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
+  under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
+  `AbstractValidFilename.from_file_path` recognizes it.
+- `PartitionScheme` (`DAILY`, `VERSION`) says how a product's files are partitioned, and
+  `DataProductIdentifier.partition_scheme` gives each product's scheme. A member sets it as a third tuple element,
+  and it defaults to `DAILY`. `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` maps each scheme to the filename class
+  that names its products.
+- `s3-utils put` accepts version-partitioned data product files. `put --verify` stages them with the other files but
+  does not verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it
+  raises the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the version-partitioned files it
+  could not verify.
+- `processing_step_id` is defined on `AbstractDataProductFilename`, so `LiberaVersionPartitionedDataProductFilename`,
+  `L0Filename`, and `LiberaGroundCcsdsFilename` have it as `LiberaDataProductFilename` does: the step that produces the
+  file's product, or `None` when no step does.
 
 ### Changed
 
@@ -24,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `nom_hk_trim.write_trimmed_nom_hk_products` writes only the runs whose first packet is on the UTC day of `source_product_filename`, which must name a `NOM-HK-DECODED` product (`ValueError` otherwise), each run whole, so a run that crosses midnight is written by the day it started. A run lasting past the day window (`day_window.DAY_BUFFER` past the day) is not written: the function writes the day's other runs, then raises `nom_hk_trim.TrimmedRunTooLongError`, a `ValueError` naming it and carrying the written files in `written`. It no longer warns when an ObsID recurs within the data. (#115)
 - `nom_hk_trim.write_trimmed_nom_hk_products` logs one line per TRIMMED file saying whether its start and end are at a `SRC_SEQ_CTR` gap and how many packets are missing inside it, at WARNING when any is and at INFO otherwise; the file itself carries no record of its gaps. (#115)
 - **BREAKING:** `data/trim_family_inputs.csv` is renamed `data/cal_combiner_inputs.csv` and keyed by TRIMMED product, one row per calibration ObsID.
+- **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are version-partitioned products: `write_libera_data_product` now names them
+  with `LiberaVersionPartitionedDataProductFilename`, with no time range, and archives them under
+  `<ProductID>/<Version>`. The filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or
+  `ummg_metadata_filename`. ADM files named in the daily form still parse as `LiberaDataProductFilename`. Ingesting
+  the new names needs the matching `libera_cdk` change (LIBSDC-873).
+- **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
+  `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
+  `time_variable` as an optional argument, default `None`, and return
+  `LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename`. A daily product without `time_variable`
+  raises `ValueError`, and a version-partitioned product given one ignores it and warns.
 
 ### Removed
 
@@ -53,20 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `libera_utils.aws.ecr_upload.ImageTagAlreadyExistsError`, a `ValueError` that `push_image_to_ecr` and `ecr-upload` raise when a requested tag other than `latest` already exists in the ECR repository, whatever image it holds: found by a check before anything is pushed, or refused by ECR during the push when another push took the tag after that check. The message names every such tag and the repository, links the repository's page in the AWS console, and says to push under a new version tag, or to delete the image under the tag by hand and push again. A refused push is not retried, and `ecr-upload` registers nothing.
 - Product definitions for the FMATCH-CAM(-CAMTIME) and FMATCH-IMAGER(-CAMTIME) products. FMATCH-IMAGER also carries the RBSP CLDPIX/FLASHFlux cloud fields and the extended SSF cloud/aerosol/albedo variables (multi-axis SSF flattened to 1-D per footprint, carried by IMAGER alone through their `VariableSpec.modes`), and the five ERA5 pressure-level fields and their standard deviations as 2-D variables on `(RADIOMETER_TIME, PRESSURE_LEVEL)` (e.g. `ERA5_Pressure_Temperature`) with a `PRESSURE_LEVEL` coordinate in hPa. `PRESSURE_LEVEL` (size 37) joins the standard dimensions. A reader declares such stacked product variables with `PRODUCT_STACKS` (`ProductStack`), and `AncillaryReader.product_stacks()` adds each stack's standard-deviation companion stack; a stack that names a spec the reader does not produce, stacks a spec twice, takes a product spec's name or mixes members with and without companions raises `TypeError` when the reader class is defined. `Cloud_Fraction_Camera` in FMATCH-CAM(-CAMTIME) is defined in percent `[0, 100]` to match the CF-CAM input. FMATCH-CAM(-CAMTIME) carry no ERA5 10 m winds or VIIRS BRDF kernel weights, since no consumer of the CAM products reads them. Every integer category, pixel-index and camera pixel-bound variable declares `_FillValue: -1`, since 0 is a real value in each; the `Quality_Flag` bitmask and the `PSEUDOFOOTPRINT` index declare none. Dimensionless variables carry no `units` attribute (CF §3.1), and `VIIRS_CLDPROP_D3_Cloud_Optical_Thickness` carries the CLDPROP_D3 source's combined-phase long_name and its `valid_min`/`valid_max` `[0, 150]`.
 - `libera_utils.footprint_matching.aggregation.stack_product_values` collects a reader's stacked specs into one array per stacked product variable and raises `ValueError` when a member's scalar is missing.
-- `LiberaDynamicDataProductFilename` names a non-daily data product, such as an ADM, as
-  `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
-  under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
-  `AbstractValidFilename.from_file_path` recognizes it.
-- `PartitionScheme` (`DAILY`, `VERSION`) says how a product's files are partitioned, and
-  `DataProductIdentifier.partition_scheme` gives each product's scheme. A member sets it as a third tuple element,
-  and it defaults to `DAILY`. `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` maps each scheme to the filename class
-  that names its products.
-- `s3-utils put` accepts non-daily data product files. `put --verify` stages them with the other files but does not
-  verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it raises
-  the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the non-daily files it could not verify.
-- `processing_step_id` is defined on `AbstractDataProductFilename`, so `LiberaDynamicDataProductFilename`,
-  `L0Filename` and `LiberaGroundCcsdsFilename` have it as `LiberaDataProductFilename` does: the step that produces the
-  file's product, or `None` when no step does.
 
 ### Changed
 
@@ -81,22 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING:** `OperationalMode.IMAGER_FLASH` (`FMATCH-IMAGER-FLASH`). No FMATCH-IMAGER-FLASH product is planned, so the CERES FLASHFlux reader feeds FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME only.
 - **BREAKING:** The ERA5 surface reader's 10 m winds and the VIIRS BRDF reader no longer serve the CAM modes: `ERA5_Surface` and `VIIRS_BRDF` feed FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME only, so they leave the CAM entries of `FMATCH_MODE_READERS`, and `build_sources` for a CAM mode rejects their `source_file_paths` keys.
-- `ADM-CAM` and `ADM-IMAGER` are non-daily products: `write_libera_data_product` now names them with
-  `LiberaDynamicDataProductFilename`, with no time range, and archives them under `<ProductID>/<Version>`. ADM files
-  named in the daily form still parse as `LiberaDataProductFilename`. Ingesting the new names needs the
-  matching `libera_cdk` change (LIBSDC-873).
-- `write_libera_data_product` and `LiberaDataProductDefinition.generate_data_product_filename` take `time_variable` as
-  an optional argument, default `None`, and return `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A
-  daily product without `time_variable` raises `ValueError`; a non-daily product given one ignores it and warns.
-- **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are non-daily products: `write_libera_data_product` now names them with
-  `LiberaDynamicDataProductFilename`, with no time range, and archives them under `<ProductID>/<Version>`. The
-  filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or `ummg_metadata_filename`. ADM files
-  named in the daily form still parse as `LiberaDataProductFilename`.
-- **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
-  `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
-  `time_variable` as an optional argument, default `None`, and return
-  `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A daily product without `time_variable` raises
-  `ValueError`, and a non-daily product given one ignores it and warns.
 
 ## [5.23.0] - 2026-11-05
 
