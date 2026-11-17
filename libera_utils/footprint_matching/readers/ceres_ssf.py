@@ -1,27 +1,32 @@
-"""CERES FLASHFlux footprint reader plugin.
+"""CERES SSF footprint reader plugin.
 
-Data source: CERES Fast Longwave And SHortwave Radiative Fluxes (FLASHFlux), the
-rapid-release TOA/surface fluxes and clouds that RBSP produces for NOAA-20, in the
-CERES Single Scanner Footprint (SSF) file layout (FLASH_SSF).
+Data source: the CERES Single Scanner Footprint (SSF) Level 2 TOA/surface fluxes and
+clouds for NOAA-20 (FM6, VIIRS imager), distributed by NASA Langley ASDC as
+``CER_SSF_NOAA20-FM6-VIIRS_...`` (``anc_ceres_noaa20_ssf``).
 
 - Format: NetCDF4, organized by **CERES footprint** (a 1-D ``Footprints``
   dimension), grouped into thematic groups (Time_and_Position, Scene_Type,
   Auxillary_Properties, …). The groups, variables and dimensions this reader checks
-  were taken from CER_SSF_NOAA20-FM6-VIIRS alpha4 granules, whose layout FLASHFlux
-  shares.
+  were taken from CER_SSF_NOAA20-FM6-VIIRS alpha4 granules.
 - Geolocation: per-footprint, in ``Time_and_Position/instrument_fov_latitude``
   and ``instrument_fov_longitude`` (longitude stored 0..360 — normalized here).
 - Native footprint scale: ~20 km at nadir.
 
+CERES FLASHFlux (``FLASH_SSF_NOAA20-FM6-VIIRS_...``, ``anc_ceres_noaa20_flashflux``),
+the rapid-release product RBSP produces in a similar layout, is a different product: its
+Version1B layout does not match the one this reader checks, and this reader raises on it.
+TODO[LIBSDC-932]: read the FLASH_SSF Version1B layout.
+
 This reader feeds the products its fields name in ``modes``: FMATCH-IMAGER and
-FMATCH-IMAGER-CAMTIME (see Variable set).
+FMATCH-IMAGER-CAMTIME (see Variable set). Its registry key, ``"FLASHFlux"``, prefixes
+the names of the variables it writes to those products (``FLASHFlux_<field>``).
 
 Native footprints, matched by time
 ----------------------------------
-FLASHFlux is footprint (point) data, not a regular grid. Each CERES footprint is served
+SSF is footprint (point) data, not a regular grid. Each CERES footprint is served
 at its own position and observation time as a
 :class:`~libera_utils.footprint_matching.types.PointSamples` point, so the Libera
-PSF weigher is the first place a value is weighted. A day of FLASHFlux sees a ground
+PSF weigher is the first place a value is weighted. A day of SSF sees a ground
 location on more than one pass, so the reader serves the pass nearest the Libera
 footprint time (``TIME_MATCH = NEAREST_PASS``): every footprint within
 ``PASS_WINDOW`` of the observation time of the footprint nearest in time, and none
@@ -33,18 +38,18 @@ Variable set
 ------------
 Two sets, read in this order:
 
-- **The base FLASHFlux fields** (``_FLASHFLUX_BASE_FIELDS``): aerosol optical depth, clear
+- **The base SSF fields** (``_SSF_BASE_FIELDS``): aerosol optical depth, clear
   coverage, the lower-layer cloud optical depth and water / ice particle radii, and
-  the scene and ADM type codes. Carried by every product FLASHFlux feeds:
+  the scene and ADM type codes. Carried by every product this reader feeds:
   FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME.
-- **The FMATCH-IMAGER-only FLASHFlux fields** (``_FLASHFLUX_IMAGER_ONLY_FIELDS``): the
+- **The FMATCH-IMAGER-only SSF fields** (``_SSF_IMAGER_ONLY_FIELDS``): the
   extended cloud-layer, aerosol, surface-albedo and TOA-insolation fields, carried by
   FMATCH-IMAGER alone.
 
 Surface-type variables in the ``Surface_Map`` group (``surface_igbp_type``,
 ``surface_igbp_type_coverage``, ``snow_ice_coverage``) are intentionally NOT
 extracted. The pipeline uses the dedicated ``IGBPReader`` and ``NISEReader`` as
-authoritative sources for land-cover and ice/snow classification. FLASHFlux surface
+authoritative sources for land-cover and ice/snow classification. SSF surface
 type values are derived from IGBP and NISE anyway; extracting them here would
 duplicate data that the dedicated readers already supply at higher resolution.
 
@@ -59,8 +64,8 @@ decode is deferred (TODO[LIBSDC-785]).
 
 References
 ----------
+CERES SSF: https://ceres.larc.nasa.gov/data/#ssf-level-2
 FLASHFlux: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-flashflux
-CERES SSF file layout: https://ceres.larc.nasa.gov/data/#ssf-level-2
 """
 
 from pathlib import Path
@@ -88,7 +93,7 @@ _FOV_LON_VAR: str = "instrument_fov_longitude"
 _LATITUDE_UNITS: str = "degrees_north"
 # Per-footprint observation time in the same group, decoded through its CF ``units``
 # (``days since 1970-01-01 00:00:00``, gregorian), as found in the CER_SSF_NOAA20-FM6-VIIRS
-# granules whose layout FLASHFlux shares. A granule covers one hour.
+# granules. A granule covers one hour.
 _TIME_VAR: str = "time"
 # Position of a footprint within its scan (1..660), used to pair consecutive scans and
 # measure the along-track footprint spacing.
@@ -107,7 +112,7 @@ _LAYER_DIMS: tuple[str, ...] = ("Footprints", "LowerUpper")
 _AERO_TYPE_DIMS: tuple[str, ...] = ("Footprints", "AeroTypePct")
 
 
-class _FlashFluxField(NamedTuple):
+class _SsfField(NamedTuple):
     """Mapping from an output variable to its source location and decoding rules.
 
     Each field's fill value and valid range are read from the file's own
@@ -149,19 +154,19 @@ class _FlashFluxField(NamedTuple):
     modes: frozenset[OperationalMode]
 
 
-# The products that carry the base FLASHFlux fields: every product FLASHFlux feeds.
-_FLASHFLUX_BASE_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+# The products that carry the base SSF fields: every product this reader feeds.
+_SSF_BASE_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
-# Each FLASHFlux optical depth is already a linear mean over its CERES footprint, so FMATCH combines
+# Each SSF optical depth is already a linear mean over its CERES footprint, so FMATCH combines
 # footprints with the arithmetic mean: cloud_optical_depth_mean ("Mean visible optical depth for
 # cloud layer") is SSF-83, the PSF-weighted mean of the pixels' optical depths, and
 # aerosol optical depth is "an arithmetic mean ... of all imager pixels in the angular bin before
 # they are weighted by the PSF" (SSF-137). CERES SSF Collection Guide, Release 2, pp. 75 and 101,
 # https://ceres.larc.nasa.gov/documents/collect_guide/pdf/SSF_CG_R2V1.pdf.
 
-# The base FLASHFlux fields (see module docstring).
-_FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
-    _FlashFluxField(
+# The base SSF fields (see module docstring).
+_SSF_BASE_FIELDS: tuple[_SsfField, ...] = (
+    _SsfField(
         "Aerosol_Optical_Depth",
         "Auxillary_Properties",
         "aerosol_optical_depth",
@@ -169,9 +174,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Clear_Coverage",
         "Clear_Footprint_Area",
         "clear_coverage",
@@ -179,9 +184,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Cloud_Optical_Depth_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
@@ -189,14 +194,14 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
     # Effective cloud particle radius separated by thermodynamic phase (μm).
-    # FLASHFlux stores water and ice radii in separate 2-D (Footprints, LowerUpper)
+    # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
     # variables; both read the lower cloud layer (_CLOUD_LAYER_LOWER_INDEX),
     # consistent with Cloud_Optical_Depth_Lower. The combined (blended) radius is
-    # not available in FLASHFlux — use CLDPIX_Cloud_Particle_Radius for that.
-    _FlashFluxField(
+    # not available in SSF — use CLDPIX_Cloud_Particle_Radius for that.
+    _SsfField(
         "Cloud_Water_Particle_Radius_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
@@ -204,9 +209,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Cloud_Ice_Particle_Radius_Lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
@@ -214,9 +219,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Cloud_Classification",
         "Scene_Type",
         "cloud_classification",
@@ -224,9 +229,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Shortwave_ADM_Type",
         "Scene_Type",
         "shortwave_adm_type",
@@ -234,9 +239,9 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
-    _FlashFluxField(
+    _SsfField(
         "Longwave_ADM_Type",
         "Scene_Type",
         "longwave_adm_type",
@@ -244,22 +249,22 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
-        _FLASHFLUX_BASE_MODES,
+        _SSF_BASE_MODES,
     ),
 )
 
 
 # ---------------------------------------------------------------------------
-# Extended FLASHFlux field set carried by FMATCH-IMAGER only.
+# Extended SSF field set carried by FMATCH-IMAGER only.
 # ---------------------------------------------------------------------------
-# These FLASHFlux cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
-# *only* -- not IMAGER-CAMTIME, which carries the base FLASHFlux fields.
+# These SSF cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
+# *only* -- not IMAGER-CAMTIME, which carries the base SSF fields.
 #
 # Multi-valued source fields are flattened into one 1-D product variable per member:
 # LowerUpper (2) -> _Lower/_Upper, AeroTypePct (7) -> _TypeN. Genuinely 1-D fields (Surface_Albedo, TOA_Incoming_Solar_Radiation) stay a single
 # spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _Standard_Deviation
 # companion in product_variable_specs().
-_FLASHFLUX_IMAGER_ONLY_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
+_SSF_IMAGER_ONLY_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
 
 # Zero-axis members for a 1-D (Footprints,) source field: one output, no index.
 _SCALAR_MEMBER: tuple[tuple[str, int | None], ...] = (("", None),)
@@ -272,10 +277,8 @@ _BOTH_LAYERS: tuple[tuple[str, int | None], ...] = (
 _UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("Upper", _CLOUD_LAYER_UPPER_INDEX),)
 
 # (out_base, group, var, aggregation, dimensions, members). ``members`` is a tuple of
-# (name_suffix, second_axis_index) pairs; the flattener emits one _FlashFluxField per member.
-_IMAGER_FLASHFLUX_SOURCES: tuple[
-    tuple[str, str, str, str, tuple[str, ...], tuple[tuple[str, int | None], ...]], ...
-] = (
+# (name_suffix, second_axis_index) pairs; the flattener emits one _SsfField per member.
+_IMAGER_SSF_SOURCES: tuple[tuple[str, str, str, str, tuple[str, ...], tuple[tuple[str, int | None], ...]], ...] = (
     # --- Cloud layer fields (Cloudy_Imager_Footprint_Layer), (Footprints, LowerUpper) ---
     # Five layered fields no base spec carries: both lower and upper layers.
     (
@@ -391,8 +394,8 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
 )
 
 
-def _build_imager_only_flashflux_fields() -> tuple[_FlashFluxField, ...]:
-    """Flatten the FMATCH-IMAGER-only FLASHFlux sources into one _FlashFluxField per output variable.
+def _build_imager_only_ssf_fields() -> tuple[_SsfField, ...]:
+    """Flatten the FMATCH-IMAGER-only SSF sources into one _SsfField per output variable.
 
     Each source field is flattened along its second axis (or emitted as a single 1-D
     value), named with a suffix, and given ``modes`` {FMATCH-IMAGER}. All fields are
@@ -400,15 +403,15 @@ def _build_imager_only_flashflux_fields() -> tuple[_FlashFluxField, ...]:
 
     Returns
     -------
-    tuple[_FlashFluxField, ...]
+    tuple[_SsfField, ...]
         One field per emitted output variable, in source-then-member order.
     """
-    fields: list[_FlashFluxField] = []
-    for out_base, group, var, aggregation, dimensions, members in _IMAGER_FLASHFLUX_SOURCES:
+    fields: list[_SsfField] = []
+    for out_base, group, var, aggregation, dimensions, members in _IMAGER_SSF_SOURCES:
         for suffix, index in members:
             out_name = f"{out_base}_{suffix}" if suffix else out_base
             fields.append(
-                _FlashFluxField(
+                _SsfField(
                     out_name,
                     group,
                     var,
@@ -416,22 +419,22 @@ def _build_imager_only_flashflux_fields() -> tuple[_FlashFluxField, ...]:
                     dimensions,
                     index,
                     None,
-                    _FLASHFLUX_IMAGER_ONLY_MODES,
+                    _SSF_IMAGER_ONLY_MODES,
                 )
             )
     return tuple(fields)
 
 
-# The FMATCH-IMAGER-only FLASHFlux fields (see module docstring).
-_FLASHFLUX_IMAGER_ONLY_FIELDS: tuple[_FlashFluxField, ...] = _build_imager_only_flashflux_fields()
+# The FMATCH-IMAGER-only SSF fields (see module docstring).
+_SSF_IMAGER_ONLY_FIELDS: tuple[_SsfField, ...] = _build_imager_only_ssf_fields()
 
-# Every FLASHFlux field read: the base fields, then the FMATCH-IMAGER-only fields.
+# Every SSF field read: the base fields, then the FMATCH-IMAGER-only fields.
 # _load_granule stacks value rows in this order, matching VARIABLES.
-_FLASHFLUX_FIELDS: tuple[_FlashFluxField, ...] = _FLASHFLUX_BASE_FIELDS + _FLASHFLUX_IMAGER_ONLY_FIELDS
+_SSF_FIELDS: tuple[_SsfField, ...] = _SSF_BASE_FIELDS + _SSF_IMAGER_ONLY_FIELDS
 
 
-def _flashflux_variable(ds: netCDF4.Dataset, group: str, name: str, *, source: str) -> netCDF4.Variable:
-    """Return ``group/name`` from an open FLASHFlux granule, rejecting a granule laid out otherwise.
+def _ssf_variable(ds: netCDF4.Dataset, group: str, name: str, *, source: str) -> netCDF4.Variable:
+    """Return ``group/name`` from an open SSF granule, rejecting a granule laid out otherwise.
 
     Parameters
     ----------
@@ -462,36 +465,37 @@ def _flashflux_variable(ds: netCDF4.Dataset, group: str, name: str, *, source: s
     if missing is not None:
         raise ValueError(
             f"{source}: no {missing} in this granule (product_version "
-            f"{getattr(ds, 'product_version', None)!r}). Stage a FLASHFlux granule in the layout this reader reads, "
-            "or update the reader's FLASHFlux field table for this product version."
+            f"{getattr(ds, 'product_version', None)!r}). Supply a CERES SSF granule (CER_SSF_NOAA20-FM6-VIIRS_...) "
+            "in the layout this reader reads, or update the reader's SSF field table for this product version."
         )
     return ds.groups[group].variables[name]
 
 
-class FLASHFluxReader(PassReader):
-    """Read CERES FLASHFlux footprints as time-stamped native points.
+class CeresSsfReader(PassReader):
+    """Read CERES SSF footprints as time-stamped native points.
 
     Parses the per-footprint geolocation, observation time and the base and
-    FMATCH-IMAGER-only FLASHFlux fields from every staged granule.
+    FMATCH-IMAGER-only SSF fields from every staged granule.
 
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"FLASHFlux"``.
+        Registry key ``"FLASHFlux"``, which prefixes the FMATCH variable names this reader
+        writes (``FLASHFlux_<field>``).
     RESOLUTION_KM : float
         ~20 km (CERES footprint scale at nadir), the fallback when a granule's own
         footprint spacing cannot be measured.
     VARIABLES : tuple[VariableSpec, ...]
-        The base and FMATCH-IMAGER-only FLASHFlux fields (see module docstring).
+        The base and FMATCH-IMAGER-only SSF fields (see module docstring).
 
     Parameters
     ----------
     file_paths : Sequence[Path]
-        The CERES FLASHFlux NetCDF4 granule(s) covering the processing period.
+        The CERES SSF NetCDF4 granule(s) covering the processing period.
     """
 
     READER_KEY: str = "FLASHFlux"
-    # The FLASHFlux product read here is the NOAA-20 stream (FM6, VIIRS imager).
+    # The SSF product read here is the NOAA-20 stream (FM6, VIIRS imager).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
     # a second reader.
     INSTRUMENT: str = "NOAA20"
@@ -505,7 +509,7 @@ class FLASHFluxReader(PassReader):
             modes=f.modes,
             n_categories=f.n_categories,
         )
-        for f in _FLASHFLUX_FIELDS
+        for f in _SSF_FIELDS
     )
 
     def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
@@ -517,7 +521,7 @@ class FLASHFluxReader(PassReader):
             If either attribute is missing or is not an ISO 8601 instant.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
-            return granule_time_coverage(ds, source=f"flashflux {path.name}")
+            return granule_time_coverage(ds, source=f"ceres_ssf {path.name}")
 
     def _load_granule(self, path: Path) -> PointSamples:
         """Parse one granule into a time-stamped point cloud.
@@ -547,8 +551,8 @@ class FLASHFluxReader(PassReader):
             # whose valid_range is descending, which CERES products declare.
             ds.set_auto_mask(False)
 
-            source = f"flashflux {path.name}"
-            lat_var = _flashflux_variable(ds, _TIME_POS_GROUP, _FOV_LAT_VAR, source=source)
+            source = f"ceres_ssf {path.name}"
+            lat_var = _ssf_variable(ds, _TIME_POS_GROUP, _FOV_LAT_VAR, source=source)
             lat_units = getattr(lat_var, "units", None)
             if lat_units != _LATITUDE_UNITS:
                 raise ValueError(
@@ -561,7 +565,7 @@ class FLASHFluxReader(PassReader):
                 fill_value=field_fill_value(lat_var, source=source),
                 valid_range=field_valid_range(lat_var, source=source),
             )
-            lon_var = _flashflux_variable(ds, _TIME_POS_GROUP, _FOV_LON_VAR, source=source)
+            lon_var = _ssf_variable(ds, _TIME_POS_GROUP, _FOV_LON_VAR, source=source)
             lons_raw = apply_fill_and_valid_range(
                 lon_var[:],
                 fill_value=field_fill_value(lon_var, source=source),
@@ -569,22 +573,23 @@ class FLASHFluxReader(PassReader):
             )
             lons = normalize_longitude(lons_raw)
             times = decode_cf_times(
-                _flashflux_variable(ds, _TIME_POS_GROUP, _TIME_VAR, source=source),
+                _ssf_variable(ds, _TIME_POS_GROUP, _TIME_VAR, source=source),
                 source=f"{source} {_TIME_POS_GROUP}/{_TIME_VAR}",
             )
-            sample_number = np.asarray(_flashflux_variable(ds, _TIME_POS_GROUP, _SAMPLE_NUMBER_VAR, source=source)[:])
+            sample_number = np.asarray(_ssf_variable(ds, _TIME_POS_GROUP, _SAMPLE_NUMBER_VAR, source=source)[:])
 
             # Each field is written straight into one float32 array, so the float64 copy
             # of only one field is alive at a time.
-            values = np.empty((len(_FLASHFLUX_FIELDS), lats.size), dtype=np.float32)
-            for i, f in enumerate(_FLASHFLUX_FIELDS):
-                var = _flashflux_variable(ds, f.group, f.var, source=source)
+            values = np.empty((len(_SSF_FIELDS), lats.size), dtype=np.float32)
+            for i, f in enumerate(_SSF_FIELDS):
+                var = _ssf_variable(ds, f.group, f.var, source=source)
                 if tuple(var.dimensions) != f.dimensions:
                     raise ValueError(
                         f"{source}: {f.group}/{f.var} (read as {f.out_name}) has dimensions {tuple(var.dimensions)}, "
                         f"but this reader expects {f.dimensions} (product_version "
-                        f"{getattr(ds, 'product_version', None)!r}). Stage a FLASHFlux granule in the layout this "
-                        "reader reads, or update the reader's FLASHFlux field table for this product version."
+                        f"{getattr(ds, 'product_version', None)!r}). Supply a CERES SSF granule "
+                        "(CER_SSF_NOAA20-FM6-VIIRS_...) in the layout this reader reads, or update the reader's SSF "
+                        "field table for this product version."
                     )
                 # A 2-D (Footprints, <second axis>) field reads only its one layer or type.
                 raw = var[:] if f.layer_index is None else var[:, f.layer_index]

@@ -610,7 +610,7 @@ def resolve_ancillary_inputs(
     """Map each reader active for ``mode`` to its staged granule files.
 
     Footprint matching aggregates external, non-Libera datasets (ERA5 reanalysis, IGBP
-    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/FLASHFlux)
+    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/SSF)
     onto each radiometer footprint. Those granules are *not* Libera data products: they
     have third-party filenames, so they cannot be selected out of a manifest the way
     :func:`select_manifest_files_by_product_id` selects L1B inputs.
@@ -627,7 +627,7 @@ def resolve_ancillary_inputs(
             VIIRS_CLDPROP_D3/   VIIRS daily L3 cloud-property granules
             VIIRS_AOD/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
             CLDPIX/             CERES CLDPIX granules    (IMAGER-family modes)
-            FLASHFlux/          CERES FLASHFlux granules (IMAGER-family modes)
+            FLASHFlux/          CERES SSF granules (CER_SSF_...) (IMAGER-family modes)
 
     The active reader set comes from
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,

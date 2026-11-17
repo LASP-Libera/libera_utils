@@ -18,10 +18,10 @@ import pytest
 import libera_utils
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
 from libera_utils.footprint_matching.readers import (
+    CeresSsfReader,
     CLDPIXReader,
     ERA5PressureLevelReader,
     ERA5SurfaceReader,
-    FLASHFluxReader,
     IGBPReader,
     NISEReader,
     ReaderRegistry,
@@ -68,7 +68,7 @@ def _ranked(base: str, n_categories: int, modes: frozenset[OperationalMode]) -> 
 
 
 # The FLASHFlux fields carried by FMATCH-IMAGER alone.
-_FLASHFLUX_EXTENDED = (
+_SSF_EXTENDED = (
     *(
         _mean(f"{base}_{layer}", _ONLY_IMAGER)
         for base in (
@@ -185,7 +185,7 @@ _DECLARED = [
     ),
     (
         "FLASHFlux",
-        FLASHFluxReader,
+        CeresSsfReader,
         "NOAA20",
         20.0,  # the CERES footprint at nadir
         TimeMatch.NEAREST_PASS,
@@ -200,7 +200,7 @@ _DECLARED = [
             _code("Cloud_Classification", None, _IMAGER_PAIR),
             _code("Shortwave_ADM_Type", None, _IMAGER_PAIR),
             _code("Longwave_ADM_Type", None, _IMAGER_PAIR),
-            *_FLASHFLUX_EXTENDED,
+            *_SSF_EXTENDED,
         ),
         (),
     ),

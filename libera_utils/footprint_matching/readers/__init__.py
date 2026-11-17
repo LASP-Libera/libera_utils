@@ -34,7 +34,7 @@ end with the reader's ``INSTRUMENT``. Run them after any of the changes below.
 readers from NOAA-20 to NOAA-21:
 
 1. In each affected reader, set ``INSTRUMENT`` (``INSTRUMENT = "NOAA21"`` in ``aod.py``,
-   ``brdf.py``, ``viirs.py``, ``cldpix.py`` and ``flashflux.py``), and update the module
+   ``brdf.py``, ``viirs.py``, ``cldpix.py`` and ``ceres_ssf.py``), and update the module
    docstring's product and file-naming lines.
 2. In every FMATCH product definition, change the instrument in parentheses at the end
    of each affected ``long_name``, for example ``(NOAA20)`` to ``(NOAA21)``.
@@ -51,7 +51,7 @@ are unaffected unless step 3 changes a variable.
 **Add a variable to an existing reader:**
 
 1. Add the field to the reader's table: ``_CLDPIX_FIELDS`` in ``cldpix.py``,
-   ``_FLASHFLUX_BASE_FIELDS`` or ``_IMAGER_FLASHFLUX_SOURCES`` in ``flashflux.py``,
+   ``_SSF_BASE_FIELDS`` or ``_IMAGER_SSF_SOURCES`` in ``ceres_ssf.py``,
    ``_D3_FIELDS`` in ``viirs.py``, or the reader's ``VARIABLES`` elsewhere. Give it its
    aggregation, the products that carry it in ``modes``, its valid range with the
    document it comes from, and for a mode-aggregated code ``n_categories`` and an
@@ -89,10 +89,10 @@ a change consumers and the staging pipeline must follow.
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.base import AncillaryReader, PassReader, StaticReader, SteppedGridReader
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
+from libera_utils.footprint_matching.readers.ceres_ssf import CeresSsfReader
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.era5_surface import ERA5SurfaceReader
-from libera_utils.footprint_matching.readers.flashflux import FLASHFluxReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS, ReaderRegistry, _derive_mode_readers
@@ -107,7 +107,7 @@ __all__ = [
     "CLDPIXReader",
     "ERA5PressureLevelReader",
     "ERA5SurfaceReader",
-    "FLASHFluxReader",
+    "CeresSsfReader",
     "IGBPReader",
     "NISEReader",
     "PassReader",
