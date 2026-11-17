@@ -2,7 +2,7 @@
 
 This module is the single home for every FMATCH runner. The four runners (CAM, CAM-CAMTIME,
 IMAGER, IMAGER-CAMTIME) are structurally identical: read an input manifest, locate the
-staged ancillary granules, keep the L1B input files of a particular product, run footprint matching
+ancillary granules it lists, keep the L1B input files of a particular product, run footprint matching
 on each, write the resulting FMATCH product, and emit an output manifest. They differ only by a
 handful of parameters:
 
@@ -30,16 +30,13 @@ outside this package; both camera-timescale runners rebuild them from its CF-CAM
 
 Environment
 -----------
-Three environment variables are required at run time:
+Two environment variables are required at run time:
 
 ``LIBERA_FMATCH_VARIANT``
     The ``RUNNER_CONFIGS`` entry the CLI runs (e.g. ``cam``, ``imager-camtime``).
 ``PROCESSING_PATH``
     The dropbox directory (or S3 prefix) products and the output manifest are written
     to. This is the standard Libera runner convention.
-``FMATCH_ANCILLARY_PATH``
-    Root of the staged ancillary granule tree; see
-    :func:`resolve_ancillary_inputs` for its layout and "Ancillary inputs" below.
 
 One optional variable tunes the run: ``FMATCH_WORKERS`` (also a ``config.json`` key,
 default 1) is the number of worker processes the external aggregation runs the
@@ -47,13 +44,18 @@ footprints on; see :func:`~libera_utils.footprint_matching.product.aggregate_ext
 
 Ancillary inputs
 ----------------
-Every reader active for the mode needs at least one local granule staged under
-``FMATCH_ANCILLARY_PATH`` (see :func:`resolve_ancillary_inputs`). The runner hands those
-files to the product assembly, where the PSF aggregation engine computes the external
-variables and the coverage/QA columns from them. A run with ``FMATCH_ANCILLARY_PATH``
-unset, a missing or empty reader directory, or a granule staged in S3 raises rather
-than writing those columns as fill values. ``TODO[LIBSDC-785]``: materialize S3-staged
-ancillary granules locally (readers need real files).
+The input manifest lists the external ancillary granules alongside the Libera inputs, each
+under the name its upstream provider gives it. Every reader active for the mode declares
+the ``DataLevel.ANC`` product it reads (``PRODUCT_ID``), and
+:func:`select_ancillary_inputs` hands it the manifest's files of that product; a run whose
+manifest lacks an active reader's product raises :class:`MissingAncillaryInputError`
+before any input is read. Selection is by product, not by time, so the manifest lists
+exactly one granule of each daily product (VIIRS aerosol, BRDF and cloud properties, and
+NISE) and the hourly granules around the processing period (ERA5, CLDPIX, and the CERES
+SSF the CERES SSF reader reads). An ancillary granule in S3 is copied to a local temporary
+file once per run, because the readers open real files, and the copy is removed when the
+run ends. The PSF aggregation engine computes the external variables and the coverage/QA
+columns from these files.
 """
 
 from __future__ import annotations
@@ -62,6 +64,7 @@ import argparse
 import logging
 import os
 import tempfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -90,7 +93,7 @@ from libera_utils.footprint_matching.product import (
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.filenaming import AbstractDataProductFilename, AbstractValidFilename, LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import is_s3, smart_copy_file
 from libera_utils.logutil import configure_task_logging
@@ -105,10 +108,6 @@ if TYPE_CHECKING:
     CameraFootprintLoader = Callable[[Path], tuple[list[PseudoFootprint], np.ndarray | None]]
 
 logger = logging.getLogger(__name__)
-
-# Environment variable naming the root of the staged ancillary tree. Mirrors the
-# PROCESSING_PATH convention used for the output dropbox.
-ANCILLARY_PATH_ENV: str = "FMATCH_ANCILLARY_PATH"
 
 # Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
 # its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
@@ -141,6 +140,14 @@ class CloudFractionTimeMismatchError(ValueError):
 
     Raised when two CF-CAM rows share a radiometer time, when a CF-CAM cloud fraction falls inside an L1B granule's
     time span without matching one of its footprints, or when no footprint of the granule matches any CF-CAM row.
+    """
+
+
+class MissingAncillaryInputError(ValueError):
+    """The input manifest lists no file of an ancillary product a FMATCH run reads.
+
+    Raised before any input is read, naming each reader active for the run's mode whose ``PRODUCT_ID`` matches no
+    file in the manifest.
     """
 
 
@@ -457,16 +464,16 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     Raises
     ------
     ValueError
-        If the ``PROCESSING_PATH`` or ``FMATCH_ANCILLARY_PATH`` environment variable is not
-        set, if the manifest references no input of ``config.input_product_id``, if an
-        ancillary granule is staged in S3, or if an L1B input has no usable footprints.
+        If the ``PROCESSING_PATH`` environment variable is not set, if the manifest
+        references no input of ``config.input_product_id``, or if an L1B input has no
+        usable footprints.
+    MissingAncillaryInputError
+        If the manifest lists no file of an ancillary product a reader active for the mode reads.
     MissingCloudFractionInputError
         If a FMATCH-CAM manifest lists no CF-CAM input, or a CF-CAM or CF-CAM-CAMTIME input
         lacks a variable its cloud fraction is read from.
     CloudFractionTimeMismatchError
         If the CF-CAM rows do not line up with an L1B input's footprints.
-    FileNotFoundError
-        If the ancillary root or an active reader's directory under it is missing or empty.
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
     """
@@ -483,15 +490,10 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
-    # Step 2: Locate the staged ancillary granules for this mode.
-    #
-    # These are resolved, inventoried in the log, and threaded into product assembly,
-    # where the PSF aggregation engine computes the external variables and coverage/QA
-    # columns from them. Logging the inventory first lets an operator confirm staging is
-    # correct from the task log. A missing root or reader directory raises here.
-    logger.info("Step 2: Locating staged ancillary inputs")
-    ancillary_inputs = resolve_ancillary_inputs(config.mode)
-    log_ancillary_inventory(ancillary_inputs)
+    # Step 2: Select each active reader's ancillary granules from the manifest. A missing product raises here, before
+    # any input is read or downloaded.
+    logger.info("Step 2: Selecting ancillary inputs from the manifest")
+    ancillary_file_paths = select_ancillary_inputs(input_manifest, config.mode)
 
     # Step 3: Collect the L1B input file(s) from the manifest.
     input_label = config.input_product_id.value
@@ -510,15 +512,22 @@ def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> P
     # Step 4: Run footprint matching and write data products.
     logger.info("Step 4: Running footprint matching and writing data products")
     output_data_file_paths: list[LiberaDataProductFilename] = []
-    for input_file_path in input_file_paths:
-        output_file = create_and_write_data_product(
-            input_file_path=input_file_path,
-            output_path=dropbox_path,
-            config=config,
-            cloud_fraction=cloud_fraction,
-            ancillary_inputs=ancillary_inputs,
-        )
-        output_data_file_paths.append(output_file)
+    with ExitStack() as local_copies:
+        # The readers open real files, so each S3 granule is copied locally once for the whole run, and every copy is
+        # removed when the stack closes. The aggregation's worker processes finish inside each product write.
+        ancillary_inputs = {
+            reader_key: [local_copies.enter_context(_as_local_path(path)) for path in paths]
+            for reader_key, paths in ancillary_file_paths.items()
+        }
+        for input_file_path in input_file_paths:
+            output_file = create_and_write_data_product(
+                input_file_path=input_file_path,
+                output_path=dropbox_path,
+                config=config,
+                cloud_fraction=cloud_fraction,
+                ancillary_inputs=ancillary_inputs,
+            )
+            output_data_file_paths.append(output_file)
 
     # Step 5: Create the output manifest from the input manifest.
     logger.info("Step 5: Creating the output manifest")
@@ -601,158 +610,62 @@ def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> Rad
     )
 
 
-def resolve_ancillary_inputs(
-    mode: OperationalMode,
-    root: str | Path | S3Path | None = None,
-    *,
-    strict: bool = True,
-) -> dict[str, list[Path | S3Path]]:
-    """Map each reader active for ``mode`` to its staged granule files.
+def select_ancillary_inputs(manifest: Manifest, mode: OperationalMode) -> dict[str, list[str]]:
+    """Select, for each reader active in ``mode``, the manifest's files of the ancillary product it reads.
 
-    Footprint matching aggregates external, non-Libera datasets (ERA5 reanalysis, IGBP
-    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/SSF)
-    onto each radiometer footprint. Those granules are *not* Libera data products: they
-    have third-party filenames, so they cannot be selected out of a manifest the way
-    :func:`select_manifest_files_by_product_id` selects L1B inputs.
-
-    The pipeline stages ancillary granules into a directory tree with **one
-    subdirectory per reader, named by the reader's registry key**::
-
-        $FMATCH_ANCILLARY_PATH/
-            ERA5_Surface/       ERA5 single-level granules
-            ERA5_Pressure/      ERA5 pressure-level granules
-            IGBP/               MCD12Q1 land-cover granules
-            NISE/               NISE snow/ice granules
-            VIIRS_BRDF/         VIIRS BRDF granules
-            VIIRS_CLDPROP_D3/   VIIRS daily L3 cloud-property granules
-            VIIRS_AOD/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
-            CLDPIX/             CERES CLDPIX granules    (IMAGER-family modes)
-            FLASHFlux/          CERES SSF granules (CER_SSF_...) (IMAGER-family modes)
-
-    The active reader set comes from
-    :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
-    so this automatically tracks the mode's latency rank: FMATCH-CAM looks for five
-    readers, while FMATCH-IMAGER additionally looks for ``ERA5_Pressure``,
-    ``VIIRS_AOD``, and the RBSP ``CLDPIX``/``FLASHFlux`` inputs. Using the registry keys as
-    directory names means the set of directories required for a run is *derived* from
-    the registry rather than hard-coded here.
+    Each reader names the ``DataLevel.ANC`` product it reads in its ``PRODUCT_ID``, and a manifest file belongs to
+    that product when its name parses to it (the ancillary filename classes in :mod:`libera_utils.io.filenaming`
+    accept the names the upstream providers give their files). Every file of the product is taken: selection is by
+    product, not by time. The readers that read one granule per day (VIIRS aerosol, BRDF and cloud properties, and
+    NISE) raise when given more than one, so a manifest lists exactly one of each of those; the readers of hourly
+    granules (ERA5, CLDPIX, and the CERES SSF that ``CeresSsfReader`` reads) take every granule they are given and
+    use the ones near each footprint, so a manifest lists the hours around its period.
 
     Parameters
     ----------
+    manifest : Manifest
+        The run's input manifest.
     mode : OperationalMode
-        The FMATCH operational mode being run.
-    root : str | pathlib.Path | cloudpathlib.S3Path, optional
-        Root of the staged ancillary tree. Defaults to the ``FMATCH_ANCILLARY_PATH``
-        environment variable.
-    strict : bool, optional
-        How to treat missing inputs. When True (the default) a missing root, a missing
-        reader subdirectory, or an empty one raises. When False each is logged as a
-        warning and yields an empty list.
+        The FMATCH operational mode being run; its active readers come from
+        :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`.
 
     Returns
     -------
-    dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        Mapping of reader registry key to the granule files staged for it, sorted by
-        name so repeated runs process files in a deterministic order. Readers with no
-        staged files map to an empty list (only when ``strict`` is False).
+    dict[str, list[str]]
+        Reader registry key to the manifest filenames (local paths or S3 urls) of its product, in manifest order.
+        Every active reader has at least one.
 
     Raises
     ------
-    ValueError
-        If ``root`` is not given and ``FMATCH_ANCILLARY_PATH`` is unset, when ``strict``.
-    FileNotFoundError
-        If the root or a required reader subdirectory does not exist, or a required
-        subdirectory is empty, when ``strict``.
+    MissingAncillaryInputError
+        If the manifest lists no file of the product of one or more active readers; the message names each one.
+    TypeError
+        If an active reader declares no ``PRODUCT_ID``, which only a reader pinned to a mode outside the built-in
+        set can do.
     """
-    active_readers = ReaderRegistry.get_readers_for_mode(mode)
-
-    ancillary_root = _resolve_ancillary_root(root, mode=mode, strict=strict)
-    if ancillary_root is None:
-        return {key: [] for key in sorted(active_readers)}
-
-    resolved: dict[str, list[Path | S3Path]] = {}
-    for reader_key in sorted(active_readers):
-        resolved[reader_key] = _resolve_reader_directory(ancillary_root, reader_key, strict=strict)
-    return resolved
-
-
-def _resolve_ancillary_root(
-    root: str | Path | S3Path | None,
-    *,
-    mode: OperationalMode,
-    strict: bool,
-) -> Path | S3Path | None:
-    """Resolve and validate the ancillary tree root, or return None when absent and not strict."""
-    if root is None:
-        root = os.getenv(ANCILLARY_PATH_ENV)
-    if not root:
-        message = (
-            f"{ANCILLARY_PATH_ENV} environment variable is not set, so no ancillary inputs can be located for "
-            f"{mode.value}."
-        )
-        if strict:
-            raise ValueError(message)
-        logger.warning("%s Continuing with no ancillary inputs.", message)
-        return None
-
-    # AnyPath gives a local Path or an S3Path depending on the string, so a staged
-    # tree works equally well on local disk and in S3.
-    ancillary_root = AnyPath(root)
-    if not ancillary_root.exists():
-        message = f"Ancillary root directory does not exist: {ancillary_root}"
-        if strict:
-            raise FileNotFoundError(message)
-        logger.warning("%s Continuing with no ancillary inputs.", message)
-        return None
-    return ancillary_root
-
-
-def _resolve_reader_directory(
-    ancillary_root: Path | S3Path,
-    reader_key: str,
-    *,
-    strict: bool,
-) -> list[Path | S3Path]:
-    """List the granule files staged under one reader's subdirectory."""
-    reader_directory = ancillary_root / reader_key
-    if not reader_directory.exists():
-        message = f"No staged ancillary directory for reader '{reader_key}': {reader_directory}"
-        if strict:
-            raise FileNotFoundError(message)
-        logger.warning("%s (expected %s/%s/)", message, ANCILLARY_PATH_ENV, reader_key)
-        return []
-
-    # Sorted for determinism; skip nested directories so a reader subdirectory can
-    # hold per-day subfolders in the future without those being mistaken for granules.
-    files: list[Path | S3Path] = sorted((entry for entry in reader_directory.iterdir() if entry.is_file()), key=str)
-    if not files:
-        message = f"Ancillary directory for reader '{reader_key}' is empty: {reader_directory}"
-        if strict:
-            raise FileNotFoundError(message)
-        logger.warning("%s", message)
-    return files
-
-
-def log_ancillary_inventory(ancillary_inputs: dict[str, list[Path | S3Path]]) -> None:
-    """Log a one-line-per-reader inventory of the staged ancillary inputs.
-
-    Written so an operator can diagnose a staging problem from the task log alone,
-    without shelling into the container: every active reader appears, and the ones
-    with nothing staged are called out explicitly rather than being silently absent.
-
-    Parameters
-    ----------
-    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        The mapping returned by :func:`resolve_ancillary_inputs`.
-    """
-    if not ancillary_inputs:
-        logger.warning("No ancillary readers are active for this run.")
-        return
-    for reader_key, files in sorted(ancillary_inputs.items()):
+    selected: dict[str, list[str]] = {}
+    missing: list[str] = []
+    for reader_key, reader in sorted(ReaderRegistry.get_readers_for_mode(mode).items()):
+        product_id = reader.PRODUCT_ID
+        if product_id is None:
+            raise TypeError(
+                f"Reader {reader_key!r} is active for {mode.value} but declares no PRODUCT_ID, so its files cannot be "
+                "selected from the input manifest. Set its PRODUCT_ID to the DataLevel.ANC DataProductIdentifier of "
+                "the source it reads."
+            )
+        files = select_manifest_files_by_product_id(manifest, product_id)
         if files:
-            logger.info("Ancillary input '%s': %d file(s)", reader_key, len(files))
+            logger.info("Ancillary input %r (%s): %d file(s)", reader_key, product_id.value, len(files))
         else:
-            logger.warning("Ancillary input '%s': 0 file(s) -- MISSING", reader_key)
+            missing.append(f"{reader_key} ({product_id.value})")
+        selected[reader_key] = files
+    if missing:
+        raise MissingAncillaryInputError(
+            f"The input manifest lists no file for the ancillary reader(s) {', '.join(missing)} that {mode.value} "
+            "reads. Add each product's file(s) for the processing period to the input manifest, under the name its "
+            "upstream provider gives it."
+        )
+    return selected
 
 
 def run_footprint_matching(
@@ -823,59 +736,11 @@ def run_footprint_matching(
         return l1b_inputs, None
 
 
-def _ancillary_source_file_paths(
-    ancillary_inputs: dict[str, list[Path | S3Path]],
-) -> dict[str, list[Path]]:
-    """Reduce the resolved ancillary inventory to the per-reader local granule lists assembly needs.
-
-    :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs` returns
-    a *list* of staged granules per reader, and each reader takes the granule(s) of its
-    source for the period (a reader that reads one granule per period raises when handed
-    more). This keeps every staged granule as a local path.
-
-    Parameters
-    ----------
-    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        The per-reader inventory from ``resolve_ancillary_inputs``.
-
-    Returns
-    -------
-    dict[str, list[pathlib.Path]]
-        Reader-key -> local granule(s).
-
-    Raises
-    ------
-    ValueError
-        If the inventory is empty, if a reader has no staged granule, or if a granule is in S3.
-    """
-    if not ancillary_inputs:
-        raise ValueError(
-            "No ancillary inputs were given, so the external variables cannot be computed. Pass the inventory "
-            f"from resolve_ancillary_inputs, with granules staged under ${ANCILLARY_PATH_ENV}/<reader key>/."
-        )
-    source_file_paths: dict[str, list[Path]] = {}
-    for reader_key, files in ancillary_inputs.items():
-        if not files:
-            raise ValueError(
-                f"Ancillary source {reader_key!r} has no staged granule. Stage at least one granule under "
-                f"${ANCILLARY_PATH_ENV}/{reader_key}/."
-            )
-        remote = [f for f in files if is_s3(f)]
-        if remote:
-            # TODO[LIBSDC-785]: materialize S3-staged ancillary granules locally instead of raising.
-            raise ValueError(
-                f"Ancillary source {reader_key!r} is staged in S3 ({remote[0]}), but the readers need local files. "
-                f"Stage the ancillary tree on local disk and point ${ANCILLARY_PATH_ENV} at it."
-            )
-        source_file_paths[reader_key] = [Path(str(f)) for f in files]
-    return source_file_paths
-
-
 def create_and_write_data_product(
     input_file_path: str | Path | S3Path,
     output_path: str | Path | S3Path,
     config: FmatchRunnerConfig,
-    ancillary_inputs: dict[str, list[Path | S3Path]],
+    ancillary_inputs: dict[str, list[Path]],
     cloud_fraction: RadiometerCloudFraction | None = None,
 ) -> LiberaDataProductFilename:
     """Run footprint matching on one input file and write the FMATCH data product.
@@ -889,10 +754,10 @@ def create_and_write_data_product(
         Directory / prefix in the processing dropbox where the product file is written.
     config : FmatchRunnerConfig
         Runner parameters supplying the mode and input products.
-    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        The staged ancillary inventory from
-        :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs`:
-        at least one local granule for every reader active for the mode.
+    ancillary_inputs : dict[str, list[pathlib.Path]]
+        Reader registry key to the local granule files of its product, as selected by
+        :func:`select_ancillary_inputs` and copied locally: at least one existing file for every reader
+        active for the mode.
     cloud_fraction : RadiometerCloudFraction, optional
         The CF-CAM cloud fraction from :func:`load_cf_cam_cloud_fraction`. Required when
         ``config.cloud_fraction_product_id`` is set (FMATCH-CAM), and must be ``None`` otherwise; the
@@ -912,12 +777,16 @@ def create_and_write_data_product(
         If the CF-CAM rows do not line up with the L1B footprints (see
         :meth:`RadiometerCloudFraction.values_for`).
     ValueError
-        If ``cloud_fraction`` is given for a mode that takes no CF-CAM input; if ``ancillary_inputs``
-        is empty, a reader in it has no granule, or a granule is in S3; for a camera-timescale mode,
+        If ``cloud_fraction`` is given for a mode that takes no CF-CAM input; if a reader in
+        ``ancillary_inputs`` has no granule; for a camera-timescale mode,
         whose pseudo-footprints carry no ephemeris to size the PSF from (``TODO[LIBSDC-884]``); or for
         any condition :func:`run_footprint_matching` raises it for.
     MissingCamtimeVariablesError
         If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
+    KeyError
+        If ``ancillary_inputs`` does not hold exactly the readers active for the mode.
+    FileNotFoundError
+        If a granule in ``ancillary_inputs`` is not an existing file.
 
     Notes
     -----
@@ -947,9 +816,8 @@ def create_and_write_data_product(
         cloud_fraction_camera = cloud_fraction.values_for(inputs[FMATCH_RADIOMETER_TIME_COORDINATE])
         provenance.extend(cloud_fraction.file_names)
 
-    source_file_paths = _ancillary_source_file_paths(ancillary_inputs)
-    provenance.extend(path.name for paths in source_file_paths.values() for path in paths)
-    logger.info("Aggregating external variables from %d staged ancillary source(s)", len(source_file_paths))
+    provenance.extend(path.name for paths in ancillary_inputs.values() for path in paths)
+    logger.info("Aggregating external variables from %d ancillary source(s)", len(ancillary_inputs))
 
     logger.info("Writing %s data product for input %s", config.mode.value, input_file_name)
     output_file_path = write_fmatch_product(
@@ -959,24 +827,25 @@ def create_and_write_data_product(
         algorithm_version=algorithm_version(),
         input_files=",".join(provenance),
         cloud_fraction_camera=cloud_fraction_camera,
-        source_file_paths=source_file_paths,
+        source_file_paths=ancillary_inputs,
     )
     logger.info("Wrote %s data product to %s", output_file_path.data_product_id.value, output_file_path.path)
     return output_file_path
 
 
 def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataProductIdentifier) -> list[str]:
-    """Select the files referenced by a manifest that belong to the given Libera data product(s).
+    """Select the files referenced by a manifest that belong to the given Libera or ancillary data product(s).
 
     A runner receives one manifest listing every file staged for the processing step, which in
     general contains more than the runner consumes (an L1B input, an optional cloud-fraction product,
-    ancillary granules, sibling products). This helper keeps exactly the records whose parsed Libera
-    product id is one of ``product_ids``, in manifest order.
+    ancillary granules, sibling products). This helper keeps exactly the records whose name parses,
+    through :meth:`~libera_utils.io.filenaming.AbstractValidFilename.from_file_path`, to a data
+    product whose id is one of ``product_ids``, in manifest order. That covers both the Libera
+    products and the external ancillary products, whose files keep their upstream providers' names.
 
-    Files whose names do not parse as a :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`
-    are skipped rather than raising: manifests legitimately carry non-Libera files (for example the
-    externally-sourced ancillary granules the readers consume), and a runner should ignore them, not
-    fail on them.
+    Files whose names parse to no data product (an unrecognized name, or a manifest) are skipped
+    rather than raising: a manifest may legitimately carry files a runner does not read, and a runner
+    should ignore them, not fail on them.
 
     This lives in the runner, alongside its callers, so that ``libera_utils.io`` stays a generic I/O
     package with no dependency on Libera product identifiers. The SCENE-ID runner keeps its own
@@ -987,7 +856,7 @@ def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataPr
     manifest : Manifest
         The manifest to inspect.
     *product_ids : DataProductIdentifier
-        One or more Libera product ids to keep. Passing several is useful when a runner takes more
+        One or more product ids to keep, Libera or ancillary. Passing several is useful when a runner takes more
         than one Libera input from the same manifest (e.g. FMATCH-CAM reads both an L1B product and an
         optional cloud-fraction one).
 
@@ -1010,22 +879,18 @@ def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataPr
     selected: list[str] = []
     for filename in manifest.files:
         try:
-            libera_filename = LiberaDataProductFilename.from_file_path(filename)
-        except Exception:
-            # Not a Libera product name, so it cannot be one of the requested products.
-            logger.info("Skipping non-Libera-product file (not a %s input): %s", wanted_labels, filename)
+            parsed = AbstractValidFilename.from_file_path(filename)
+        except ValueError:
+            parsed = None
+        if not isinstance(parsed, AbstractDataProductFilename):
+            # The run calls this once per input product, so a file's skip is logged at DEBUG, not per call at INFO.
+            logger.debug("Skipping file that names no data product (not a %s input): %s", wanted_labels, filename)
             continue
-        # Parsed as a Libera product; keep it only if it is one of the requested products.
-        if libera_filename.data_product_id in wanted:
-            logger.info("Recording %s input file: %s", libera_filename.data_product_id.value, filename)
+        if parsed.data_product_id in wanted:
+            logger.info("Recording %s input file: %s", parsed.data_product_id.value, filename)
             selected.append(filename)
         else:
-            logger.info(
-                "Skipping Libera product '%s' (not %s): %s",
-                libera_filename.data_product_id.value,
-                wanted_labels,
-                filename,
-            )
+            logger.debug("Skipping product '%s' (not %s): %s", parsed.data_product_id.value, wanted_labels, filename)
     return selected
 
 
@@ -1142,13 +1007,14 @@ def algorithm_version() -> str:
 class _as_local_path:
     """Context manager yielding a real local filesystem path for a possibly-remote input file.
 
-    Reading an L1B product with :func:`xarray.open_dataset` (and the HDF4/HDF5 libraries underneath it)
-    requires a real file on a local filesystem, because those libraries seek within the file rather
-    than streaming it. A runner's manifest, however, may reference either local paths or S3 object
-    urls. For S3 inputs this downloads the object to a temporary directory that is removed on exit;
-    local inputs are yielded unchanged with no copy.
+    Reading an input file (an L1B or CF-CAM product with :func:`xarray.open_dataset`, an ancillary
+    granule with netCDF4 or the HDF4/HDF5 libraries) requires a real file on a local filesystem,
+    because those libraries seek within the file rather than streaming it. A runner's manifest,
+    however, may reference either local paths or S3 object urls. For S3 inputs this downloads the
+    object, under its own name, to a temporary directory that is removed on exit; local inputs are
+    yielded unchanged with no copy.
 
-    Kept in the runner so that ``libera_utils.io`` stays free of runner-specific plumbing; the SCENE-ID runner keeps its own identical helper for the same reason.
+    Kept in the runner so that ``libera_utils.io`` stays free of runner-specific plumbing.
 
     Parameters
     ----------

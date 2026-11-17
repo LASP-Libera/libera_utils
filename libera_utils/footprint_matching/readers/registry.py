@@ -49,7 +49,9 @@ def _derive_mode_readers(readers: Mapping[str, type[AncillaryReader]]) -> dict[O
     """Return, for every operational mode, the keys of the readers that contribute to it.
 
     A reader contributes to a mode when any spec in its ``product_variable_specs()``
-    names that mode in ``VariableSpec.modes``.
+    names that mode in ``VariableSpec.modes``. A run selects each contributing reader's
+    files from its input manifest by the reader's ``PRODUCT_ID``, so every contributing
+    reader must declare one, and no two may share one.
 
     Parameters
     ----------
@@ -64,7 +66,9 @@ def _derive_mode_readers(readers: Mapping[str, type[AncillaryReader]]) -> dict[O
     Raises
     ------
     ValueError
-        If a mode has no reader, so its product would carry no ancillary variables.
+        If a mode has no reader, so its product would carry no ancillary variables; if a
+        contributing reader declares no ``PRODUCT_ID``; or if two contributing readers declare
+        the same ``PRODUCT_ID``, so a run could not tell their files apart.
     """
     mode_readers = {
         mode: frozenset(
@@ -79,6 +83,25 @@ def _derive_mode_readers(readers: Mapping[str, type[AncillaryReader]]) -> dict[O
         raise ValueError(
             f"No reader supplies a variable for {', '.join(empty)}: give at least one reader's "
             "VariableSpec.modes each of these products, or remove the product."
+        )
+
+    contributing = sorted(set().union(*mode_readers.values()))
+    undeclared = [key for key in contributing if readers[key].PRODUCT_ID is None]
+    if undeclared:
+        raise ValueError(
+            f"Reader(s) {', '.join(undeclared)} feed a FMATCH product but declare no PRODUCT_ID, so a run cannot "
+            "pick their files out of the input manifest. Set each one's PRODUCT_ID to the DataLevel.ANC "
+            "DataProductIdentifier of the source it reads."
+        )
+    by_product: dict[str, list[str]] = {}
+    for key in contributing:
+        by_product.setdefault(readers[key].PRODUCT_ID.value, []).append(key)
+    shared = {product: keys for product, keys in by_product.items() if len(keys) > 1}
+    if shared:
+        clashes = "; ".join(f"{product}: {', '.join(keys)}" for product, keys in sorted(shared.items()))
+        raise ValueError(
+            f"Readers share a PRODUCT_ID ({clashes}), so a run would hand each the other's files. Give each reader "
+            "the DataLevel.ANC DataProductIdentifier of its own source."
         )
     return mode_readers
 

@@ -74,6 +74,7 @@ from typing import NamedTuple
 import netCDF4
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
     decode_cf_times,
@@ -482,6 +483,8 @@ class CeresSsfReader(PassReader):
     READER_KEY : str
         Registry key ``"FLASHFlux"``, which prefixes the FMATCH variable names this reader
         writes (``FLASHFlux_<field>``).
+    PRODUCT_ID : DataProductIdentifier
+        ``anc_ceres_noaa20_ssf``: CERES SSF for NOAA-20 FM6 (CER_SSF), the layout this reader reads.
     RESOLUTION_KM : float
         ~20 km (CERES footprint scale at nadir), the fallback when a granule's own
         footprint spacing cannot be measured.
@@ -495,6 +498,7 @@ class CeresSsfReader(PassReader):
     """
 
     READER_KEY: str = "FLASHFlux"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_ceres_noaa20_ssf
     # The SSF product read here is the NOAA-20 stream (FM6, VIIRS imager).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
     # a second reader.

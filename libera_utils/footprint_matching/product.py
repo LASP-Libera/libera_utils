@@ -923,7 +923,7 @@ def _merge_computed_variables(
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : np.ndarray
         Per-footprint geolocation angles (degrees) for the sun-glint calculation.
     source_file_paths : dict[str, Sequence[Path]] or None
-        Reader-key -> staged ancillary granule(s) map the sources are built from. Pass this or
+        Reader-key -> local ancillary granule(s) map the sources are built from. Pass this or
         ``sources``, not both.
     sources : dict[str, AncillaryReader] or None
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers
@@ -1126,7 +1126,7 @@ def assemble_fmatch_dataset(
         required for them unless ``allow_placeholders`` is ``True``, and must be ``None``
         for the IMAGER modes.
     source_file_paths : dict[str, Sequence[Path]], optional
-        Reader-key -> staged ancillary granule(s) map the sources are built from. Pass this or
+        Reader-key -> local ancillary granule(s) map the sources are built from. Pass this or
         ``sources``, not both.
     sources : dict[str, AncillaryReader], optional
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers
@@ -1972,7 +1972,7 @@ def write_fmatch_product(
         :func:`assemble_fmatch_dataset`: required for the CAM modes unless
         ``allow_placeholders`` is ``True``, and ``None`` for the IMAGER modes.
     source_file_paths : dict[str, Sequence[Path]], optional
-        Reader-key -> staged ancillary granule(s) map the sources are built from. Pass this or
+        Reader-key -> local ancillary granule(s) map the sources are built from. Pass this or
         ``sources``, not both.
     sources : dict[str, AncillaryReader], optional
         Pre-built readers to aggregate from, keyed by reader registry key: exactly the readers

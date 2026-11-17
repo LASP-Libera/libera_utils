@@ -42,6 +42,7 @@ File naming:
 import netCDF4
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 from libera_utils.io.netcdf import field_fill_value
@@ -77,6 +78,8 @@ class VIIRSCldpropD3Reader(StaticReader):
     ----------------
     READER_KEY : str
         Registry key ``"VIIRS_CLDPROP_D3"``, after the product's short name.
+    PRODUCT_ID : DataProductIdentifier
+        ``anc_viirs_noaa20_cloud_properties``: the NOAA-20 VIIRS L3 daily cloud properties (CLDPROP_D3_VIIRS_NOAA20).
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
@@ -89,6 +92,7 @@ class VIIRSCldpropD3Reader(StaticReader):
     """
 
     READER_KEY: str = "VIIRS_CLDPROP_D3"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_viirs_noaa20_cloud_properties
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.

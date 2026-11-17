@@ -62,6 +62,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
+from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.types import (
     STANDARD_DEVIATION_SUFFIX,
     BoundingBox,
@@ -264,6 +265,13 @@ class AncillaryReader(abc.ABC):
         prefix of its product variable names, spelled as in the product (Camel_Case,
         acronyms in capitals). Examples: ``"IGBP"``, ``"NISE"``, ``"ERA5_Surface"``,
         ``"VIIRS_AOD"``.
+    PRODUCT_ID : DataProductIdentifier or None
+        The ``DataLevel.ANC`` product this reader reads. A FMATCH run hands the reader
+        the input manifest's files whose names parse to this product (see
+        :func:`~libera_utils.footprint_matching.footprint_match_algorithm.select_ancillary_inputs`).
+        Every built-in reader that feeds a product declares one, and no two share one;
+        ``None`` (the default) is left only to readers defined outside the package, such
+        as test doubles.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
         for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
@@ -319,6 +327,7 @@ class AncillaryReader(abc.ABC):
     """
 
     READER_KEY: str
+    PRODUCT_ID: DataProductIdentifier | None = None
     INSTRUMENT: str
     RESOLUTION_KM: float
     VARIABLES: tuple[VariableSpec, ...]
@@ -335,14 +344,17 @@ class AncillaryReader(abc.ABC):
         Abstract intermediates (classes that still have ``abc.abstractmethod`` members)
         are skipped. A concrete reader missing ``INSTRUMENT``, ``TIME_MATCH``, or the
         time-window attributes its policy needs fails here, at import, rather than on
-        the first footprint. So does a second class registering a ``READER_KEY`` that
+        the first footprint, as does one whose ``PRODUCT_ID`` is set to anything but a
+        ``DataLevel.ANC`` :class:`~libera_utils.constants.DataProductIdentifier`. So does a second
+        class registering a ``READER_KEY`` that
         another class already holds; re-executing a reader module (``importlib.reload``,
         IPython ``%autoreload``) defines a new class under the same key and raises too.
 
         Raises
         ------
         TypeError
-            If a concrete subclass lacks a required class attribute, declares a window
+            If a concrete subclass lacks a required class attribute, sets ``PRODUCT_ID`` to anything
+            but a ``DataLevel.ANC`` data product identifier, declares a window
             attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
             registered to a different class, or declares a ``PRODUCT_STACKS`` entry that names
             a spec it does not produce, stacks a spec twice, takes the name of a product spec,
@@ -362,6 +374,15 @@ class AncillaryReader(abc.ABC):
             raise TypeError(
                 f"Reader {cls.__name__!r} (READER_KEY={key!r}) must define an INSTRUMENT class attribute; "
                 "it is recorded in each output variable's long_name as '... ({INSTRUMENT})'."
+            )
+        product_id = cls.PRODUCT_ID
+        if product_id is not None and not (
+            isinstance(product_id, DataProductIdentifier) and product_id.data_level is DataLevel.ANC
+        ):
+            raise TypeError(
+                f"Reader {cls.__name__!r} (READER_KEY={key!r}) sets PRODUCT_ID={product_id!r}, which is not an "
+                "ancillary product. Set PRODUCT_ID to the DataProductIdentifier member at DataLevel.ANC for the "
+                "source it reads (e.g. DataProductIdentifier.anc_modis_igbp)."
             )
         policy = getattr(cls, "TIME_MATCH", None)
         if not isinstance(policy, TimeMatch):

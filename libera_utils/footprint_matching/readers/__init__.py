@@ -22,10 +22,11 @@ AncillaryReader : abstract class
 Notes
 -----
 Reader configuration is code, not a configuration file: each reader declares its key,
-its source and its variables as class attributes and field tables, and the FMATCH
-product definitions (``libera_utils/data/product_definitions/fmatch_*.yml``) are written
-to match. Two tests in ``tests/unit/test_footprint_matching/test_fmatch_definitions.py``
-hold the two sides together: ``test_external_variables_match_readers`` fails when a
+its source, the ancillary product it reads (``PRODUCT_ID``) and its variables as class
+attributes and field tables, and the FMATCH product definitions
+(``libera_utils/data/product_definitions/fmatch_*.yml``) are written to match. Two tests
+in ``tests/unit/test_footprint_matching/test_fmatch_definitions.py`` hold the two sides
+together: ``test_external_variables_match_readers`` fails when a
 product definition lacks a reader variable or has a different dtype, and
 ``test_reader_instrument_is_recorded_in_long_name`` fails when a ``long_name`` does not
 end with the reader's ``INSTRUMENT``. Run them after any of the changes below.
@@ -42,8 +43,10 @@ readers from NOAA-20 to NOAA-21:
    order, fill or geolocation conventions), update the reader's field table and its
    ``_load_granule`` or ``_load_native``, and add a cut of a real granule under
    ``tests/test_data/footprint_matching/`` with a test that reads it.
-4. Stage the new granules under the same directory as before: the directory is named
-   by the reader key, not the instrument.
+4. Add a ``DataLevel.ANC`` member for the new product to
+   :class:`~libera_utils.constants.DataProductIdentifier`, map the new product's upstream
+   filename to it in :mod:`libera_utils.io.filenaming`, and set the reader's
+   ``PRODUCT_ID`` to it, so a run selects the new granules from its input manifest.
 
 The reader key and the product variable names do not change, so downstream consumers
 are unaffected unless step 3 changes a variable.
@@ -70,16 +73,19 @@ are unaffected unless step 3 changes a variable.
 **Add a reader or change which products a reader feeds:**
 
 1. Write the reader as a subclass of ``StaticReader``, ``SteppedGridReader`` or
-   ``PassReader`` with a unique ``READER_KEY``, and import it in this package's
-   ``__init__.py`` to register it.
+   ``PassReader`` with a unique ``READER_KEY`` and, as ``PRODUCT_ID``, the
+   ``DataLevel.ANC`` :class:`~libera_utils.constants.DataProductIdentifier` of the source it
+   reads, which no other reader claims and whose upstream filename a class in
+   :mod:`libera_utils.io.filenaming` parses. Import it in this package's ``__init__.py`` to
+   register it.
 2. Name the products it feeds in each of its variables' ``modes``;
    ``FMATCH_MODE_READERS`` is derived from them.
 3. Add its variables to those products' definitions, as above.
-4. Stage its granules under ``$FMATCH_ANCILLARY_PATH/<reader key>/``; the runners derive
-   the directories they read from the registry.
+4. List its granules in the runs' input manifests; a runner selects them by the reader's
+   ``PRODUCT_ID``.
 
-Renaming a reader key renames its product variables and its staging directory, so it is
-a change consumers and the staging pipeline must follow.
+Renaming a reader key renames its product variables, so it is a change consumers must
+follow.
 """
 
 # Importing each reader class defines it, which triggers

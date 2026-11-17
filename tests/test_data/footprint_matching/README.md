@@ -16,9 +16,10 @@ granule differs by under 0.4% (CLDPIX 7.204 km against 7.177 km, SSF 43.737 km a
 43.700 km).
 
 The `ceres_ssf` reader reads the SSF granule, a CERES SSF Edition 5 development (`alpha4`)
-granule. The FLASHFlux granule is a different product, in a layout no reader reads, so it
-has no reader below; each of its kept variables was checked value for value against the
-source granule instead. TODO[LIBSDC-932]: read the FLASHFlux layout.
+granule, which a run selects as `CERES-NOAA20-SSF`. The FLASHFlux granule is a different
+product, in a layout no reader reads, so it has no reader below; each of its kept variables
+was checked value for value against the source granule instead. TODO[LIBSDC-932]: read the
+FLASHFlux layout.
 
 | File                                                                                    | Reader             | Source granule                                                                   | Kept                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

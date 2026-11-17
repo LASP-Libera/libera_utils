@@ -59,6 +59,7 @@ File naming:
 import h5py
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._hdf5_io import _parse_he5_grid_metadata, read_he5_struct_metadata
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
@@ -131,6 +132,8 @@ class VIIRSBRDFReader(StaticReader):
     ----------------
     READER_KEY : str
         Registry key ``"VIIRS_BRDF"``.
+    PRODUCT_ID : DataProductIdentifier
+        ``anc_viirs_noaa20_brdf``: the NOAA-20 VIIRS daily BRDF/albedo model parameters (VJ143C1).
     RESOLUTION_KM : float
         5.6 km (0.05° CMG grid spacing at equator).
     VARIABLES : tuple[VariableSpec, ...]
@@ -145,6 +148,7 @@ class VIIRSBRDFReader(StaticReader):
     """
 
     READER_KEY: str = "VIIRS_BRDF"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_viirs_noaa20_brdf
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.

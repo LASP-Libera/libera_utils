@@ -58,6 +58,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader
 from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS
 from libera_utils.footprint_matching.types import (
@@ -1326,10 +1327,13 @@ FAKE_CONE_ANGLE_RATE: float = -1.0
 _ALL_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
 
 
+# The fakes take the two ancillary products no built-in reader reads, so a runner test that pins a mode to them
+# selects their files from the manifest by a product id no built-in reader also claims.
 class FakeMeanReader(StaticReader):
     """Multi-variable reader: two continuous fields with constant values 5 and 2."""
 
     READER_KEY = "_fake_agg_mean"
+    PRODUCT_ID = DataProductIdentifier.anc_nsidc_land_ocean_mask
     INSTRUMENT = "TEST"
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
@@ -1353,6 +1357,7 @@ class FakeCatReader(StaticReader):
     """Single-variable categorical reader: every sample is class 3, plus ranked extras."""
 
     READER_KEY = "_fake_agg_cat"
+    PRODUCT_ID = DataProductIdentifier.anc_viirs_noaa20_m4_sdr
     INSTRUMENT = "TEST"
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
@@ -1470,6 +1475,79 @@ def fake_aggregation(monkeypatch: pytest.MonkeyPatch, fake_sources: dict[str, An
     )
 
 
+# The cut of a real granule in tests/test_data/footprint_matching for each ancillary product, keyed by the product a
+# run selects it as. The CERES SSF reader reads the SSF sample; the FLASHFlux sample is in the FLASH_SSF layout, which
+# no reader reads yet. The M4 SDR sample is the radiance file of its radiance/geolocation pair.
+ANCILLARY_SAMPLES: dict[DataProductIdentifier, str] = {
+    DataProductIdentifier.anc_ceres_noaa20_cldpix: "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc",
+    DataProductIdentifier.anc_ceres_noaa20_flashflux: (
+        "FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200_subset.nc"
+    ),
+    DataProductIdentifier.anc_ceres_noaa20_ssf: "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc",
+    DataProductIdentifier.anc_era5_pressure_level: "era5_pressure_levels_20250101T00_subset.nc",
+    DataProductIdentifier.anc_era5_single_level: "era5_single_levels_20250101T00_subset.nc",
+    DataProductIdentifier.anc_modis_igbp: "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
+    DataProductIdentifier.anc_nsidc_ice_snow: "NISE_AMSR2_20260610_subset.HDFEOS",
+    DataProductIdentifier.anc_nsidc_land_ocean_mask: "EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin",
+    DataProductIdentifier.anc_viirs_noaa20_aod: "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
+    DataProductIdentifier.anc_viirs_noaa20_brdf: "VJ143C1.A2026153.002.2026161161054_subset.h5",
+    DataProductIdentifier.anc_viirs_noaa20_cloud_properties: (
+        "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc"
+    ),
+    DataProductIdentifier.anc_viirs_noaa20_m4_sdr: (
+        "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops_subset.h5"
+    ),
+}
+
+# Both ERA5 samples hold the single hour 2025-01-01T00; the SDC names its ERA5 downloads, so the revision is arbitrary.
+_ERA5_SAMPLE_HOUR = datetime(2025, 1, 1, tzinfo=UTC)
+_ERA5_SAMPLE_REVISION = datetime(2026, 8, 12, 16, 11, tzinfo=UTC)
+
+
+def ancillary_upstream_name(product_id: DataProductIdentifier) -> str:
+    """Return the name a run's manifest lists the sample of ``product_id`` under.
+
+    The samples are named as their upstream providers name the files, plus ``_subset``, except ERA5's, which are
+    named as downloaded; an ERA5 file reaches a manifest under the name the SDC gives it.
+
+    Parameters
+    ----------
+    product_id : DataProductIdentifier
+        An ancillary product in ``ANCILLARY_SAMPLES``.
+
+    Returns
+    -------
+    str
+        A filename that parses to ``product_id``.
+    """
+    from libera_utils.io.filenaming import Era5Filename  # noqa: PLC0415
+
+    if product_id in (DataProductIdentifier.anc_era5_pressure_level, DataProductIdentifier.anc_era5_single_level):
+        return Era5Filename.from_filename_parts(
+            product_name=product_id,
+            version="ERA5",
+            utc_start=_ERA5_SAMPLE_HOUR,
+            utc_end=_ERA5_SAMPLE_HOUR,
+            revision=_ERA5_SAMPLE_REVISION,
+        ).path.name
+    return ANCILLARY_SAMPLES[product_id].replace("_subset.", ".", 1)
+
+
+@pytest.fixture
+def ancillary_placeholders(tmp_path: Path) -> list[Path]:
+    """One empty file per ancillary product, under the name a manifest lists it as.
+
+    For tests in which the readers never open the files (``fake_aggregation``, or a run that stops first): a run
+    selects every reader's files by name from these.
+    """
+    directory = tmp_path / "ancillary"
+    directory.mkdir()
+    placeholders = [directory / ancillary_upstream_name(product_id) for product_id in ANCILLARY_SAMPLES]
+    for placeholder in placeholders:
+        placeholder.touch()
+    return placeholders
+
+
 def make_l1b_radiometer_fixture(
     directory: Path,
     n_footprints: int = 8,
@@ -1504,7 +1582,6 @@ def make_l1b_radiometer_fixture(
     Path
         Path to the written L1B RAD-4CH NetCDF file.
     """
-    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
     from libera_utils.footprint_matching.footprint_match_algorithm import L1B_TIME_VARIABLE  # noqa: PLC0415
     from libera_utils.footprint_matching.product import (  # noqa: PLC0415
         L1B_CONE_ANGLE_RATE_VARIABLE,
@@ -1602,7 +1679,6 @@ def make_cf_cam_fixture(
     Path
         Path to the written CF-CAM NetCDF file.
     """
-    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
     from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
 
     radiometer_time = np.asarray(radiometer_time, dtype="datetime64[ns]")
@@ -1741,7 +1817,6 @@ def make_cf_cam_camtime_fixture(directory: Path, **dataset_kwargs: Any) -> Path:
     Path
         Path to the written CF-CAM-CAMTIME NetCDF file.
     """
-    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
     from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
 
     dataset = make_cf_cam_camtime_dataset(**dataset_kwargs)

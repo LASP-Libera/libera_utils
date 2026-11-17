@@ -1,17 +1,17 @@
 """Integration tests for the FMATCH runners: one full run per variant, as the ``libera-utils-fmatch`` container runs it.
 
-Each test gives the run only what a processing step gives the container: the ``LIBERA_FMATCH_VARIANT``,
-``PROCESSING_PATH`` and ``FMATCH_ANCILLARY_PATH`` environment variables and an input manifest, passed to the
-``libera-utils fmatch <manifest>`` entrypoint. Nothing in the runner is patched. The ancillary tree holds the shortened
-real granules from ``tests/test_data/footprint_matching``, staged one directory per reader key as the pipeline stages
-them, so every reader opens a file in its distributed format. The input manifest, the input product and the dropbox are
-on local disk or in mocked S3; the ancillary tree is always local, because the readers need local files.
+Each test gives the run only what a processing step gives the container: the ``LIBERA_FMATCH_VARIANT`` and
+``PROCESSING_PATH`` environment variables and an input manifest, passed to the ``libera-utils fmatch <manifest>``
+entrypoint. Nothing in the runner is patched. The manifest lists the input product and, for every reader active for the
+variant, the shortened real granule from ``tests/test_data/footprint_matching`` under the name its upstream provider
+gives it, so the run selects each reader's file by its product and every reader opens a file in its distributed
+format. The input manifest, the inputs and the dropbox are on local disk or in mocked S3; in S3, the run copies each
+ancillary granule to local disk for its reader.
 
 The shortened granules come from different days and regions, so most of a product's external columns are fill. These
 tests check that a run gets from manifest to product, not the aggregated values, which the product tests check.
 """
 
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +21,6 @@ from cloudpathlib import S3Path
 
 from libera_utils import cli
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    ANCILLARY_PATH_ENV,
     FMATCH_VARIANT_ENV,
     L1B_TIME_VARIABLE,
     RUNNER_CONFIGS,
@@ -33,6 +32,8 @@ from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.version import version
 from tests.plugins.footprint_matching_fixtures import (
+    ANCILLARY_SAMPLES,
+    ancillary_upstream_name,
     make_cf_cam_camtime_fixture,
     make_cf_cam_fixture,
     make_l1b_radiometer_fixture,
@@ -42,20 +43,6 @@ pytestmark = pytest.mark.integration
 
 RADIOMETER_TIMESCALE_VARIANTS = [name for name, config in RUNNER_CONFIGS.items() if not config.is_camera_timescale]
 CAMERA_TIMESCALE_VARIANTS = [name for name, config in RUNNER_CONFIGS.items() if config.is_camera_timescale]
-
-# The shortened real granule each reader reads, by reader key; tests/test_data/footprint_matching/README.md says
-# what each was cut from.
-REAL_GRANULES: dict[str, str] = {
-    "CLDPIX": "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc",
-    "ERA5_Pressure": "era5_pressure_levels_20250101T00_subset.nc",
-    "ERA5_Surface": "era5_single_levels_20250101T00_subset.nc",
-    "FLASHFlux": "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc",
-    "IGBP": "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
-    "NISE": "NISE_AMSR2_20260610_subset.HDFEOS",
-    "VIIRS_AOD": "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
-    "VIIRS_BRDF": "VJ143C1.A2026153.002.2026161161054_subset.h5",
-    "VIIRS_CLDPROP_D3": "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc",
-}
 
 # Leading L1B samples written as NaN, as the real files mark samples whose boresight misses the Earth.
 N_OFF_EARTH = 2
@@ -77,24 +64,25 @@ def processing_area(request, tmp_path) -> tuple[Path | S3Path, Path | S3Path]:
 def fmatch_environment(tmp_path, monkeypatch, fmatch_real_data_path, processing_area):
     """Set up a processing step's environment, returning a function that stages a variant's inputs.
 
-    The returned function stages the real granule of every reader active for the variant, sets the three environment
-    variables, copies the input products into the input directory and writes the input manifest listing them. It
-    returns the manifest path.
+    The returned function sets the two environment variables, copies the input products and the real granule of every
+    reader active for the variant (under its upstream name) into the input directory, and writes the input manifest
+    listing them all. It returns the manifest path.
     """
     input_dir, dropbox = processing_area
 
     def _stage(variant: str, *input_products: Path) -> Path | S3Path:
-        ancillary_root = tmp_path / "ancillary"
-        for reader_key in ReaderRegistry.get_readers_for_mode(RUNNER_CONFIGS[variant].mode):
-            (ancillary_root / reader_key).mkdir(parents=True)
-            shutil.copy(fmatch_real_data_path / REAL_GRANULES[reader_key], ancillary_root / reader_key)
-
         monkeypatch.setenv(FMATCH_VARIANT_ENV, variant)
         monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
-        monkeypatch.setenv(ANCILLARY_PATH_ENV, str(ancillary_root))
 
+        ancillary = [
+            smart_copy_file(
+                fmatch_real_data_path / ANCILLARY_SAMPLES[reader.PRODUCT_ID],
+                input_dir / ancillary_upstream_name(reader.PRODUCT_ID),
+            )
+            for reader in ReaderRegistry.get_readers_for_mode(RUNNER_CONFIGS[variant].mode).values()
+        ]
         manifest = Manifest(manifest_type=ManifestType.INPUT)
-        manifest.add_files(*(smart_copy_file(path, input_dir / path.name) for path in input_products))
+        manifest.add_files(*(smart_copy_file(path, input_dir / path.name) for path in input_products), *ancillary)
         return manifest.write(input_dir)
 
     return _stage
@@ -135,12 +123,13 @@ def test_radiometer_timescale_run_writes_product_and_output_manifest(
     # Copied to local disk because xarray opens a file, not an S3 object.
     local_product = smart_copy_file(product_path, tmp_path / Path(product_path).name)
     with xr.open_dataset(local_product) as product, xr.open_dataset(l1b_file) as l1b:
-        # Provenance names the L1B input and any CF-CAM input, then every staged granule, so each active reader was
-        # handed its file.
+        # Provenance names the L1B input and any CF-CAM input, then every ancillary granule, so each active reader was
+        # handed the file of its product.
         input_granules = product.attrs["InputGranules"].split(",")
         assert input_granules[: len(input_files)] == [path.name for path in input_files]
         assert sorted(input_granules[len(input_files) :]) == sorted(
-            REAL_GRANULES[reader_key] for reader_key in ReaderRegistry.get_readers_for_mode(config.mode)
+            ancillary_upstream_name(reader.PRODUCT_ID)
+            for reader in ReaderRegistry.get_readers_for_mode(config.mode).values()
         )
         assert product.attrs["algorithm_version"] == version()
 
@@ -154,6 +143,14 @@ def test_radiometer_timescale_run_writes_product_and_output_manifest(
         assert np.isfinite(product["PSF_Coverage_Fraction"].values).all()
         assert np.isfinite(product["Quality_Flag"].values).all()
         assert np.isfinite(product["NISE_Open_Ocean"].values).any()
+
+        # The SSF granule the CERES SSF reader reads covers an hour no footprint reaches, so its columns are fill and
+        # the reader reads only the granule's time coverage.
+        flashflux_columns = [name for name in product.data_vars if name.startswith("FLASHFlux_")]
+        assert bool(flashflux_columns) == ("FLASHFlux" in ReaderRegistry.get_readers_for_mode(config.mode))
+        for name in flashflux_columns:
+            # xarray reads a declared _FillValue as NaN, so a fill column is all NaN.
+            assert np.isnan(product[name].values.astype(np.float64)).all(), name
 
         # FMATCH-CAM carries the CF-CAM value of each footprint CF-CAM covers, and fill for the rest.
         if config.cloud_fraction_product_id is not None:

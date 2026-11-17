@@ -18,7 +18,6 @@ import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    ANCILLARY_PATH_ENV,
     FMATCH_VARIANT_ENV,
     fmatch_cli_handler,
     select_manifest_files_by_product_id,
@@ -28,7 +27,6 @@ from libera_utils.footprint_matching.footprint_match_algorithm import (
 )
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
@@ -105,19 +103,13 @@ def dropbox(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def staged_ancillary(tmp_path, monkeypatch, fake_aggregation):
-    """An ancillary tree with one placeholder granule per registered reader, exported as FMATCH_ANCILLARY_PATH.
+def staged_ancillary(ancillary_placeholders, fake_aggregation):
+    """One placeholder file per ancillary product, for a test to list in its input manifest.
 
-    The runner finds a granule for every reader it needs, and ``fake_aggregation`` aggregates from the fake readers
-    instead of opening them.
+    The runner selects a file for every reader it needs by name, and ``fake_aggregation`` aggregates from the fake
+    readers instead of opening them.
     """
-    root = tmp_path / "ancillary"
-    for reader_key in ReaderRegistry.list_readers():
-        reader_directory = root / reader_key
-        reader_directory.mkdir(parents=True)
-        (reader_directory / "granule.nc").touch()
-    monkeypatch.setenv(ANCILLARY_PATH_ENV, str(root))
-    return root
+    return ancillary_placeholders
 
 
 @pytest.fixture
@@ -155,7 +147,7 @@ class TestRadiometerRunnerWorkflow:
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         l1b_file, cf_cam_file = _stage_cam_inputs(inputs, n_footprints=8)
-        manifest_path = _write_input_manifest(inputs, l1b_file, cf_cam_file)
+        manifest_path = _write_input_manifest(inputs, l1b_file, cf_cam_file, *staged_ancillary)
 
         output_manifest = Manifest.from_file(_run_cli("cam", manifest_path, monkeypatch))
 
@@ -166,7 +158,9 @@ class TestRadiometerRunnerWorkflow:
     def test_non_finite_l1b_footprints_are_excluded(self, tmp_path, dropbox, staged_ancillary, monkeypatch):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        manifest_path = _write_input_manifest(inputs, *_stage_cam_inputs(inputs, n_footprints=10, n_invalid=4))
+        manifest_path = _write_input_manifest(
+            inputs, *_stage_cam_inputs(inputs, n_footprints=10, n_invalid=4), *staged_ancillary
+        )
 
         output_manifest = Manifest.from_file(_run_cli("cam", manifest_path, monkeypatch))
 
@@ -174,27 +168,27 @@ class TestRadiometerRunnerWorkflow:
             assert product.sizes["RADIOMETER_TIME"] == 6
 
 
-@pytest.mark.usefixtures("dropbox", "staged_ancillary", "imager_uses_fake_readers")
+@pytest.mark.usefixtures("dropbox", "imager_uses_fake_readers")
 class TestImagerProduct:
     """FMATCH-IMAGER writes the CLDPIX/FLASHFlux fields alongside the ERA5 pressure-level fields."""
 
-    def _run(self, tmp_path, monkeypatch):
+    def _run(self, tmp_path, monkeypatch, staged_ancillary):
         inputs = tmp_path / "inputs"
         inputs.mkdir(parents=True)
         l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=6)
-        manifest_path = _write_input_manifest(inputs, l1b_file)
+        manifest_path = _write_input_manifest(inputs, l1b_file, *staged_ancillary)
         return Manifest.from_file(_run_cli("imager", manifest_path, monkeypatch))
 
-    def test_run_writes_the_cldpix_and_era5_variable_set(self, tmp_path, monkeypatch):
-        output_manifest = self._run(tmp_path, monkeypatch)
+    def test_run_writes_the_cldpix_and_era5_variable_set(self, tmp_path, monkeypatch, staged_ancillary):
+        output_manifest = self._run(tmp_path, monkeypatch, staged_ancillary)
 
         with xr.open_dataset(output_manifest.files[0]) as product:
             names = set(product.variables)
             assert any(name.startswith(CLDPIXReader.READER_KEY + "_") for name in names)
             assert any(name.startswith(ERA5PressureLevelReader.READER_KEY + "_") for name in names)
 
-    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, monkeypatch):
-        output_manifest = self._run(tmp_path, monkeypatch)
+    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, monkeypatch, staged_ancillary):
+        output_manifest = self._run(tmp_path, monkeypatch, staged_ancillary)
 
         written = LiberaDataProductFilename.from_file_path(output_manifest.files[0])
         assert written.data_product_id is DataProductIdentifier.aux_fmatch_imager
@@ -204,8 +198,9 @@ class TestManifestInputSelection:
     """A runner must take only its own primary input product out of a mixed manifest."""
 
     _INPUT_DIR = "/dropbox/inputs"
-    # A staged ancillary granule: a real, non-Libera filename that must be ignored by manifest selection.
-    _ANCILLARY_NAME = "MCD12Q1.A2023001.h09v05.061.hdf"
+    # An ancillary granule under its upstream name, which parses to an ancillary product that is no runner's primary
+    # input.
+    _ANCILLARY_NAME = "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf"
 
     def _manifest(self, *filenames: str) -> Manifest:
         return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
@@ -275,7 +270,7 @@ class TestRunnerConfiguration:
         assert config.cloud_fraction_product_id is cloud_fraction_product
 
 
-@pytest.mark.usefixtures("dropbox", "staged_ancillary", "imager_uses_fake_readers")
+@pytest.mark.usefixtures("dropbox", "imager_uses_fake_readers")
 class TestRunnerOutputThroughSceneId:
     """An FMATCH runner's product reads into SCENE-ID and writes a SCENE-ID product under product names.
 
@@ -286,7 +281,7 @@ class TestRunnerOutputThroughSceneId:
     """
 
     @pytest.mark.parametrize("variant", ["cam", "imager"])
-    def test_runner_product_writes_a_scene_id_product(self, variant, tmp_path, monkeypatch):
+    def test_runner_product_writes_a_scene_id_product(self, variant, tmp_path, monkeypatch, staged_ancillary):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         input_files = (
@@ -294,7 +289,7 @@ class TestRunnerOutputThroughSceneId:
             if FMATCH_RUNNER_CONFIGS[variant].cloud_fraction_product_id is not None
             else (make_l1b_radiometer_fixture(inputs, n_footprints=8),)
         )
-        manifest_path = _write_input_manifest(inputs, *input_files)
+        manifest_path = _write_input_manifest(inputs, *input_files, *staged_ancillary)
         fmatch_product_path = Manifest.from_file(_run_cli(variant, manifest_path, monkeypatch)).files[0]
 
         scene_id_config = SCENE_ID_RUNNER_CONFIGS[variant]

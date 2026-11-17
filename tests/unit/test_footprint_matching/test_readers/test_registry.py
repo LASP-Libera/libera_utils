@@ -17,6 +17,7 @@ import pytest
 
 import libera_utils
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers import (
     CeresSsfReader,
     CLDPIXReader,
@@ -228,6 +229,19 @@ _DECLARED = [
 ]
 _BUILT_IN = {row[0]: row[1] for row in _DECLARED}
 
+# The ancillary product each built-in reader reads, written out independently of the reader modules.
+_DECLARED_PRODUCT_IDS = {
+    "ERA5_Surface": DataProductIdentifier.anc_era5_single_level,
+    "ERA5_Pressure": DataProductIdentifier.anc_era5_pressure_level,
+    "IGBP": DataProductIdentifier.anc_modis_igbp,
+    "NISE": DataProductIdentifier.anc_nsidc_ice_snow,
+    "VIIRS_BRDF": DataProductIdentifier.anc_viirs_noaa20_brdf,
+    "VIIRS_CLDPROP_D3": DataProductIdentifier.anc_viirs_noaa20_cloud_properties,
+    "VIIRS_AOD": DataProductIdentifier.anc_viirs_noaa20_aod,
+    "CLDPIX": DataProductIdentifier.anc_ceres_noaa20_cldpix,
+    "FLASHFlux": DataProductIdentifier.anc_ceres_noaa20_ssf,
+}
+
 # The readers each product draws on, written out independently of the readers' specs.
 _CAM_READERS = frozenset({"IGBP", "NISE", "VIIRS_CLDPROP_D3"})
 _IMAGER_CAMTIME_READERS = _CAM_READERS | {"ERA5_Surface", "VIIRS_BRDF", "VIIRS_AOD", "CLDPIX", "FLASHFlux"}
@@ -246,11 +260,14 @@ _EXPECTED_PRODUCT_VARIABLE_COUNTS = {
 }
 
 
-def _stub_reader(key: str, modes: frozenset[OperationalMode]) -> type[StaticReader]:
+def _stub_reader(
+    key: str, modes: frozenset[OperationalMode], product_id: DataProductIdentifier | None = None
+) -> type[StaticReader]:
     """Define and return a stub StaticReader under ``key`` with one variable carried by ``modes``."""
 
     class _Stub(StaticReader):
         READER_KEY = key
+        PRODUCT_ID = product_id
         INSTRUMENT = "FAKE"
         RESOLUTION_KM = 1.0
         TIME_MATCH = TimeMatch.DAILY
@@ -444,13 +461,15 @@ class TestReadersForMode:
         more products than its variables name would run it for products that carry none of its variables. A stub
         with a single mode tests that rule directly, independent of how the built-in readers happen to be declared.
 
-        Copies the registry with ``monkeypatch``, defines a stub whose one variable names FMATCH-CAM, and asserts the
-        derived table lists the stub under CAM and under no other mode.
+        Copies the registry with ``monkeypatch``, defines a stub whose one variable names FMATCH-CAM, derives from the
+        built-in readers plus the stub, and asserts the derived table lists the stub under CAM and under no other mode.
         """
         monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
-        _stub_reader("_registry_test_cam_only", frozenset({OperationalMode.CAM}))
+        stub = _stub_reader(
+            "_registry_test_cam_only", frozenset({OperationalMode.CAM}), DataProductIdentifier.anc_viirs_noaa20_m4_sdr
+        )
 
-        derived = _derive_mode_readers(ReaderRegistry._registry)
+        derived = _derive_mode_readers({**_BUILT_IN, "_registry_test_cam_only": stub})
 
         assert {mode for mode, keys in derived.items() if "_registry_test_cam_only" in keys} == {OperationalMode.CAM}
 
@@ -463,6 +482,39 @@ class TestReadersForMode:
         """
         with pytest.raises(ValueError, match="No reader supplies a variable for FMATCH-CAM, "):
             _derive_mode_readers({"ERA5_Pressure": ERA5PressureLevelReader})
+
+    def test_derive_raises_when_a_contributing_reader_has_no_product_id(self, monkeypatch):
+        """``_derive_mode_readers`` raises ``ValueError`` naming a contributing reader with no ``PRODUCT_ID``.
+
+        A run selects each reader's files from the manifest by its ``PRODUCT_ID``, so a reader that feeds a product
+        without one could never be given a file.
+
+        Derives from the built-in readers plus a stub that feeds FMATCH-CAM with no ``PRODUCT_ID`` and asserts a
+        ``ValueError`` naming the stub.
+        """
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        stub = _stub_reader("_registry_test_no_product", frozenset({OperationalMode.CAM}))
+
+        with pytest.raises(
+            ValueError, match="_registry_test_no_product feed a FMATCH product but declare no PRODUCT_ID"
+        ):
+            _derive_mode_readers({**_BUILT_IN, "_registry_test_no_product": stub})
+
+    def test_derive_raises_when_two_contributing_readers_share_a_product_id(self, monkeypatch):
+        """``_derive_mode_readers`` raises ``ValueError`` naming the product and both readers that share it.
+
+        Two readers with one ``PRODUCT_ID`` would each be handed the other's files.
+
+        Derives from the built-in readers plus a stub declaring IGBP's product and asserts a ``ValueError`` naming
+        ``MODIS-IGBP``, ``IGBP`` and the stub.
+        """
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        stub = _stub_reader(
+            "_registry_test_igbp_twin", frozenset({OperationalMode.CAM}), DataProductIdentifier.anc_modis_igbp
+        )
+
+        with pytest.raises(ValueError, match=r"share a PRODUCT_ID \(MODIS-IGBP: IGBP, _registry_test_igbp_twin\)"):
+            _derive_mode_readers({**_BUILT_IN, "_registry_test_igbp_twin": stub})
 
     def test_a_reader_registered_after_import_is_not_in_the_table(self, monkeypatch):
         """A reader defined after the package import joins the registry but not ``FMATCH_MODE_READERS``.
@@ -519,6 +571,38 @@ class TestDuplicateKey:
                     raise NotImplementedError
 
         assert ReaderRegistry.get("_registry_test_duplicate") is _First
+
+
+class TestProductId:
+    @pytest.mark.parametrize(("key", "product_id"), list(_DECLARED_PRODUCT_IDS.items()))
+    def test_built_in_reader_declares_its_ancillary_product(self, key, product_id):
+        """Each built-in reader declares the ancillary product it reads as ``PRODUCT_ID``.
+
+        A run hands a reader the manifest's files of this product, so a wrong id feeds the reader another source's
+        files. Parametrized over the nine built-in readers; asserts each one's ``PRODUCT_ID`` equals the table's.
+        """
+        assert ReaderRegistry.get(key).PRODUCT_ID is product_id
+
+    @pytest.mark.parametrize(
+        "product_id",
+        [
+            pytest.param(DataProductIdentifier.l1b_rad, id="non-ancillary-member"),
+            pytest.param("MODIS-IGBP", id="string"),
+        ],
+    )
+    def test_non_ancillary_product_id_is_rejected(self, monkeypatch, product_id):
+        """A reader whose ``PRODUCT_ID`` is not a ``DataLevel.ANC`` product raises ``TypeError`` at class definition.
+
+        A reader reads an externally produced source, so an id at another level, or a plain string, cannot name its
+        files. Copies the registry with ``monkeypatch``, and asserts defining a stub with each such id raises a
+        ``TypeError`` naming the reader and is not registered.
+        """
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+
+        with pytest.raises(TypeError, match="READER_KEY='_registry_test_bad_product'.*not an ancillary product"):
+            _stub_reader("_registry_test_bad_product", frozenset({OperationalMode.CAM}), product_id)
+
+        assert "_registry_test_bad_product" not in ReaderRegistry.list_readers()
 
 
 # The shipped FMATCH product definition of each operational mode.
