@@ -41,6 +41,25 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIME_VARIABLE = "PACKET_ICIE_TIME"
 
 
+class TrimmedRunTooLongError(ValueError):
+    """A calibration run starting on the day lasts past the day window, so it was not written.
+
+    Raised by :func:`write_trimmed_nom_hk_products` after it has written the day's other TRIMMED
+    files, which ``written`` lists so a caller can announce them.
+
+    Parameters
+    ----------
+    message : str
+        What went wrong and what to do next.
+    written : list of LiberaDataProductFilename
+        The TRIMMED files written for the day before the error was raised, in run order.
+    """
+
+    def __init__(self, message: str, written: list[LiberaDataProductFilename]):
+        super().__init__(message)
+        self.written = written
+
+
 def get_trimmed_nom_hk_product_definition(
     trimmed_product: DataProductIdentifier,
 ) -> LiberaDataProductDefinition:
@@ -298,7 +317,9 @@ def write_trimmed_nom_hk_products(
     ValueError
         Before any file is written: as :func:`find_obsid_runs` raises it; if ``source_product_filename``
         is not a Libera filename or does not name a ``NOM-HK-DECODED`` product; or if ``nom_hk`` has no
-        ``time_variable``. After the day's other TRIMMED files are written: if a run starting on the day
+        ``time_variable``.
+    TrimmedRunTooLongError
+        After the day's other TRIMMED files are written, which it lists: if a run starting on the day
         lasts past the end of the day window, or is still going at the last packet of ``nom_hk`` within
         ``day_coverage.DEFAULT_SEAM_TOLERANCE`` of it.
     """
@@ -324,6 +345,7 @@ def write_trimmed_nom_hk_products(
         trimmed_product = spec.trimmed_product
         trimmed = select_packets(nom_hk, pkt_slice)
         # Modulo 16384 per step, so a lower bound: a gap of a multiple of 16384 packets steps the counter by 1.
+        # The counter rolls over inside a run but is not expected to reset there, which would inflate the count.
         counter_steps = np.diff(trimmed[SEQUENCE_COUNTER_VAR].values.astype(np.int64))
         missing_packets = int(((counter_steps - 1) % SEQUENCE_COUNTER_MODULUS).sum())
         trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs, source_product_filename)
@@ -357,12 +379,13 @@ def write_trimmed_nom_hk_products(
             f"still going at {last_time}"
             for spec, first_time, last_time in too_long
         )
-        raise ValueError(
+        raise TrimmedRunTooLongError(
             f"Cannot write {len(too_long)} TRIMMED NOM-HK run(s) for {day.isoformat()} ({described}); the day's "
             f"other {len(written)} TRIMMED file(s) were written. Each run lasts past the end of the day window, "
             f"{day_bounds(day).window_end.isoformat()}, where every APID's L1A day product ends, so a calibration "
             f"step would get incomplete inputs. Nominal calibration events end well inside the day window. Check "
             f"this event with the calibration team: a known long event, such as an 18-minute video mode, is "
-            f"processed outside the automatic trim."
+            f"processed outside the automatic trim.",
+            written,
         )
     return written

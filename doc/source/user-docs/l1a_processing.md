@@ -907,7 +907,8 @@ A run whose start or end is at a gap is written all the same. An edge is at a ga
 beyond it are missing or the data stops there, so the file may not hold its event's true start or
 end. The TRIMMED file carries no record of its gaps: `write_trimmed_nom_hk_products` logs one line
 per file saying whether its start and end are at a gap and how many packets are missing inside it
-(counted modulo 16384, so a lower bound), at WARNING when any is and at INFO otherwise. When
+(counted modulo 16384, so a lower bound; the counter rolls over inside a run but is not expected to reset
+there), at WARNING when any is and at INFO otherwise. When
 missing packets arrive later, the next revision of the day writes the run again:
 
 - an end that was at a gap moves later, under the same start time, so the new revision replaces
@@ -921,7 +922,8 @@ A run starting on the day lasts past the day window when its last packet is afte
 or when it is still going at the last packet of the data and that packet is within
 `day_coverage.DEFAULT_SEAM_TOLERANCE` of the window's end. Every other APID's day product ends at
 the window's end, so its calibration step would get incomplete inputs. `write_trimmed_nom_hk_products`
-writes the day's other runs, then raises `ValueError` naming each such run; check the event with the
+writes the day's other runs, then raises `TrimmedRunTooLongError`, a `ValueError` naming each such run
+and listing the files it wrote in `written`, so a caller can announce them; check the event with the
 calibration team, since a known long event, such as an 18-minute video mode, is processed outside
 the automatic trim.
 

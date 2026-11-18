@@ -12,6 +12,7 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.l1a.nom_hk_trim import (
+    TrimmedRunTooLongError,
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
     write_trimmed_nom_hk_products,
@@ -465,14 +466,15 @@ class TestDaySelection:
         with (
             patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename) as mock_write,
             pytest.raises(
-                ValueError,
+                TrimmedRunTooLongError,
                 match=r"for 2028-02-13 \(the NOM-HK-SWC-405NM-TRIMMED run of ObsID 257 on RAD starting "
                 r"2028-02-13T23:00:04.*the day's other 1 TRIMMED file\(s\) were written",
-            ),
+            ) as excinfo,
         ):
             write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE)
 
         assert [call.args[1].attrs["ProductID"] for call in mock_write.call_args_list] == ["NOM-HK-SWC-365NM-TRIMMED"]
+        assert excinfo.value.written == [mock_filename]
 
     def test_every_too_long_run_is_named(self, tmp_path):
         """RAD and WFOV runs both open at the window end are named in one error; the whole run is still written."""
