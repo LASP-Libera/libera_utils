@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.26.0] - 2026-11-18
+
 ### Added
 
 - Add one TRIMMED NOM-HK `DataProductIdentifier` per calibration ObsID, `l1a_icie_nom_hk_<x>_trimmed` (`NOM-HK-<CAL ProductID>-TRIMMED`, e.g. `NOM-HK-SWC-365NM-TRIMMED`), 1:1 with the ObsID's CAL product, for all 40 radiometer and camera calibration ObsIDs.
@@ -1088,7 +1090,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...HEAD
+[5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
