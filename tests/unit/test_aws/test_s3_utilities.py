@@ -86,6 +86,8 @@ class TestManualIngestPut:
             ),
             # Demuxed ground CCSDS basename (single APID, no extension)
             (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
+            # Version-partitioned data product
+            (["LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"], 1),
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -275,7 +277,12 @@ class TestManualIngestPut:
     @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     def test_cli_handler_verify_invokes_verification(self, mock_get_session, mock_manual_ingest, mock_verify):
         """When --verify is set, the handler verifies ingestion using the ingest function's returned filenames."""
-        returned_filenames = ["filename-1", "filename-2"]
+        returned_filenames = [
+            filenaming.LiberaDataProductFilename(
+                "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
+            ),
+            filenaming.L0Filename("some/dir/P1590011SOMESCIENCEAAA99030231459001.PDS"),
+        ]
         mock_manual_ingest.return_value = returned_filenames
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
@@ -290,6 +297,41 @@ class TestManualIngestPut:
         mock_verify.assert_called_once_with(
             returned_filenames, boto_session=mock_get_session.return_value, timeout=42.0
         )
+
+    @patch("libera_utils.aws.s3_utilities.verify_ingestion")
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
+    @pytest.mark.parametrize("with_daily_file", [True, False])
+    def test_cli_handler_verify_stages_all_and_raises_for_unverified_version_partitioned(
+        self, mock_get_session, mock_manual_ingest, mock_verify, with_daily_file
+    ):
+        """--verify stages every file, verifies only the verifiable ones, then raises naming the rest."""
+        daily = filenaming.LiberaDataProductFilename(
+            "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
+        )
+        version_partitioned = filenaming.LiberaVersionPartitionedDataProductFilename(
+            "some/dir/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"
+        )
+        filenames = [daily, version_partitioned] if with_daily_file else [version_partitioned]
+        mock_manual_ingest.return_value = filenames
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=[str(f.path) for f in filenames],
+            profile=None,
+            verify=True,
+            timeout=42.0,
+        )
+
+        with pytest.raises(s3_utilities.IngestionNotVerifiedError, match=r"LIBERA_AUX_ADM-CAM.*archive bucket"):
+            s3_utilities.s3_put_cli_handler(args)
+
+        mock_manual_ingest.assert_called_once_with(
+            [Path(f.path) for f in filenames], boto_session=mock_get_session.return_value
+        )
+        if with_daily_file:
+            mock_verify.assert_called_once_with([daily], boto_session=mock_get_session.return_value, timeout=42.0)
+        else:
+            mock_verify.assert_not_called()
 
 
 class TestVerifyIngestion:

@@ -58,6 +58,38 @@ filename's equality check only handles other filenames; for anything else it ret
 falls back to the other operand, so comparing a filename with a string, `None` or a path is `False`. Reassigning
 `path` changes the object's hash, so do not modify a filename that is already a set member or a dictionary key.
 
+## Daily and Version-Partitioned Data Products
+
+% TODO[LIBSDC-936]: describe the L0, TRIMMED and CAL schemes here once PartitionScheme has them.
+
+This section covers the two schemes `PartitionScheme` has today, `DAILY` and `VERSION`. L0, TRIMMED and CAL products
+take the `DAILY` default until their own schemes are added, though L0 files are named by `L0Filename` or
+`LiberaGroundCcsdsFilename`, not `LiberaDataProductFilename`, and archived under their APID.
+
+A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename` with its data level and the time
+range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revision>.<ext>`. It is archived under the
+date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date` property gives.
+
+A version-partitioned data product, such as an ADM, is valid over more than one day (indefinitely until the next version
+update). It is named by `LiberaVersionPartitionedDataProductFilename` with its data level and no time range,
+`LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
+`applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
+version-partitioned when its `DataProductIdentifier` has partition scheme `PartitionScheme.VERSION`, and
+`LiberaVersionPartitionedDataProductFilename` does not accept products with any other scheme.
+`LiberaDataProductFilename` in turn does not accept a version-partitioned product.
+`filenaming.PARTITION_SCHEME_FILENAME_CLASSES` gives the filename class `write_libera_data_product` uses for each
+partition scheme.
+
+```python
+from libera_utils.io import filenaming
+
+adm = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+    product_name="ADM-CAM", version="1.2.3"
+)
+print(adm.path.name)  # LIBERA_AUX_ADM-CAM_V1-2-3_R<revision>.nc
+print(adm.archive_prefix)  # ADM-CAM/V1-2-3
+```
+
 ## Working With Paths
 
 Below is an example test using a `LiberaDataProductFilename` instance to manage a filename string, including switching

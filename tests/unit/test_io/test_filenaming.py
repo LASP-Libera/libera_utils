@@ -10,7 +10,13 @@ import pytest
 from cloudpathlib import S3Path
 from ulid import ULID
 
-from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType
+from libera_utils.constants import (
+    DataLevel,
+    DataProductIdentifier,
+    ManifestType,
+    PartitionScheme,
+    ProcessingStepIdentifier,
+)
 from libera_utils.io import filenaming
 
 
@@ -38,6 +44,14 @@ from libera_utils.io import filenaming
         (
             "/some/foobar/path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R20270103T080910654321.bc",
             filenaming.LiberaDataProductFilename,
+        ),
+        (
+            "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
+            filenaming.LiberaVersionPartitionedDataProductFilename,
+        ),
+        (
+            "s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V1-0-0_R20270102T112233000000.nc",
+            filenaming.LiberaVersionPartitionedDataProductFilename,
         ),
     ],
 )
@@ -98,6 +112,11 @@ def test_from_filename(filename, filename_type):
                 "s3://my-archive-bucket/SC-POS-DECODED/2027/01/02/"
                 "LIBERA_L1A_SC-POS-DECODED_V3-14-159_20270102T000000_20270103T000000_R20270103T080910123456.nc"
             ),
+        ),
+        (
+            "/ignore/this/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
+            "s3://my-aux-bucket",
+            S3Path("s3://my-aux-bucket/ADM-CAM/V3-14-159/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"),
         ),
         (
             "/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json",
@@ -1054,3 +1073,193 @@ def test_hash_changes_when_path_is_reassigned():
     fn.path = Path("/tmp/elsewhere") / fn.path.name
     assert hash(fn) != before
     assert hash(fn) == hash(fn.path)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc",
+        Path("/fake-path/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"),
+        "s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V3-14-159RC1_R20270102T112233000000.nc",
+        S3Path("s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V3-14-159_R20270102T112233000000.nc"),
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename(filename):
+    """A version-partitioned product filename parses, with no applicable date and its product's data level"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(filename)
+    assert fn.data_product_id.partition_scheme is PartitionScheme.VERSION
+    assert not hasattr(fn, "applicable_date")
+    assert fn.filename_parts.data_level == "AUX"
+    assert fn.filename_parts.revision == dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [
+        dpi
+        for dpi in DataProductIdentifier
+        if dpi.data_level != DataLevel.L0 and dpi.partition_scheme is not PartitionScheme.VERSION
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(product_id):
+    """No daily filename, of any non-L0 product that has one, parses as a version-partitioned filename"""
+    daily = filenaming.LiberaDataProductFilename.from_filename_parts(
+        product_name=product_id,
+        version="V1-2-3",
+        utc_start=dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
+        utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
+    )
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        filenaming.LiberaVersionPartitionedDataProductFilename(daily.path)
+    assert isinstance(filenaming.AbstractValidFilename.from_file_path(daily.path), filenaming.LiberaDataProductFilename)
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [dpi for dpi in DataProductIdentifier if dpi.partition_scheme is PartitionScheme.VERSION],
+)
+def test_LiberaDataProductFilename_rejects_version_partitioned_products(product_id):
+    """A version-partitioned product named with a time range is rejected where it is constructed"""
+    filename = (
+        f"LIBERA_{product_id.data_level}_{product_id}_V1-2-3_20270102T000000_20270103T000000_R20270102T112233000000.nc"
+    )
+    expected = "has partition scheme VERSION.*Name it with LiberaVersionPartitionedDataProductFilename"
+    with pytest.raises(ValueError, match=expected):
+        filenaming.LiberaDataProductFilename(filename)
+    with pytest.raises(ValueError, match=expected):
+        filenaming.LiberaDataProductFilename.from_filename_parts(
+            product_name=product_id,
+            version="V1-2-3",
+            utc_start=dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
+            utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
+        )
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(filename)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "LIBERA_L1B_RAD-4CH_V1-2-3_R20270102T112233000000.nc",
+        "LIBERA_L2_CF-CAM_V1-2-3_R20270102T112233000000.nc",
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_products(filename):
+    """A daily product named in the version-partitioned form is rejected where it is constructed"""
+    with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
+        filenaming.LiberaVersionPartitionedDataProductFilename(filename)
+    with pytest.raises(ValueError, match="has partition scheme DAILY.*Name it with LiberaDataProductFilename"):
+        filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+            product_name=filename.split("_")[2], version="V1-2-3"
+        )
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(filename)
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (
+            dict(
+                product_name=DataProductIdentifier.aux_adm_cam,
+                version="1.2.3",
+                revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
+            ),
+            "LIBERA_AUX_ADM-CAM_V1-2-3_R20280102T112233000000.nc",
+        ),
+        (
+            dict(
+                product_name="ADM-IMAGER",
+                version="V3-14-159",
+                revision=dt.datetime(2027, 1, 2, 11, 22, 33),
+                basepath="s3://bucket/prefix",
+            ),
+            "s3://bucket/prefix/LIBERA_AUX_ADM-IMAGER_V3-14-159_R20270102T112233000000.nc",
+        ),
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename_from_filename_parts(parts, expected):
+    """Creating a version-partitioned filename from parts round-trips through parsing"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(**parts)
+    assert str(fn.path) == expected
+    assert filenaming.LiberaVersionPartitionedDataProductFilename(fn.path) == fn
+
+
+def test_LiberaVersionPartitionedDataProductFilename_revision_defaults_to_call_time():
+    """The default revision is the time of each call, not a single time fixed at import"""
+    first, second = (
+        dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
+        dt.datetime(2027, 1, 2, 11, 22, 34, tzinfo=dt.UTC),
+    )
+    with mock.patch.object(filenaming, "datetime", wraps=dt.datetime) as mock_datetime:
+        mock_datetime.now.side_effect = [first, second]
+        fn1 = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+            product_name="ADM-CAM", version="V1-2-3"
+        )
+        fn2 = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+            product_name="ADM-CAM", version="V1-2-3"
+        )
+    assert fn1.filename_parts.revision == first
+    assert fn2.filename_parts.revision == second
+
+
+def test_LiberaVersionPartitionedDataProductFilename_archive_prefix():
+    """A version-partitioned file has one archive location, its product name and version"""
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(
+        "s3://dropbox/LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"
+    )
+    assert fn.archive_prefix == "ADM-CAM/V3-14-159"
+
+
+@pytest.mark.parametrize(
+    ("filename", "match"),
+    [
+        # Second-resolution revision
+        ("LIBERA_AUX_ADM-CAM_V3-14-159_R27002112233.nc", "failed validation against regex pattern"),
+        # Microsecond revision without the T separator
+        ("LIBERA_AUX_ADM-CAM_V3-14-159_R20270103080910123456.nc", "failed validation against regex pattern"),
+        # Revision without the R prefix
+        ("LIBERA_AUX_ADM-CAM_V3-14-159_20270103T080910123456.nc", "failed validation against regex pattern"),
+        # Revision in month 13
+        ("LIBERA_AUX_ADM-CAM_V3-14-159_R20271303T080910123456.nc", "is not a real UTC time"),
+        # No data level
+        ("LIBERA_ADM-CAM_V3-14-159_R20270103T080910123456.nc", "failed validation against regex pattern"),
+        # Data level that is not the product's
+        ("LIBERA_L1B_ADM-CAM_V3-14-159_R20270103T080910123456.nc", "has data level L1B, but the data level of ADM-CAM"),
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename_invalid(filename, match):
+    """Test that malformed version-partitioned data product filenames are rejected"""
+    with pytest.raises(ValueError, match=match):
+        filenaming.LiberaVersionPartitionedDataProductFilename(filename)
+
+
+def test_LiberaVersionPartitionedDataProductFilename_impossible_date_leaves_path_unchanged():
+    """Test that assigning a name with an impossible revision raises and keeps the original path"""
+    original = "LIBERA_AUX_ADM-CAM_V3-14-159_R20270103T080910123456.nc"
+    fn = filenaming.LiberaVersionPartitionedDataProductFilename(original)
+    with pytest.raises(ValueError, match="is not a real UTC time"):
+        fn.path = "LIBERA_AUX_ADM-CAM_V3-14-159_R20271303T080910123456.nc"
+    assert fn.path.name == original
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("LIBERA_AUX_ADM-CAM_V3-14-159_R20270103T080910123456.nc", ProcessingStepIdentifier.aux_adm_cam),
+        ("LIBERA_AUX_ADM-IMAGER_V3-14-159_R20270103T080910123456.nc", ProcessingStepIdentifier.aux_adm_imager),
+    ],
+)
+def test_LiberaVersionPartitionedDataProductFilename_processing_step_id(filename, expected):
+    """A version-partitioned file names the processing step that produces its product"""
+    assert filenaming.LiberaVersionPartitionedDataProductFilename(filename).processing_step_id == expected
+
+
+def test_partition_scheme_filename_classes_cover_every_scheme():
+    """Every partition scheme maps to the filename class that names its products"""
+    assert set(filenaming.PARTITION_SCHEME_FILENAME_CLASSES) == set(PartitionScheme)
+    assert filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.DAILY] is filenaming.LiberaDataProductFilename
+    assert (
+        filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.VERSION]
+        is filenaming.LiberaVersionPartitionedDataProductFilename
+    )

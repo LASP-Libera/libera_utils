@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.27.0] - 2026-11-18
+
+### Added
+
+- `LiberaVersionPartitionedDataProductFilename` names a version-partitioned data product, such as an ADM, as
+  `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
+  under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
+  `AbstractValidFilename.from_file_path` recognizes it.
+- `PartitionScheme` (`DAILY`, `VERSION`) says how a product's files are partitioned, and
+  `DataProductIdentifier.partition_scheme` gives each product's scheme. A member sets it as a third tuple element,
+  and it defaults to `DAILY`. `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` maps each scheme to the filename class
+  `write_libera_data_product` names its products with.
+- `s3-utils put` accepts version-partitioned data product files. `put --verify` stages them with the other files but
+  does not verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it
+  raises the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the version-partitioned files it
+  could not verify.
+- `processing_step_id` is defined on `AbstractDataProductFilename`, so `LiberaVersionPartitionedDataProductFilename`,
+  `L0Filename`, and `LiberaGroundCcsdsFilename` have it as `LiberaDataProductFilename` does: the step that produces the
+  file's product, or `None` when no step does.
+
+### Changed
+
+- **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are version-partitioned products: `write_libera_data_product` now names them
+  with `LiberaVersionPartitionedDataProductFilename`, with no time range, and archives them under
+  `<ProductID>/<Version>`. The filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or
+  `ummg_metadata_filename`. `LiberaDataProductFilename` rejects an ADM file named in the daily form, with a time
+  range. Ingesting the new names needs the matching `libera_cdk` change (LIBSDC-873).
+- **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
+  `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
+  `time_variable` as an optional argument, default `None`, and return
+  `LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename`. A daily product without `time_variable`
+  raises `ValueError`, and a version-partitioned product given one ignores it and warns.
+
 ## [5.26.0] - 2026-11-18
 
 ### Added
@@ -1090,7 +1123,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...HEAD
+[5.27.0]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...5.27.0
 [5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0

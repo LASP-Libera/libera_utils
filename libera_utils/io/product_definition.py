@@ -16,7 +16,12 @@ from xarray import DataArray, Dataset
 
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
+from libera_utils.io.filenaming import (
+    PARTITION_SCHEME_FILENAME_CLASSES,
+    LiberaDataProductFilename,
+    LiberaVersionPartitionedDataProductFilename,
+    PathType,
+)
 from libera_utils.version import ALGORITHM_VERSION_REGEX
 
 logger = logging.getLogger(__name__)
@@ -760,30 +765,77 @@ class LiberaDataProductDefinition(BaseModel):
         """
         return {k: v for k, v in self.attributes.items() if v is None}
 
-    def generate_data_product_filename(self, dataset: Dataset, time_variable: str) -> LiberaDataProductFilename:
+    def generate_data_product_filename(
+        self, dataset: Dataset, *, time_variable: str | None = None
+    ) -> LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename:
         """Generate a standardized Libera data product filename.
+
+        The product's partition scheme selects its filename class through ``PARTITION_SCHEME_FILENAME_CLASSES``. A
+        daily product is named with its data level and the time range of its data, taken from `time_variable`. A
+        version-partitioned product, one whose DataProductIdentifier has partition scheme
+        ``PartitionScheme.VERSION`` (such as an ADM), is named with its data level, product ID, version, and revision,
+        so it needs no time variable.
 
         Parameters
         ----------
         dataset : Dataset
-            The Dataset for which to create a filename. Used to extract the product ID, algorithm version, start and
-            end times, and the revision, which is the dataset's ``date_created`` attribute.
-        time_variable : str
-            Name of the time variable whose minimum and maximum are the filename's start and end times.
-            It need not be sorted.
+            The Dataset for which to create a filename. Used to extract the product ID, the algorithm version, for a
+            daily product the start and end times, and the revision, which is the dataset's ``date_created``
+            attribute.
+        time_variable : str | None
+            Name of the datetime64 time variable whose minimum and maximum are the filename's start and end times.
+            It need not be sorted. Required for a daily product. Not used for a version-partitioned product, and a
+            ``UserWarning`` is issued if it is given.
 
         Returns
         -------
-        LiberaDataProductFilename
-            Properly formatted filename object
+        LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename
+            Properly formatted filename object: LiberaVersionPartitionedDataProductFilename for a
+            version-partitioned product, LiberaDataProductFilename otherwise.
+
+        Warns
+        -----
+        UserWarning
+            If `time_variable` is given for a version-partitioned product.
 
         Raises
         ------
         KeyError
             If the dataset lacks the ``ProductID``, ``algorithm_version`` or ``date_created`` attribute.
         ValueError
-            If ``date_created`` is not an ISO 8601 datetime string, or if ``time_variable`` is empty.
+            If ``date_created`` is not an ISO 8601 datetime string, if the product is daily and `time_variable` is
+            None, or if `time_variable` does not have a datetime64 dtype.
         """
+        product_id = DataProductIdentifier(dataset.attrs["ProductID"])
+        version = dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE]
+        revision = datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
+
+        filename_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
+        if filename_class is LiberaVersionPartitionedDataProductFilename:
+            if time_variable is not None:
+                # stacklevel 3 points the warning at the caller of write_libera_data_product.
+                warnings.warn(
+                    f"time_variable {time_variable!r} is not used: {product_id} is a version-partitioned product, "
+                    "whose filename carries no time range. Omit time_variable when writing it.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            return LiberaVersionPartitionedDataProductFilename.from_filename_parts(
+                product_name=product_id, version=version, revision=revision
+            )
+
+        if time_variable is None:
+            raise ValueError(
+                f"{product_id} is a daily product, and its filename needs the time range of its data, but no "
+                "time_variable was given. Pass time_variable, the name of the datetime64 variable spanning the data."
+            )
+
+        if "datetime64" not in str(dataset[time_variable].dtype):
+            raise ValueError(
+                f"time_variable {time_variable!r} has dtype {dataset[time_variable].dtype}, not datetime64. Pass the "
+                'name of a datetime64 variable, or convert this one with .astype("datetime64[ns]") before writing.'
+            )
+
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -794,11 +846,11 @@ class LiberaDataProductDefinition(BaseModel):
             utc_end = pd.Timestamp(times.max()).to_pydatetime()
 
         return LiberaDataProductFilename.from_filename_parts(
-            product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
-            version=dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE],
+            product_name=product_id,
+            version=version,
             utc_start=utc_start,
             utc_end=utc_end,
-            revision=datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE]),
+            revision=revision,
         )
 
     def _check_dataset_attrs(self, dataset_attrs: dict[str, Any]) -> list[str]:

@@ -64,6 +64,29 @@ class DataLevel(StrEnum):
                 raise ValueError(f"Unknown data level {self.value}")
 
 
+class PartitionScheme(StrEnum):
+    """How a data product's files are partitioned, which decides how each file is named and archived.
+
+    - DAILY: each file holds data for one applicable date. Its filename carries the time range of its data, and it
+      is archived under that date. Named by LiberaDataProductFilename. DAILY is also the default for every product not
+      given another scheme, including some whose files fit this description only in part: L0 files are named by
+      L0Filename or LiberaGroundCcsdsFilename and archived under their APID, and TRIMMED and CAL calibration event
+      files are dated by the UTC day of their ``utc_start``.
+    - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
+      carries no time range, and it is archived once under its product ID and version. Named by
+      LiberaVersionPartitionedDataProductFilename.
+
+    ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class the writer uses for each
+    scheme. A new scheme needs a member here, a filename class, an entry in that mapping, and the arguments
+    ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class. In libera_cdk it also needs
+    a partitions definition in ``libera_dagster/partitions.py`` and a selection rule in the Manifest Creator.
+    """
+
+    # TODO[LIBSDC-936]: add schemes for L0, TRIMMED and CAL products, which take DAILY until then.
+    DAILY = "DAILY"
+    VERSION = "VERSION"
+
+
 class DataProductIdentifier(StrEnum):
     """Enumeration of data product canonical IDs used in AWS resource naming.
 
@@ -75,9 +98,13 @@ class DataProductIdentifier(StrEnum):
     mission name fits (``NSIDC``), and PRODUCT names the product within it, led by the observing platform where the
     upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
-    Each member is defined as a tuple: (product_name, data_level)
+    Each member is defined as a tuple: (product_name, data_level) or (product_name, data_level, partition_scheme)
+
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
+    - partition_scheme: The PartitionScheme of the product's files, such as PartitionScheme.VERSION for a
+      version-partitioned product. Omitted, and therefore PartitionScheme.DAILY, for a daily product and for a
+      product not given another scheme (see PartitionScheme).
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -86,13 +113,17 @@ class DataProductIdentifier(StrEnum):
         >>> product.data_level.archive_bucket_name  # Returns "libera-l1b-data"
 
     When adding new products:
-        1. Add the enum member with its product name and DataLevel
+        1. Add the enum member with its product name and DataLevel, and its PartitionScheme as a third element when
+           it is not PartitionScheme.DAILY
         2. No need to update any lookup dictionaries - metadata is embedded!
     """
 
     _level: DataLevel
+    _partition_scheme: PartitionScheme
 
-    def __new__(cls, value: str, level: DataLevel = None):  # type: ignore
+    def __new__(  # type: ignore
+        cls, value: str, level: DataLevel = None, partition_scheme: PartitionScheme = PartitionScheme.DAILY
+    ):
         """Create a new DataProductIdentifier with embedded metadata.
 
         Parameters
@@ -101,6 +132,13 @@ class DataProductIdentifier(StrEnum):
             The string value for this data product (used in filenames)
         level : DataLevel
             The processing level for this data product
+        partition_scheme : PartitionScheme
+            How the product's files are partitioned. Default PartitionScheme.DAILY.
+
+        Raises
+        ------
+        ValueError
+            If `value` is not uppercase.
         """
         if value != value.upper():
             raise ValueError(
@@ -109,6 +147,7 @@ class DataProductIdentifier(StrEnum):
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj._level = level
+        obj._partition_scheme = partition_scheme
         return obj
 
     # L0 2hr PDS Products (Binary CCSDS)
@@ -317,7 +356,11 @@ class DataProductIdentifier(StrEnum):
         "ADM-STATS-CAM",
         DataLevel.AUX,
     )  # ERBE-like ADM daily binned statistics using Libera camera data for cloud fraction
-    aux_adm_cam = ("ADM-CAM", DataLevel.AUX)  # ERBE-like ADMs using Libera camera data for cloud fraction
+    aux_adm_cam = (
+        "ADM-CAM",
+        DataLevel.AUX,
+        PartitionScheme.VERSION,
+    )  # ERBE-like ADMs using Libera camera data for cloud fraction
 
     # L2 Products using RBSP + VIIRS data for cloud properties
     # ========================================================
@@ -363,6 +406,7 @@ class DataProductIdentifier(StrEnum):
     aux_adm_imager = (
         "ADM-IMAGER",
         DataLevel.AUX,
+        PartitionScheme.VERSION,
     )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
 
     # Ancillary Products: externally produced inputs, ingested from their upstream providers
@@ -414,6 +458,17 @@ class DataProductIdentifier(StrEnum):
             The processing level of this data product
         """
         return self._level
+
+    @property
+    def partition_scheme(self) -> PartitionScheme:
+        """Get how this data product's files are partitioned.
+
+        Returns
+        -------
+        PartitionScheme
+            PartitionScheme.VERSION for a version-partitioned product, PartitionScheme.DAILY otherwise
+        """
+        return self._partition_scheme
 
     @property
     def associated_apid(self) -> Union["LiberaApid", None]:
