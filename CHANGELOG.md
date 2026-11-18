@@ -7,15 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [5.26.0] - 2026-11-18
+## [5.27.0] - 2026-11-18
 
 ### Added
 
-- Add one TRIMMED NOM-HK `DataProductIdentifier` per calibration ObsID, `l1a_icie_nom_hk_<x>_trimmed` (`NOM-HK-<CAL ProductID>-TRIMMED`, e.g. `NOM-HK-SWC-365NM-TRIMMED`), 1:1 with the ObsID's CAL product, for all 40 radiometer and camera calibration ObsIDs.
-- Add one combiner `ProcessingStepIdentifier` per CAL product, `cal_combine_<x>` (`cal-combine-<x>`, e.g. `cal-combine-swc-365nm`), producing only that CAL product, all with the shared ECR repository `cal-rad-docker-repo`, camera steps included.
-- Add `libera_utils.obsids.get_trimmed_obsid_spec(trimmed_product)` and `get_combiner_step(trimmed_product)`, which go from a TRIMMED product to the ObsID that owns it and to its combiner step, raising `KeyError` for any other product, and `is_calibration_event_product(product)`, which says whether a ProductID is a calibration ObsID's TRIMMED or CAL product.
-- Add `libera_utils.obsids.COMBINER_INPUTS` and `get_combiner_inputs(trimmed_product)`, loaded from `data/cal_combiner_inputs.csv`, which list the L1A products each combiner consumes besides its TRIMMED product, keyed by that TRIMMED product.
-- Importing `libera_utils.obsids` (and so `libera_utils`) raises `ValueError` when two ObsIDs claim one TRIMMED product, or when no `ProcessingStepIdentifier` produces a registered CAL product.
 - `LiberaVersionPartitionedDataProductFilename` names a version-partitioned data product, such as an ADM, as
   `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, with no time range or applicable date, and archives it once
   under `<ProductID>/<Version>`. A name whose data level is not its product's is rejected.
@@ -34,21 +29,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING:** Each calibration ObsID in `data/obsid_registry.csv` names its own TRIMMED product, so `nom_hk_trim.write_trimmed_nom_hk_products` stamps each run with its ObsID's TRIMMED ProductID instead of a family's, and `get_trimmed_nom_hk_product_definition` accepts only those products.
-- **BREAKING:** `LiberaDataProductFilename.applicable_date`, and so `archive_prefix`, dates a calibration event file, the TRIMMED or CAL product of a calibration ObsID, by the UTC day of its `utc_start` instead of the midpoint of its time range, and no longer warns when its time range exceeds 24 hours. An event that crosses midnight is archived under the day it started. Keeping a TRIMMED file's time range to its event's is the L1A trim's job (LIBSDC-900), and a CAL file's time range to its TRIMMED file's is the combiner's (LIBSDC-902).
-- **BREAKING:** `nom_hk_trim.write_trimmed_nom_hk_products` writes only the runs whose first packet is on the UTC day of `source_product_filename`, which must name a `NOM-HK-DECODED` product (`ValueError` otherwise), each run whole, so a run that crosses midnight is written by the day it started. A run lasting past the day window (`day_window.DAY_BUFFER` past the day) is not written: the function writes the day's other runs, then raises `nom_hk_trim.TrimmedRunTooLongError`, a `ValueError` naming it and carrying the written files in `written`. It no longer warns when an ObsID recurs within the data. (#115)
-- `nom_hk_trim.write_trimmed_nom_hk_products` logs one line per TRIMMED file saying whether its start and end are at a `SRC_SEQ_CTR` gap and how many packets are missing inside it, at WARNING when any is and at INFO otherwise; the file itself carries no record of its gaps. (#115)
-- **BREAKING:** `data/trim_family_inputs.csv` is renamed `data/cal_combiner_inputs.csv` and keyed by TRIMMED product, one row per calibration ObsID.
 - **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are version-partitioned products: `write_libera_data_product` now names them
   with `LiberaVersionPartitionedDataProductFilename`, with no time range, and archives them under
   `<ProductID>/<Version>`. The filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or
-  `ummg_metadata_filename`. `LiberaDataProductFilename` rejects an ADM file named in the daily form, with a time range. Ingesting
-  the new names needs the matching `libera_cdk` change (LIBSDC-873).
+  `ummg_metadata_filename`. `LiberaDataProductFilename` rejects an ADM file named in the daily form, with a time
+  range. Ingesting the new names needs the matching `libera_cdk` change (LIBSDC-873).
 - **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
   `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take
   `time_variable` as an optional argument, default `None`, and return
   `LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename`. A daily product without `time_variable`
   raises `ValueError`, and a version-partitioned product given one ignores it and warns.
+
+## [5.26.0] - 2026-11-18
+
+### Added
+
+- Add one TRIMMED NOM-HK `DataProductIdentifier` per calibration ObsID, `l1a_icie_nom_hk_<x>_trimmed` (`NOM-HK-<CAL ProductID>-TRIMMED`, e.g. `NOM-HK-SWC-365NM-TRIMMED`), 1:1 with the ObsID's CAL product, for all 40 radiometer and camera calibration ObsIDs.
+- Add one combiner `ProcessingStepIdentifier` per CAL product, `cal_combine_<x>` (`cal-combine-<x>`, e.g. `cal-combine-swc-365nm`), producing only that CAL product, all with the shared ECR repository `cal-rad-docker-repo`, camera steps included.
+- Add `libera_utils.obsids.get_trimmed_obsid_spec(trimmed_product)` and `get_combiner_step(trimmed_product)`, which go from a TRIMMED product to the ObsID that owns it and to its combiner step, raising `KeyError` for any other product, and `is_calibration_event_product(product)`, which says whether a ProductID is a calibration ObsID's TRIMMED or CAL product.
+- Add `libera_utils.obsids.COMBINER_INPUTS` and `get_combiner_inputs(trimmed_product)`, loaded from `data/cal_combiner_inputs.csv`, which list the L1A products each combiner consumes besides its TRIMMED product, keyed by that TRIMMED product.
+- Importing `libera_utils.obsids` (and so `libera_utils`) raises `ValueError` when two ObsIDs claim one TRIMMED product, or when no `ProcessingStepIdentifier` produces a registered CAL product.
+
+### Changed
+
+- **BREAKING:** Each calibration ObsID in `data/obsid_registry.csv` names its own TRIMMED product, so `nom_hk_trim.write_trimmed_nom_hk_products` stamps each run with its ObsID's TRIMMED ProductID instead of a family's, and `get_trimmed_nom_hk_product_definition` accepts only those products.
+- **BREAKING:** `LiberaDataProductFilename.applicable_date`, and so `archive_prefix`, dates a calibration event file, the TRIMMED or CAL product of a calibration ObsID, by the UTC day of its `utc_start` instead of the midpoint of its time range, and no longer warns when its time range exceeds 24 hours. An event that crosses midnight is archived under the day it started. Keeping a TRIMMED file's time range to its event's is the L1A trim's job (LIBSDC-900), and a CAL file's time range to its TRIMMED file's is the combiner's (LIBSDC-902).
+- **BREAKING:** `nom_hk_trim.write_trimmed_nom_hk_products` writes only the runs whose first packet is on the UTC day of `source_product_filename`, which must name a `NOM-HK-DECODED` product (`ValueError` otherwise), each run whole, so a run that crosses midnight is written by the day it started. A run lasting past the day window (`day_window.DAY_BUFFER` past the day) is not written: the function writes the day's other runs, then raises `nom_hk_trim.TrimmedRunTooLongError`, a `ValueError` naming it and carrying the written files in `written`. It no longer warns when an ObsID recurs within the data. (#115)
+- `nom_hk_trim.write_trimmed_nom_hk_products` logs one line per TRIMMED file saying whether its start and end are at a `SRC_SEQ_CTR` gap and how many packets are missing inside it, at WARNING when any is and at INFO otherwise; the file itself carries no record of its gaps. (#115)
+- **BREAKING:** `data/trim_family_inputs.csv` is renamed `data/cal_combiner_inputs.csv` and keyed by TRIMMED product, one row per calibration ObsID.
 
 ### Removed
 
@@ -1115,7 +1123,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...HEAD
+[5.27.0]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...5.27.0
 [5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
