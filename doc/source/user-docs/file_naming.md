@@ -60,6 +60,12 @@ falls back to the other operand, so comparing a filename with a string, `None` o
 
 ## Daily and Version-Partitioned Data Products
 
+% TODO[LIBSDC-936]: describe the L0, TRIMMED and CAL schemes here once PartitionScheme has them.
+
+This section covers the two schemes `PartitionScheme` has today, `DAILY` and `VERSION`. L0, TRIMMED and CAL products
+take the `DAILY` default until their own schemes are added, though L0 files are named by `L0Filename` or
+`LiberaGroundCcsdsFilename`, not `LiberaDataProductFilename`, and archived under their APID.
+
 A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename` with its data level and the time
 range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revision>.<ext>`. It is archived under the
 date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date` property gives.

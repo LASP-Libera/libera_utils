@@ -68,16 +68,21 @@ class PartitionScheme(StrEnum):
     """How a data product's files are partitioned, which decides how each file is named and archived.
 
     - DAILY: each file holds data for one applicable date. Its filename carries the time range of its data, and it
-      is archived under that date. Named by LiberaDataProductFilename.
+      is archived under that date. Named by LiberaDataProductFilename. DAILY is also the default for every product not
+      given another scheme, including some whose files fit this description only in part: L0 files are named by
+      L0Filename or LiberaGroundCcsdsFilename and archived under their APID, and TRIMMED and CAL calibration event
+      files are dated by the UTC day of their ``utc_start``.
     - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
       carries no time range, and it is archived once under its product ID and version. Named by
       LiberaVersionPartitionedDataProductFilename.
 
     ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class for each scheme. A new
     scheme needs a member here, a filename class, an entry in that mapping, and the arguments
-    ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class.
+    ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class. In libera_cdk it also needs
+    a partitions definition in ``libera_dagster/partitions.py`` and a selection rule in the Manifest Creator.
     """
 
+    # TODO[LIBSDC-936]: add schemes for L0, TRIMMED and CAL products, which take DAILY until then.
     DAILY = "DAILY"
     VERSION = "VERSION"
 
@@ -98,7 +103,8 @@ class DataProductIdentifier(StrEnum):
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
     - partition_scheme: The PartitionScheme of the product's files, such as PartitionScheme.VERSION for a
-      version-partitioned product. Omitted, and therefore PartitionScheme.DAILY, for a daily product.
+      version-partitioned product. Omitted, and therefore PartitionScheme.DAILY, for a daily product and for a
+      product not given another scheme (see PartitionScheme).
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad

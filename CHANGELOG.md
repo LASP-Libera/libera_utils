@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PartitionScheme` (`DAILY`, `VERSION`) says how a product's files are partitioned, and
   `DataProductIdentifier.partition_scheme` gives each product's scheme. A member sets it as a third tuple element,
   and it defaults to `DAILY`. `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` maps each scheme to the filename class
-  that names its products.
+  `write_libera_data_product` names its products with.
 - `s3-utils put` accepts version-partitioned data product files. `put --verify` stages them with the other files but
   does not verify them until ingestion verification supports them (LIBSDC-880). Once the other files are verified, it
   raises the new `libera_utils.aws.s3_utilities.IngestionNotVerifiedError` naming the version-partitioned files it

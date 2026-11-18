@@ -1152,7 +1152,7 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
         return SimpleNamespace(**d)
 
 
-# The filename class that names the products of each partition scheme.
+# The filename class that names the products the SDC writes under each partition scheme.
 PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
     PartitionScheme.DAILY: LiberaDataProductFilename,
     PartitionScheme.VERSION: LiberaVersionPartitionedDataProductFilename,
