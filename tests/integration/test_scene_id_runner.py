@@ -205,7 +205,7 @@ class TestFmatchReaders:
         assert "Center_Pixel_X" not in dataset.variables
 
     def test_from_fmatch_imager_maps_inputs(self, fmatch_product_file_factory, tmp_path):
-        """from_fmatch_imager maps the FLASHFlux/CLDPIX inputs, including a real (mapped) cloud_phase."""
+        """from_fmatch_imager maps the CERES_SSF/CLDPIX inputs, including a real (mapped) cloud_phase."""
         input_path = fmatch_product_file_factory(OperationalMode.IMAGER)
         dataset = FootprintData.from_fmatch_imager(input_path)._data
 
@@ -218,7 +218,7 @@ class TestFmatchReaders:
     def test_from_fmatch_imager_camtime_reads_inputs_on_camera_grid_with_passthrough(
         self, fmatch_product_file_factory, tmp_path
     ):
-        """from_fmatch_imager_camtime maps the full FLASHFlux/CLDPIX inputs onto the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT)
+        """from_fmatch_imager_camtime maps the full CERES_SSF/CLDPIX inputs onto the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT)
         grid AND carries the boresight/PSF/camera-pixel identifier variables straight through."""
         input_path = fmatch_product_file_factory(OperationalMode.IMAGER_CAMTIME, n_footprints=6)
         dataset = FootprintData.from_fmatch_imager_camtime(input_path)._data
@@ -253,14 +253,14 @@ class TestFmatchReaders:
             pytest.param(
                 "from_fmatch_imager",
                 OperationalMode.CAM,
-                "FLASHFlux_Clear_Coverage",
+                "CERES_SSF_Clear_Coverage",
                 "FMATCH-IMAGER file",
                 id="imager-on-cam",
             ),
             pytest.param(
                 "from_fmatch_imager_camtime",
                 OperationalMode.CAM_CAMTIME,
-                "FLASHFlux_Clear_Coverage",
+                "CERES_SSF_Clear_Coverage",
                 "FMATCH-IMAGER-CAMTIME file",
                 id="imager-camtime-on-cam-camtime",
             ),

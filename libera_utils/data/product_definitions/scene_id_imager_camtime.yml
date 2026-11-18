@@ -96,7 +96,7 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Total cloud fraction over the footprint, 100 - FLASHFlux_Clear_Coverage (CERES FLASHFlux clear-sky coverage)
+      long_name: Total cloud fraction over the footprint, 100 - CERES_SSF_Clear_Coverage (CERES SSF clear-sky coverage)
       units: percent
   Surface_Wind:
     dtype: float32

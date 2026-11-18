@@ -762,7 +762,7 @@ class _FmatchColumn:
     """How one FMATCH source variable becomes one standardized :class:`FootprintVariables` classification column.
 
     The radiometer- and camera-timescale FMATCH products all share a flat, one-value-per-footprint layout but draw
-    their classification inputs from *different* source variables (the CAM camera cloud fraction, the imager FLASHFlux
+    their classification inputs from *different* source variables (the CAM camera cloud fraction, the imager CERES SSF
     clear coverage / CLDPIX fields, and so on). Rather than a bespoke ``_extract_data_from_fmatch`` per
     product, each reader passes a declarative ``{target FootprintVariables: _FmatchColumn}`` map and the shared
     helper applies it uniformly.
@@ -798,7 +798,7 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 # FMATCH-IMAGER / FMATCH-IMAGER-CAMTIME classification inputs. Note two of these are *raw inputs* to existing
 # derived-variable calculators rather than final classification columns, chosen so the imager path reuses the
 # validated calculators instead of duplicating them:
-#   * clear_area (from the FLASHFlux clear coverage, already in percent) -> Cloud_Fraction is derived by
+#   * clear_area (from the CERES SSF clear coverage, already in percent) -> Cloud_Fraction is derived by
 #     identify_scenes as 100 - clear_area (calculate_cloud_fraction); and
 #   * surface_wind_u / surface_wind_v (from the ERA5 10 m wind components) -> Surface_Wind is derived as
 #     sqrt(u^2 + v^2) (calculate_surface_wind).
@@ -811,7 +811,7 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 # map_cldpix_phase_to_trmm (see CLDPIXCloudPhase for the CER_CLDPIX code meanings).
 _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("IGBP_Surface_Type", np.float32),
-    FootprintVariables.CLEAR_AREA: _FmatchColumn("FLASHFlux_Clear_Coverage", np.float32),
+    FootprintVariables.CLEAR_AREA: _FmatchColumn("CERES_SSF_Clear_Coverage", np.float32),
     FootprintVariables.SURFACE_WIND_U: _FmatchColumn("ERA5_Surface_Wind_U10", np.float32),
     FootprintVariables.SURFACE_WIND_V: _FmatchColumn("ERA5_Surface_Wind_V10", np.float32),
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("Solar_Zenith_Surface", np.float32),
@@ -956,7 +956,7 @@ class FootprintData:
         """Read a FMATCH-IMAGER product into a FootprintData (radiometer timescale).
 
         The FMATCH-IMAGER product is the operational input to SCENE-ID-IMAGER: one footprint per
-        ``RADIOMETER_TIME``, carrying the FLASHFlux clear coverage (for cloud fraction), the CLDPIX cloud
+        ``RADIOMETER_TIME``, carrying the CERES SSF clear coverage (for cloud fraction), the CLDPIX cloud
         optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface wind), and
         the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
 
@@ -976,7 +976,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM file, which has no
-            FLASHFlux or CLDPIX variables.
+            CERES SSF or CLDPIX variables.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -991,7 +991,7 @@ class FootprintData:
         """Read a FMATCH-IMAGER-CAMTIME product into a FootprintData (camera timescale).
 
         FMATCH-IMAGER-CAMTIME is the operational input to SCENE-ID-IMAGER-CAMTIME. It is the camera-timescale
-        counterpart of FMATCH-IMAGER: it carries the *same* classification inputs -- the FLASHFlux clear coverage
+        counterpart of FMATCH-IMAGER: it carries the *same* classification inputs -- the CERES SSF clear coverage
         (for cloud fraction), the CLDPIX cloud optical depth and particle phase (for the full TRMM
         classification), the ERA5 winds (for surface wind), and the IGBP surface type -- but laid out on the 2-D
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one ``CAMERA_TIME`` entry per 2048x2048 image and one
@@ -999,7 +999,7 @@ class FootprintData:
         the full TRMM classification.
 
         This reader is the union of :meth:`from_fmatch_imager` and :meth:`from_fmatch_cam_camtime`: it uses the
-        IMAGER column map (so the FLASHFlux/CLDPIX inputs and the mapped cloud phase are read) on the camera-timescale
+        IMAGER column map (so the CERES_SSF/CLDPIX inputs and the mapped cloud phase are read) on the camera-timescale
         record grid, and additionally carries the footprint *identifier* variables (the inclusive camera pixel-block
         bounds ``Camera_Pixel_{X,Y}_{Min,Max}``, the PSF bounding box, and the boresight geolocation) straight
         through so a classified scene can be traced back to the exact camera pixels and ground footprint.
@@ -1021,7 +1021,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM-CAMTIME file, which has no
-            FLASHFlux or CLDPIX variables.
+            CERES SSF or CLDPIX variables.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,

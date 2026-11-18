@@ -169,7 +169,7 @@ class TestRadiometerRunnerWorkflow:
 
 @pytest.mark.usefixtures("dropbox", "fake_aggregation", "imager_uses_fake_readers")
 class TestImagerProduct:
-    """FMATCH-IMAGER writes the CLDPIX/FLASHFlux fields alongside the ERA5 pressure-level fields."""
+    """FMATCH-IMAGER writes the CLDPIX/CERES SSF fields alongside the ERA5 pressure-level fields."""
 
     def _run(self, tmp_path, l1b_radiometer_file_factory):
         inputs = tmp_path / "inputs"
@@ -272,7 +272,7 @@ class TestRunnerOutputThroughSceneId:
     """An FMATCH runner's product reads into SCENE-ID and writes a SCENE-ID product under product names.
 
     This checks that the names FMATCH writes line up with the names SCENE-ID reads and writes, not classification:
-    the fake readers supply none of SCENE-ID's classification inputs (IGBP, FLASHFlux clear coverage, CLDPIX, ERA5
+    the fake readers supply none of SCENE-ID's classification inputs (IGBP, CERES SSF clear coverage, CLDPIX, ERA5
     winds), so those are fill and every footprint is left unmatched. ``tests/integration/test_scene_id.py`` covers real
     classification from an FMATCH product with valid inputs.
     """

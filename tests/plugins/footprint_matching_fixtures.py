@@ -1830,7 +1830,7 @@ def write_fmatch_product_file(upstream_file: Path, mode: OperationalMode, direct
     exact layout and product variable names:
 
     * ``IGBP_Surface_Type`` cycles through the IGBP codes 1..17;
-    * for the IMAGER modes, ``FLASHFlux_Clear_Coverage`` spans 0..100 percent, ``CLDPIX_Cloud_Particle_Phase``
+    * for the IMAGER modes, ``CERES_SSF_Clear_Coverage`` spans 0..100 percent, ``CLDPIX_Cloud_Particle_Phase``
       alternates liquid (1) and ice (2), ``ERA5_Surface_Wind_U10`` is 3.0, ``ERA5_Surface_Wind_V10`` is 4.0 and
       ``CLDPIX_Cloud_Optical_Depth`` is 7.0;
     * for ``CAM``, ``Cloud_Fraction_Camera`` spans 0..100 percent (the camera-timescale CAM mode takes the
@@ -1884,7 +1884,7 @@ def write_fmatch_product_file(upstream_file: Path, mode: OperationalMode, direct
     if mode is OperationalMode.CAM:
         _set("Cloud_Fraction_Camera", np.linspace(0.0, 100.0, n_cells))
     if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
-        _set("FLASHFlux_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
+        _set("CERES_SSF_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
         _set("CLDPIX_Cloud_Particle_Phase", np.arange(n_cells) % 2 + 1)
         # A distinct constant per source, so a reader that reads the wrong source variable is caught.
         _set("ERA5_Surface_Wind_U10", np.full(n_cells, 3.0))
