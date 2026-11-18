@@ -76,8 +76,8 @@ class PartitionScheme(StrEnum):
       carries no time range, and it is archived once under its product ID and version. Named by
       LiberaVersionPartitionedDataProductFilename.
 
-    ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class for each scheme. A new
-    scheme needs a member here, a filename class, an entry in that mapping, and the arguments
+    ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class the writer uses for each
+    scheme. A new scheme needs a member here, a filename class, an entry in that mapping, and the arguments
     ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class. In libera_cdk it also needs
     a partitions definition in ``libera_dagster/partitions.py`` and a selection rule in the Manifest Creator.
     """

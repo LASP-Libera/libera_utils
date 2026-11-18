@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `ADM-CAM` and `ADM-IMAGER` are version-partitioned products: `write_libera_data_product` now names them
   with `LiberaVersionPartitionedDataProductFilename`, with no time range, and archives them under
   `<ProductID>/<Version>`. The filename it returns for them has no `applicable_date`, `utc_start`, `utc_end`, or
-  `ummg_metadata_filename`. ADM files named in the daily form still parse as `LiberaDataProductFilename`. Ingesting
+  `ummg_metadata_filename`. `LiberaDataProductFilename` rejects an ADM file named in the daily form, with a time range. Ingesting
   the new names needs the matching `libera_cdk` change (LIBSDC-873).
 - **BREAKING:** `write_libera_data_product` takes every argument after `output_path` by keyword only, and
   `LiberaDataProductDefinition.generate_data_product_filename` takes `time_variable` by keyword only. Both take

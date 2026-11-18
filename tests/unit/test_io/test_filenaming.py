@@ -53,10 +53,6 @@ from libera_utils.io import filenaming
             "s3://fake-bucket/LIBERA_AUX_ADM-IMAGER_V1-0-0_R20270102T112233000000.nc",
             filenaming.LiberaVersionPartitionedDataProductFilename,
         ),
-        (
-            "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_20270102T000000_20270103T000000_R20270102T112233000000.nc",
-            filenaming.LiberaDataProductFilename,
-        ),
     ],
 )
 def test_from_filename(filename, filename_type):
@@ -1099,10 +1095,14 @@ def test_LiberaVersionPartitionedDataProductFilename(filename):
 
 @pytest.mark.parametrize(
     "product_id",
-    [dpi for dpi in DataProductIdentifier if dpi.data_level != DataLevel.L0],
+    [
+        dpi
+        for dpi in DataProductIdentifier
+        if dpi.data_level != DataLevel.L0 and dpi.partition_scheme is not PartitionScheme.VERSION
+    ],
 )
 def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(product_id):
-    """No daily filename, of any non-L0 product, parses as a version-partitioned filename"""
+    """No daily filename, of any non-L0 product that has one, parses as a version-partitioned filename"""
     daily = filenaming.LiberaDataProductFilename.from_filename_parts(
         product_name=product_id,
         version="V1-2-3",
@@ -1112,6 +1112,29 @@ def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(pro
     with pytest.raises(ValueError, match="failed validation against regex pattern"):
         filenaming.LiberaVersionPartitionedDataProductFilename(daily.path)
     assert isinstance(filenaming.AbstractValidFilename.from_file_path(daily.path), filenaming.LiberaDataProductFilename)
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [dpi for dpi in DataProductIdentifier if dpi.partition_scheme is PartitionScheme.VERSION],
+)
+def test_LiberaDataProductFilename_rejects_version_partitioned_products(product_id):
+    """A version-partitioned product named with a time range is rejected where it is constructed"""
+    filename = (
+        f"LIBERA_{product_id.data_level}_{product_id}_V1-2-3_20270102T000000_20270103T000000_R20270102T112233000000.nc"
+    )
+    expected = "has partition scheme VERSION.*Name it with LiberaVersionPartitionedDataProductFilename"
+    with pytest.raises(ValueError, match=expected):
+        filenaming.LiberaDataProductFilename(filename)
+    with pytest.raises(ValueError, match=expected):
+        filenaming.LiberaDataProductFilename.from_filename_parts(
+            product_name=product_id,
+            version="V1-2-3",
+            utc_start=dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
+            utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
+        )
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(filename)
 
 
 @pytest.mark.parametrize(

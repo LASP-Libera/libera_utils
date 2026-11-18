@@ -687,6 +687,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     - ``utc_start`` / ``utc_end`` bound the data in the file, formatted ``YYYYMMDDTHHMMSS``.
     - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
     - ``extension`` is ``nc`` for NetCDF-4 products, or ``bsp`` / ``bc`` for SPICE kernels.
+
+    A product whose ``partition_scheme`` is ``PartitionScheme.VERSION`` is not accepted. It is named by
+    :class:`~libera_utils.io.filenaming.LiberaVersionPartitionedDataProductFilename`.
     """
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
@@ -694,9 +697,11 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
-        """Set the path, rejecting a utc_start, utc_end or revision that is not a real UTC time.
+        """Set the path, rejecting a utc_start, utc_end or revision that is not a real UTC time, or a product whose
+        partition scheme is VERSION.
 
-        The regex admits any digits in those fields, so the name is parsed before it is assigned.
+        The regex admits any digits in the time fields and every product name, so the name is parsed and its product
+        checked before it is assigned.
 
         Parameters
         ----------
@@ -706,7 +711,8 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         Raises
         ------
         ValueError
-            If the path does not match the filename regex, or a time field is not a real UTC time.
+            If the path does not match the filename regex, a time field is not a real UTC time, or it names a product
+            whose partition scheme is VERSION.
         """
         if isinstance(new_path, str):
             _new_path: PathType = cast(PathType, AnyPath(new_path))
@@ -714,12 +720,19 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             _new_path = new_path
         parts = self.regex_match(_new_path)
         try:
-            self._parse_match(parts)
+            parsed = self._parse_match(parts)
         except ValueError as err:
             raise ValueError(
                 f"Proposed path {_new_path} has a utc_start, utc_end or revision that is not a real UTC time: "
                 f"{err}. Correct that field."
             ) from err
+        product_id = DataProductIdentifier(parsed.product_name)
+        if product_id.partition_scheme is PartitionScheme.VERSION:
+            raise ValueError(
+                f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a valid "
+                "filename for it: its filename carries no time range. Name it with "
+                "LiberaVersionPartitionedDataProductFilename."
+            )
         self._path = _new_path
 
     @property
@@ -1012,11 +1025,11 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
                 f"Proposed path {_new_path} has a revision that is not a real UTC time: {err}. Correct that field."
             ) from err
         product_id = DataProductIdentifier(parsed.product_name)
-        expected_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
-        if expected_class is not LiberaVersionPartitionedDataProductFilename:
+        if product_id.partition_scheme is not PartitionScheme.VERSION:
             raise ValueError(
                 f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a "
-                f"valid version-partitioned filename. Name it with {expected_class.__name__}."
+                "valid version-partitioned filename. Name it with LiberaDataProductFilename, which carries the time "
+                "range of its data."
             )
         if DataLevel(parsed.data_level) != product_id.data_level:
             raise ValueError(
@@ -1152,7 +1165,8 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
         return SimpleNamespace(**d)
 
 
-# The filename class that names the products the SDC writes under each partition scheme.
+# The filename class write_libera_data_product names a product with, by the product's partition scheme. Other filename
+# classes can name products of the same scheme, so this is not a way to validate a filename against a scheme.
 PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
     PartitionScheme.DAILY: LiberaDataProductFilename,
     PartitionScheme.VERSION: LiberaVersionPartitionedDataProductFilename,

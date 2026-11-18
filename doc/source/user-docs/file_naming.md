@@ -76,7 +76,9 @@ update). It is named by `LiberaVersionPartitionedDataProductFilename` with its d
 `applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
 version-partitioned when its `DataProductIdentifier` has partition scheme `PartitionScheme.VERSION`, and
 `LiberaVersionPartitionedDataProductFilename` does not accept products with any other scheme.
-`filenaming.PARTITION_SCHEME_FILENAME_CLASSES` gives the filename class for each partition scheme.
+`LiberaDataProductFilename` in turn does not accept a version-partitioned product.
+`filenaming.PARTITION_SCHEME_FILENAME_CLASSES` gives the filename class `write_libera_data_product` uses for each
+partition scheme.
 
 ```python
 from libera_utils.io import filenaming
