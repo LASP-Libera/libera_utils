@@ -862,7 +862,7 @@ variables:
 After a daily `NOM-HK-DECODED` product is produced, calibration pipelines need a per-ObsID
 subset of that file. Helpers in `libera_utils.l1a.nom_hk_trim` detect contiguous runs of
 known calibration Observation IDs (ObsIDs) (as cataloged in `libera_utils.obsids.OBSID_REGISTRY`) and write
-one NetCDF per run:
+one NetCDF per run that starts on the day of the `NOM-HK-DECODED` granule the Dataset was decoded into:
 
 ```python
 from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
@@ -871,10 +871,14 @@ from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
 trimmed_paths = write_trimmed_nom_hk_products(
     nom_hk_ds,
     output_dir,
+    source_product_filename=daily_nom_hk_filename,  # the NOM-HK-DECODED granule; its applicable date picks the day
     time_variable="PACKET_ICIE_TIME",
     add_archive_path_prefix=True,  # L1A preprocessor / ingest dropbox
 )
 ```
+
+`source_product_filename` must name a `NOM-HK-DECODED` product; any other filename raises
+`ValueError` before anything is written.
 
 TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (and thus
 the filename product token) changes. Science/scan modes (ObsIDs 0-2, 128, 132, and 136–140)
@@ -886,8 +890,42 @@ stays readable from the `ICIE__SW_OBSID_RAD` / `ICIE__SW_OBSID_WFOV` variable in
 file. Files of one `ProductID` are told apart by their filename time ranges, and each is
 dated by the UTC day its run started.
 
-If the same `(source, obsid)` appears in multiple disjoint runs, each run is written as a
-separate file and a warning is logged.
+Only runs that start on the applicable date of `source_product_filename` are written, and each
+is written whole, so a run that crosses midnight belongs to the day it started and the next day
+leaves it out. Pass the whole decode of the L0 files that cover the day window
+(`day_window.day_bounds`, `day_window.DAY_BUFFER` either side of the day), the same window every
+APID's L1A day product covers. A calibration run starting on the day ends inside it: the longest
+nominal calibration event lasts about 6 minutes, and repeat events are always separated by at
+least 45 seconds of standby (the "CAL event duration" meeting of the calibration and engineering
+teams, 2026-11-17). An ObsID may recur within a day; each run is its own file.
+
+A run is a stretch of one ObsID: it ends where the ObsID changes. Packets lost inside it do not
+end it, so the run stays one file. Two events of one ObsID whose boundary fell inside a gap are
+one run until the missing packets arrive.
+
+A run whose start or end is at a gap is written all the same. An edge is at a gap when the packets
+beyond it are missing or the data stops there, so the file may not hold its event's true start or
+end. The TRIMMED file carries no record of its gaps: `write_trimmed_nom_hk_products` logs one line
+per file saying whether its start and end are at a gap and how many packets are missing inside it
+(counted modulo 16384, so a lower bound; the counter rolls over inside a run but is not expected to reset
+there), at WARNING when any is and at INFO otherwise. When
+missing packets arrive later, the next revision of the day writes the run again:
+
+- an end that was at a gap moves later, under the same start time, so the new revision replaces
+  the file;
+- a start that was at a gap moves earlier, so the run is filed under a new start time and the
+  earlier file stays archived with nothing replacing it;
+- a gap that hid the boundary between two events of one ObsID becomes two files: the first keeps
+  the start time and the second is new.
+
+A run starting on the day lasts past the day window when its last packet is after the window's end,
+or when it is still going at the last packet of the data and that packet is within
+`day_coverage.DEFAULT_SEAM_TOLERANCE` of the window's end. Every other APID's day product ends at
+the window's end, so its calibration step would get incomplete inputs. `write_trimmed_nom_hk_products`
+writes the day's other runs, then raises `TrimmedRunTooLongError`, a `ValueError` naming each such run
+and listing the files it wrote in `written`, so a caller can announce them; check the event with the
+calibration team, since a known long event, such as an 18-minute video mode, is processed outside
+the automatic trim.
 
 See [the ObsID Registry page](obsid_registry.md) for the `(source, obsid)` keying, how
 downstream combiners dispatch from it, and how to register a new calibration

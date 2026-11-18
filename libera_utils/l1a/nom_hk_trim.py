@@ -1,14 +1,19 @@
 """Trim decoded NOM-HK L1A Datasets to contiguous calibration ObsID runs.
 
-One file is written per contiguous ObsID run, stamped with that ObsID's own TRIMMED ProductID
-(see :mod:`libera_utils.obsids`). Files of one ProductID are told apart by their filename time
-ranges.
+One file is written per contiguous ObsID run that starts on the UTC day of the ``NOM-HK-DECODED``
+granule the Dataset was decoded into, stamped with that ObsID's own TRIMMED ProductID (see
+:mod:`libera_utils.obsids`). A run is a stretch of one ObsID: it ends where the ObsID changes, and
+packets lost inside it do not end it. A run is never split at midnight: the day it starts on writes it
+whole when it ends inside the day window (:func:`libera_utils.l1a.day_window.day_bounds`), where every
+APID's L1A day product ends, and a run lasting past the window raises after the day's other runs are
+written. Files of one ProductID are told apart by their filename time ranges. A run at a gap is written
+and its gaps are logged; the file carries no record of them.
 """
 
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +28,10 @@ from libera_utils.io.product_definition import (
     DATE_CREATED_ATTRIBUTE,
     LiberaDataProductDefinition,
 )
+from libera_utils.l1a.day_coverage import DEFAULT_SEAM_TOLERANCE
+from libera_utils.l1a.day_window import day_bounds
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
-from libera_utils.l1a.packet_ordering import out_of_order_positions
+from libera_utils.l1a.packet_ordering import SEQUENCE_COUNTER_MODULUS, SEQUENCE_COUNTER_VAR, out_of_order_positions
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import NomHkObsidSource, ObsIdSpec, get_trimmed_obsid_spec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
@@ -32,6 +39,25 @@ from libera_utils.version import version as libera_utils_version
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIME_VARIABLE = "PACKET_ICIE_TIME"
+
+
+class TrimmedRunTooLongError(ValueError):
+    """A calibration run starting on the day lasts past the day window, so it was not written.
+
+    Raised by :func:`write_trimmed_nom_hk_products` after it has written the day's other TRIMMED
+    files, which ``written`` lists so a caller can announce them.
+
+    Parameters
+    ----------
+    message : str
+        What went wrong and what to do next.
+    written : list of LiberaDataProductFilename
+        The TRIMMED files written for the day before the error was raised, in run order.
+    """
+
+    def __init__(self, message: str, written: list[LiberaDataProductFilename]):
+        super().__init__(message)
+        self.written = written
 
 
 def get_trimmed_nom_hk_product_definition(
@@ -82,6 +108,9 @@ def find_obsid_runs(
     source: NomHkObsidSource | None = None,
 ) -> list[tuple[ObsIdSpec, slice]]:
     """Detect contiguous trim-eligible ObsID runs in a NOM-HK Dataset.
+
+    A run ends where the ObsID changes. Packets lost inside a stretch of one ObsID do not end its run,
+    so two events of one ObsID whose boundary fell in a gap are one run.
 
     Parameters
     ----------
@@ -140,6 +169,80 @@ def find_obsid_runs(
     return runs
 
 
+def _edge_after_gap(counters: np.ndarray, before: int) -> bool:
+    """Return True when packet ``before`` or ``before + 1`` is absent, or the counter does not step by exactly 1 between them."""
+    if before < 0 or before + 1 >= counters.size:
+        return True
+    return bool((counters[before + 1] - counters[before]) % SEQUENCE_COUNTER_MODULUS != 1)
+
+
+def _runs_started_on_day(
+    nom_hk: xr.Dataset,
+    runs: list[tuple[ObsIdSpec, slice]],
+    *,
+    day: date,
+    time_variable: str,
+) -> tuple[list[tuple[ObsIdSpec, slice, bool, bool]], list[tuple[ObsIdSpec, np.datetime64, np.datetime64]]]:
+    """Sort the runs whose first time falls on ``day`` into those to write and those lasting past the day window.
+
+    A run's first time is the minimum of ``time_variable`` over its packets, the time its filename
+    starts at, so the day kept here is the day its filename dates it to. A run that starts before
+    ``day`` belongs to the day before and one that starts after it to the day after; both are left
+    out without a check.
+
+    A run starting on ``day`` lasts past the day window when its last packet is after the window's
+    end, or when it is still going at the last packet of ``nom_hk`` and that packet is within
+    ``day_coverage.DEFAULT_SEAM_TOLERANCE`` of the window's end, so its end is not seen.
+
+    An edge follows a gap when the packet beyond it is not in ``nom_hk``, or ``SRC_SEQ_CTR`` does not
+    step by exactly 1 (modulo 16384) across it: the run's first or last packet may then not be its
+    event's start or end.
+
+    Returns
+    -------
+    tuple of (list of (ObsIdSpec, slice, bool, bool), list of (ObsIdSpec, numpy.datetime64, numpy.datetime64))
+        The runs to write, each with whether its start follows a gap and whether its end precedes one;
+        and the runs lasting past the day window, each with its first and last time.
+
+    Raises
+    ------
+    ValueError
+        If ``nom_hk`` has no ``time_variable``.
+    """
+    if time_variable not in nom_hk:
+        raise ValueError(f"NOM-HK Dataset is missing time variable {time_variable!r}")
+    bounds = day_bounds(day)
+    # The data axes are datetime64, which carries no timezone; the bounds are UTC by construction.
+    day_start = np.datetime64(bounds.day_start.replace(tzinfo=None), "us")
+    day_end = np.datetime64(bounds.day_end.replace(tzinfo=None), "us")
+    window_end = np.datetime64(bounds.window_end.replace(tzinfo=None), "us")
+    # Data ending within the seam tolerance of the window's end counts as reaching it, so a packet period
+    # short of the edge is not read as the data stopping early.
+    reach = window_end - np.timedelta64(DEFAULT_SEAM_TOLERANCE)
+    times = nom_hk[time_variable].values
+    counters = nom_hk[SEQUENCE_COUNTER_VAR].values.astype(np.int64)
+
+    kept: list[tuple[ObsIdSpec, slice, bool, bool]] = []
+    too_long: list[tuple[ObsIdSpec, np.datetime64, np.datetime64]] = []
+    for spec, pkt_slice in runs:
+        first_time = times[pkt_slice].min()
+        if not day_start <= first_time < day_end:
+            continue
+        last_time = times[pkt_slice].max()
+        if last_time > window_end or (pkt_slice.stop == counters.size and last_time >= reach):
+            too_long.append((spec, first_time, last_time))
+            continue
+        kept.append(
+            (
+                spec,
+                pkt_slice,
+                _edge_after_gap(counters, pkt_slice.start - 1),
+                _edge_after_gap(counters, pkt_slice.stop - 1),
+            )
+        )
+    return kept, too_long
+
+
 def _prepare_trimmed_attrs(
     trimmed: xr.Dataset,
     trimmed_product: DataProductIdentifier,
@@ -175,24 +278,28 @@ def write_trimmed_nom_hk_products(
     strict: bool = True,
     source: NomHkObsidSource | None = None,
 ) -> list[LiberaDataProductFilename]:
-    """Detect ObsID runs in ``nom_hk`` and write one TRIMMED file per run.
+    """Write one TRIMMED file for each ObsID run in ``nom_hk`` that starts on the day of ``source_product_filename``.
 
-    Each file is stamped with its run's ObsID's TRIMMED ProductID.
-
-    When the same ``(source, obsid)`` appears in multiple disjoint runs, each run
-    is written separately and a warning is logged.
+    Each file is stamped with its run's ObsID's TRIMMED ProductID and spans the whole run, from its
+    first packet to its last. A run ends at an ObsID change, not at a ``SRC_SEQ_CTR`` gap (see
+    :func:`find_obsid_runs`); a run at a gap is written and logged at WARNING. "ObsID-trimmed NOM-HK
+    products" in the L1A processing user guide describes the day rule, the gaps, and what a later
+    revision with the missing packets does to each file.
 
     Parameters
     ----------
     nom_hk : xr.Dataset
-        Decoded ``NOM-HK-DECODED`` Dataset.
+        Decoded ``NOM-HK-DECODED`` Dataset, as :func:`~libera_utils.l1a.packets.parse_packets_to_l1a_dataset`
+        returns it, covering the day window of its day (:func:`~libera_utils.l1a.day_window.day_bounds`).
     output_path : str or PathType
         Directory (or S3 prefix) for output files.
     source_product_filename : str or PathType
-        Filename of the ``NOM-HK-DECODED`` granule ``nom_hk`` was read from. Recorded as the
-        sole entry of each TRIMMED product's ``input_files`` attribute.
+        Filename of the ``NOM-HK-DECODED`` granule ``nom_hk`` was decoded into. Its
+        :attr:`~libera_utils.io.filenaming.LiberaDataProductFilename.applicable_date` is the UTC day
+        whose runs are written, and it is recorded as the sole entry of each TRIMMED product's
+        ``input_files`` attribute.
     time_variable : str
-        Time coordinate used for filename start/end times.
+        Time coordinate used for the day selection and the filename start/end times.
     add_archive_path_prefix : bool
         Forwarded to :func:`~libera_utils.io.netcdf.write_libera_data_product`.
     strict : bool
@@ -203,37 +310,44 @@ def write_trimmed_nom_hk_products(
     Returns
     -------
     list of LiberaDataProductFilename
-        Paths of written TRIMMED products.
+        Paths of written TRIMMED products, in run order; empty when no run starts on the day.
 
     Raises
     ------
     ValueError
-        As :func:`find_obsid_runs` raises it.
+        Before any file is written: as :func:`find_obsid_runs` raises it; if ``source_product_filename``
+        is not a Libera filename or does not name a ``NOM-HK-DECODED`` product; or if ``nom_hk`` has no
+        ``time_variable``.
+    TrimmedRunTooLongError
+        After the day's other TRIMMED files are written, which it lists: if a run starting on the day
+        lasts past the end of the day window, or is still going at the last packet of ``nom_hk`` within
+        ``day_coverage.DEFAULT_SEAM_TOLERANCE`` of it.
     """
-    runs = find_obsid_runs(nom_hk, source=source)
-    counts: dict[tuple[NomHkObsidSource, int], int] = defaultdict(int)
-    for spec, _ in runs:
-        counts[(spec.source, spec.obsid)] += 1
-    for (src, obsid), n in counts.items():
-        if n > 1:
-            logger.warning(
-                "ObsID %s on %s (%s) appears in %d disjoint runs in this NOM-HK Dataset; "
-                "writing separate TRIMMED files per run",
-                obsid,
-                src.name,
-                src.value,
-                n,
-            )
+    parent = LiberaDataProductFilename(source_product_filename)
+    if parent.data_product_id is not DataProductIdentifier.l1a_icie_nom_hk_decoded:
+        raise ValueError(
+            f"source_product_filename {parent.path.name} is a {parent.data_product_id.value} product, not "
+            f"{DataProductIdentifier.l1a_icie_nom_hk_decoded.value}. Pass the filename of the "
+            f"{DataProductIdentifier.l1a_icie_nom_hk_decoded.value} granule the NOM-HK Dataset was decoded into."
+        )
+    day = parent.applicable_date
+    runs, too_long = _runs_started_on_day(
+        nom_hk, find_obsid_runs(nom_hk, source=source), day=day, time_variable=time_variable
+    )
 
     # One definition per distinct ProductID, not per run; dict.fromkeys keeps the run order
-    distinct_products = dict.fromkeys(spec.trimmed_product for spec, _ in runs)
+    distinct_products = dict.fromkeys(spec.trimmed_product for spec, *_ in runs)
     definitions = {product: get_trimmed_nom_hk_product_definition(product) for product in distinct_products}
 
     written: list[LiberaDataProductFilename] = []
     source_attrs = dict(nom_hk.attrs)
-    for spec, pkt_slice in runs:
+    for spec, pkt_slice, start_after_gap, end_before_gap in runs:
         trimmed_product = spec.trimmed_product
         trimmed = select_packets(nom_hk, pkt_slice)
+        # Modulo 16384 per step, so a lower bound: a gap of a multiple of 16384 packets steps the counter by 1.
+        # The counter rolls over inside a run but is not expected to reset there, which would inflate the count.
+        counter_steps = np.diff(trimmed[SEQUENCE_COUNTER_VAR].values.astype(np.int64))
+        missing_packets = int(((counter_steps - 1) % SEQUENCE_COUNTER_MODULUS).sum())
         trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs, source_product_filename)
         filename = write_libera_data_product(
             definitions[trimmed_product],
@@ -243,13 +357,35 @@ def write_trimmed_nom_hk_products(
             strict=strict,
             add_archive_path_prefix=add_archive_path_prefix,
         )
-        logger.info(
-            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s as %s",
+        # TODO[LIBSDC-930]: report these gaps where Dagster shows them, not only in this log line.
+        logger.log(
+            logging.WARNING if start_after_gap or end_before_gap or missing_packets else logging.INFO,
+            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s as %s, start after gap %s, "
+            "end before gap %s, %d packets missing inside",
             filename.path.name,
             trimmed.sizes[PACKET_DIM],
             spec.obsid,
             spec.source.name,
             trimmed_product.value,
+            start_after_gap,
+            end_before_gap,
+            missing_packets,
         )
         written.append(filename)
+
+    if too_long:
+        described = "; ".join(
+            f"the {spec.trimmed_product.value} run of ObsID {spec.obsid} on {spec.source.name} starting {first_time}, "
+            f"still going at {last_time}"
+            for spec, first_time, last_time in too_long
+        )
+        raise TrimmedRunTooLongError(
+            f"Cannot write {len(too_long)} TRIMMED NOM-HK run(s) for {day.isoformat()} ({described}); the day's "
+            f"other {len(written)} TRIMMED file(s) were written. Each run lasts past the end of the day window, "
+            f"{day_bounds(day).window_end.isoformat()}, where every APID's L1A day product ends, so a calibration "
+            f"step would get incomplete inputs. Nominal calibration events end well inside the day window. Check "
+            f"this event with the calibration team: a known long event, such as an 18-minute video mode, is "
+            f"processed outside the automatic trim.",
+            written,
+        )
     return written

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.26.0] - 2026-11-18
+
 ### Added
 
 - Add one TRIMMED NOM-HK `DataProductIdentifier` per calibration ObsID, `l1a_icie_nom_hk_<x>_trimmed` (`NOM-HK-<CAL ProductID>-TRIMMED`, e.g. `NOM-HK-SWC-365NM-TRIMMED`), 1:1 with the ObsID's CAL product, for all 40 radiometer and camera calibration ObsIDs.
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING:** Each calibration ObsID in `data/obsid_registry.csv` names its own TRIMMED product, so `nom_hk_trim.write_trimmed_nom_hk_products` stamps each run with its ObsID's TRIMMED ProductID instead of a family's, and `get_trimmed_nom_hk_product_definition` accepts only those products.
 - **BREAKING:** `LiberaDataProductFilename.applicable_date`, and so `archive_prefix`, dates a calibration event file, the TRIMMED or CAL product of a calibration ObsID, by the UTC day of its `utc_start` instead of the midpoint of its time range, and no longer warns when its time range exceeds 24 hours. An event that crosses midnight is archived under the day it started. Keeping a TRIMMED file's time range to its event's is the L1A trim's job (LIBSDC-900), and a CAL file's time range to its TRIMMED file's is the combiner's (LIBSDC-902).
+- **BREAKING:** `nom_hk_trim.write_trimmed_nom_hk_products` writes only the runs whose first packet is on the UTC day of `source_product_filename`, which must name a `NOM-HK-DECODED` product (`ValueError` otherwise), each run whole, so a run that crosses midnight is written by the day it started. A run lasting past the day window (`day_window.DAY_BUFFER` past the day) is not written: the function writes the day's other runs, then raises `nom_hk_trim.TrimmedRunTooLongError`, a `ValueError` naming it and carrying the written files in `written`. It no longer warns when an ObsID recurs within the data. (#115)
+- `nom_hk_trim.write_trimmed_nom_hk_products` logs one line per TRIMMED file saying whether its start and end are at a `SRC_SEQ_CTR` gap and how many packets are missing inside it, at WARNING when any is and at INFO otherwise; the file itself carries no record of its gaps. (#115)
 - **BREAKING:** `data/trim_family_inputs.csv` is renamed `data/cal_combiner_inputs.csv` and keyed by TRIMMED product, one row per calibration ObsID.
 
 ### Removed
@@ -1086,7 +1090,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...HEAD
+[5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
 [5.24.0]: https://github.com/LASP-Libera/libera_utils/compare/5.23.0...5.24.0
 [5.23.0]: https://github.com/LASP-Libera/libera_utils/compare/5.22.0...5.23.0
