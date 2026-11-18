@@ -243,3 +243,14 @@ class TestERA5PressureLevelReaderRealSubset:
         values = sample_at(samples, 45.0, -105.0)
         assert values[names.index("Temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
         assert values[names.index("Geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``ERA5PressureLevelReader.granule_span`` dates the real granule from its first and last time step: the one step ``20250101T00`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = ERA5PressureLevelReader.granule_span(fmatch_real_ancillary_granules["ERA5_Pressure"])
+        assert start == np.datetime64("2025-01-01T00:00:00", "ns")
+        assert end == np.datetime64("2025-01-01T00:00:00", "ns")

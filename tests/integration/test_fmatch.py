@@ -20,7 +20,6 @@ from cloudpathlib import S3Path
 
 from libera_utils import cli
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    ANCILLARY_PATH_ENV,
     L1B_TIME_VARIABLE,
     RUNNER_CONFIGS,
 )
@@ -56,14 +55,13 @@ def processing_area(request, tmp_path) -> tuple[Path | S3Path, Path | S3Path]:
 def fmatch_environment(monkeypatch, processing_area, fmatch_input_manifest):
     """Set up a processing step's environment, returning a function that writes a step's input manifest.
 
-    The returned function sets ``PROCESSING_PATH``, leaves ``FMATCH_ANCILLARY_PATH`` unset so the manifest is the only
-    source of ancillary granules, and writes the input manifest for the step with ``fmatch_input_manifest``.
+    The returned function sets ``PROCESSING_PATH`` and writes the input manifest for the step, ancillary granules
+    included, with ``fmatch_input_manifest``.
     """
     input_dir, dropbox = processing_area
 
     def _stage(processing_step_id, *input_products: Path) -> Path | S3Path:
         monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
-        monkeypatch.delenv(ANCILLARY_PATH_ENV, raising=False)
         return fmatch_input_manifest(processing_step_id, *input_products, input_dir=input_dir)
 
     return _stage
@@ -143,7 +141,7 @@ def test_camera_timescale_run_stops_before_writing(
     step, tmp_path, processing_area, fmatch_environment, cf_cam_camtime_file_factory
 ):
     """A CF-CAM-CAMTIME manifest runs through the entrypoint and stops before writing, leaving the dropbox empty."""
-    # TODO[LIBSDC-884]: assert the written product and output manifest once CF-CAM-CAMTIME carries the camera
+    # TODO[LIBSDC-943]: assert the written product and output manifest once CF-CAM-CAMTIME carries the camera
     #  ephemeris, as the radiometer-timescale test does.
     _, dropbox = processing_area
     generated = tmp_path / "generated"

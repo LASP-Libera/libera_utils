@@ -107,6 +107,47 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
             )
         return time_dims[0]
 
+    @classmethod
+    def _granule_times(cls, path: Path) -> np.ndarray:
+        """Return the time steps of one granule, ``datetime64[ns]``, in file order.
+
+        Raises
+        ------
+        ValueError
+            If the file has no single time dimension.
+        """
+        with xr.open_dataset(path, engine="netcdf4") as ds:
+            time_dim = cls._time_dimension(ds, path)
+            return np.asarray(ds[time_dim].values).astype("datetime64[ns]")
+
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the first and last time step of one granule.
+
+        Parameters
+        ----------
+        path : Path
+            One staged ERA5 CDS netCDF file.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)``, the earliest and latest step, as UTC ``datetime64[ns]``.
+
+        Raises
+        ------
+        ValueError
+            If the file has no single time dimension, or its time axis is empty or holds a
+            missing (NaT) value.
+        """
+        times = cls._granule_times(path)
+        if times.size == 0 or np.any(np.isnat(times)):
+            raise ValueError(
+                f"ERA5 file {path} has an empty time axis or a missing time step, so it cannot be dated. "
+                "Re-download the period from the CDS."
+            )
+        return times.min(), times.max()
+
     def _step_times(self) -> np.ndarray:
         """Collect every hourly step across the staged granules, ascending.
 
@@ -115,9 +156,7 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
         """
         located: list[tuple[np.datetime64, Path, int]] = []
         for path in self.file_paths:
-            with xr.open_dataset(path, engine="netcdf4") as ds:
-                time_dim = self._time_dimension(ds, path)
-                times = np.asarray(ds[time_dim].values).astype("datetime64[ns]")
+            times = self._granule_times(path)
             located.extend((t, path, j) for j, t in enumerate(times))
         located.sort(key=lambda item: item[0])
         self._step_locations = [(path, j) for _, path, j in located]

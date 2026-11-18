@@ -15,6 +15,7 @@ import xarray as xr
 
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     FMATCH_RADIOMETER_TIME_COORDINATE,
+    L1B_GRANULE_TIME_KEY,
     load_l1b_radiometer_inputs,
 )
 from libera_utils.footprint_matching.product import (
@@ -52,6 +53,7 @@ class TestRadiometerPassthrough(_L1BFileTestCase):
             *L1B_PASSTHROUGH_VARIABLES,
             *L1B_SCAN_REFERENCE_VARIABLES,
             L1B_CONE_ANGLE_RATE_VARIABLE,
+            L1B_GRANULE_TIME_KEY,
         }
 
     def test_dtypes_match_the_product_definition(self):

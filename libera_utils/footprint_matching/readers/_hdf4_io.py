@@ -11,7 +11,38 @@ from pathlib import Path
 import numpy as np
 import pyhdf.SD as sd
 
-from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
+from libera_utils.footprint_matching.readers._eos_metadata import (
+    parse_core_metadata_range,
+    parse_eos_grid,
+    struct_metadata_error,
+)
+
+
+def read_hdf4_file_attribute(file_path: str | Path, name: str) -> str:
+    """Return one global attribute of an HDF4 file as text, or ``""`` when it has none.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to the HDF4 file.
+    name : str
+        The attribute, e.g. ``"StructMetadata.0"`` or ``"coremetadata.0"``.
+
+    Returns
+    -------
+    str
+        The attribute's text.
+
+    Raises
+    ------
+    pyhdf.error.HDF4Error
+        If the file cannot be opened.
+    """
+    hdf = sd.SD(str(file_path), sd.SDC.READ)
+    try:
+        return hdf.attributes().get(name, "")
+    finally:
+        hdf.end()
 
 
 def read_hdf4_struct_metadata(file_path: str | Path) -> str:
@@ -32,11 +63,31 @@ def read_hdf4_struct_metadata(file_path: str | Path) -> str:
     pyhdf.error.HDF4Error
         If the file cannot be opened.
     """
-    hdf = sd.SD(str(file_path), sd.SDC.READ)
-    try:
-        return hdf.attributes().get("StructMetadata.0", "")
-    finally:
-        hdf.end()
+    return read_hdf4_file_attribute(file_path, "StructMetadata.0")
+
+
+def read_hdf4_granule_span(file_path: str | Path) -> tuple[np.datetime64, np.datetime64]:
+    """Return an HDF-EOS2 granule's ``(start, end)`` span from the ``RANGEDATETIME`` group of its ``coremetadata.0``.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to the HDF4 file.
+
+    Returns
+    -------
+    tuple[np.datetime64, np.datetime64]
+        ``(start, end)`` as UTC ``datetime64[ns]``.
+
+    Raises
+    ------
+    pyhdf.error.HDF4Error
+        If the file cannot be opened.
+    ValueError
+        If ``coremetadata.0`` is missing or does not give a valid range (see
+        :func:`~libera_utils.footprint_matching.readers._eos_metadata.parse_core_metadata_range`).
+    """
+    return parse_core_metadata_range(read_hdf4_file_attribute(file_path, "coremetadata.0"), file_path)
 
 
 @dataclass(frozen=True)

@@ -39,9 +39,12 @@ File naming:
     CLDPROP_D3_VIIRS_NOAA20.A{YYYYDDD}.{collection}.{YYYYDDDHHMMSS}.nc
 """
 
+from pathlib import Path
+
 import netCDF4
 import numpy as np
 
+from libera_utils.footprint_matching.readers._points import read_granule_time_coverage
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 from libera_utils.io.netcdf import field_fill_value
@@ -105,6 +108,27 @@ class VIIRSCldpropD3Reader(StaticReader):
         )
         for name, _, _, aggregation in _D3_FIELDS
     )
+
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the day the composite covers, from its ``time_coverage_start`` / ``time_coverage_end`` attributes.
+
+        Parameters
+        ----------
+        path : Path
+            One staged CLDPROP_D3 granule.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)`` as UTC ``datetime64[ns]``.
+
+        Raises
+        ------
+        ValueError
+            If either attribute is missing or is not an ISO 8601 instant.
+        """
+        return read_granule_time_coverage(path, source=cls.READER_KEY)
 
     def _load_native(self) -> GridSamples:
         """Read the full VIIRS cloud-property grid once.

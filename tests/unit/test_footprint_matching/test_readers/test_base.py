@@ -49,6 +49,7 @@ class _GridReader(StaticReader):
 
     READER_KEY = "_base_test_grid"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 111.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (_SPEC,)
@@ -65,6 +66,7 @@ class _HeldReader(StaticReader):
 
     READER_KEY = "_base_test_held"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (_SPEC,)
@@ -82,6 +84,7 @@ class _HeldPassReader(StaticReader):
 
     READER_KEY = "_base_test_held_pass"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.NEAREST_PASS
     PASS_WINDOW = np.timedelta64(15, "m")
@@ -111,7 +114,9 @@ class _GranuleReader(PassReader):
         self._granules = granules
         self.loads: list = []
 
-    def _granule_span(self, path):
+    # An instance method, since the spans are handed in at construction; a real reader reads them
+    # from the granule as a classmethod.
+    def granule_span(self, path):
         start, end, _ = self._granules[path]
         return start, end
 
@@ -125,6 +130,7 @@ class _StepReader(SteppedGridReader):
 
     READER_KEY = "_base_test_steps"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
     MAX_TIME_OFFSET = np.timedelta64(1, "h")
     VARIABLES = (_SPEC,)
@@ -928,6 +934,18 @@ class TestRegistrationValidation:
                 "daily",
                 id="daily-with-pass-window",
             ),
+            pytest.param(
+                StaticReader,
+                {"TIME_MATCH": TimeMatch.DAILY, "GRANULE_DATE_WINDOW": np.timedelta64(1, "D")},
+                "granule_span",
+                id="date-window-no-span",
+            ),
+            pytest.param(
+                PassReader,
+                {"MAX_TIME_OFFSET": np.timedelta64(3, "h")},
+                "granule_span",
+                id="pass-reader-default-window-no-span",
+            ),
         ],
     )
     def test_inconsistent_class_attributes_are_rejected(self, request, base, attrs, match):
@@ -937,7 +955,9 @@ class TestRegistrationValidation:
         before any footprint is processed: without ``INSTRUMENT`` output variables have no stated source; without
         ``TIME_MATCH`` the reader cannot select samples in time; a nearest-step or nearest-pass reader needs
         ``MAX_TIME_OFFSET`` to bound the pairing, and a nearest-pass one ``PASS_WINDOW`` to keep a pass together;
-        and a daily reader applies no time selection, so a declared window would be silently ignored.
+        and a daily reader applies no time selection, so a declared window would be silently ignored. A reader with a
+        ``GRANULE_DATE_WINDOW`` (every reader by default) must implement ``granule_span``, or the runner could not
+        check its granules' dates.
 
         Each case builds a reader class from its base with every other required attribute and method and must fail
         with a message naming the attribute at fault (or mentioning daily).
@@ -952,6 +972,43 @@ class TestRegistrationValidation:
         }
         with pytest.raises(TypeError, match=match):
             type(base)("_Inconsistent", (base,), namespace)
+
+    @pytest.mark.parametrize(
+        "attrs",
+        [
+            pytest.param(
+                {
+                    "granule_span": classmethod(
+                        lambda cls, path: (np.datetime64("2026-06-11", "ns"), np.datetime64("2026-06-12", "ns"))
+                    )
+                },
+                id="window-with-span",
+            ),
+            pytest.param({"GRANULE_DATE_WINDOW": None}, id="no-window-no-span"),
+        ],
+    )
+    def test_reader_with_a_span_or_no_window_registers(self, monkeypatch, request, attrs):
+        """A reader that implements ``granule_span``, or sets ``GRANULE_DATE_WINDOW = None``, is registered."""
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        key = f"_base_test_{request.node.callspec.id}"
+        namespace = {
+            "READER_KEY": key,
+            "INSTRUMENT": "FAKE",
+            "RESOLUTION_KM": 1.0,
+            "VARIABLES": (_SPEC,),
+            "TIME_MATCH": TimeMatch.DAILY,
+            "_load_native": lambda self: None,
+            **attrs,
+        }
+        reader = type(StaticReader)("_Dated", (StaticReader,), namespace)
+
+        assert ReaderRegistry.get(key) is reader
+
+    def test_base_granule_span_raises_not_implemented(self):
+        """A reader exempt from the date check reports no span: the base ``granule_span`` raises."""
+        assert _GridReader.GRANULE_DATE_WINDOW is None
+        with pytest.raises(NotImplementedError, match="_GridReader"):
+            _GridReader.granule_span(UNREAD_GRANULE)
 
 
 def _level_spec(name: str, aggregation: str = "weighted_mean") -> VariableSpec:
@@ -980,6 +1037,7 @@ class _Stacked(StaticReader):
 
     READER_KEY = "_base_test_stacked"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = _STACKED_SPECS
@@ -994,6 +1052,7 @@ class _CategoricalStack(StaticReader):
 
     READER_KEY = "_base_test_categorical_stack"
     INSTRUMENT = "FAKE"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = _STACKED_SPECS
@@ -1058,6 +1117,7 @@ class TestProductStacks:
             class _BadStacks(StaticReader):
                 READER_KEY = "_base_test_bad_stacks"
                 INSTRUMENT = "FAKE"
+                GRANULE_DATE_WINDOW = None
                 RESOLUTION_KM = 1.0
                 TIME_MATCH = TimeMatch.DAILY
                 VARIABLES = _STACKED_SPECS

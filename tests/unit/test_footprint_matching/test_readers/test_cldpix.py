@@ -498,7 +498,7 @@ class TestCLDPIXReaderRealSubset:
         misread the date would put every pixel on the wrong day and no Libera footprint would ever match it.
 
         Loads the real CLDPIX cut and asserts it has set times spanning between 55 min and 1 h, and that they fall
-        within 10 s of the granule's ``time_coverage_start``/``time_coverage_end`` as read by ``_granule_span``.
+        within 10 s of the granule's ``time_coverage_start``/``time_coverage_end`` as read by ``granule_span``.
         """
         reader = CLDPIXReader([cldpix_path])
         points = reader._load_granule(cldpix_path)
@@ -510,7 +510,7 @@ class TestCLDPIXReaderRealSubset:
         # The granule's own coverage attributes bracket every decoded time to within a few
         # seconds: the first scanlines precede the declared start by about two seconds in the
         # source granule, which is why each hour is dated to the day nearest the start.
-        start, end = reader._granule_span(cldpix_path)
+        start, end = reader.granule_span(cldpix_path)
         assert finite.min() >= start - np.timedelta64(10, "s")
         assert finite.max() <= end + np.timedelta64(10, "s")
 
@@ -559,7 +559,7 @@ class TestCLDPIXReaderRealSubset:
         assert np.allclose(samples.values[row, at_i], radius.ravel()[i])
 
     def test_granule_span_matches_the_coverage_attributes(self, cldpix_path):
-        """``CLDPIXReader._granule_span`` reads an hour-long span from a real granule that ``granules_in_window`` uses.
+        """``CLDPIXReader.granule_span`` reads an hour-long span from a real granule that ``granules_in_window`` uses.
 
         The span decides which granules are held for a footprint; a misread span would drop the granule a footprint
         falls in, losing its cloud values, or hold granules a day away.
@@ -568,8 +568,19 @@ class TestCLDPIXReaderRealSubset:
         returns the granule for a time 30 min into the span and nothing for a time 24 h later.
         """
         reader = CLDPIXReader([cldpix_path])
-        start, end = reader._granule_span(cldpix_path)
+        start, end = reader.granule_span(cldpix_path)
         assert np.timedelta64(55, "m") < end - start <= np.timedelta64(1, "h")
         # A footprint inside the hour has the granule in its window; one a day away does not.
         assert reader.granules_in_window(start + np.timedelta64(30, "m")) == [cldpix_path]
         assert reader.granules_in_window(start + np.timedelta64(24, "h")) == []
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``CLDPIXReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the hour ``2020041015`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = CLDPIXReader.granule_span(fmatch_real_ancillary_granules["CLDPIX"])
+        assert start == np.datetime64("2020-04-10T15:00:01.414490", "ns")
+        assert end == np.datetime64("2020-04-10T15:59:59.601746", "ns")

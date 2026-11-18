@@ -1,19 +1,33 @@
 """HDF-EOS5 helpers for the footprint matching readers.
 
-Reads an HDF-EOS5 file's ``StructMetadata.0`` grid definition with h5py, and parses it
-with ``_eos_metadata``. What a product stores in its grids, and how its fields are
+Reads an HDF-EOS5 file's ``StructMetadata.0`` grid definition and its root ``RangeBeginning*``
+/ ``RangeEnding*`` attributes with h5py, and parses them with ``_eos_metadata``. What a product stores in its grids, and how its fields are
 decoded, belongs to the product's reader (the VIIRS BRDF reader, VJ143C1, in ``brdf.py``).
 """
 
-import h5py
+from pathlib import Path
 
-from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
+import h5py
+import numpy as np
+
+from libera_utils.footprint_matching.readers._eos_metadata import (
+    ecs_range_span,
+    parse_eos_grid,
+    struct_metadata_error,
+)
 
 # The HDF-EOS5 metadata dataset that defines every grid's dimensions, corners and projection.
 _HE5_STRUCT_METADATA_PATH: str = "HDFEOS INFORMATION/StructMetadata.0"
 # What to check when StructMetadata.0 does not describe the expected grid.
 _HE5_STRUCT_METADATA_ADVICE: str = (
     "An HDF-EOS5 file defines each grid there; check that the file is the unmodified granule as distributed."
+)
+# The root attributes that date an HDF-EOS5 granule, in the order ecs_range_span takes them.
+_HE5_RANGE_ATTRIBUTES: tuple[str, ...] = (
+    "RangeBeginningDate",
+    "RangeBeginningTime",
+    "RangeEndingDate",
+    "RangeEndingTime",
 )
 
 
@@ -100,3 +114,37 @@ def read_he5_struct_metadata(f: h5py.File, source: str) -> str:
             "HDF-EOS5 stores it as. Check that the file is the unmodified granule as distributed."
         )
     return raw_metadata.decode("ascii").rstrip("\x00")
+
+
+def read_he5_granule_span(path: str | Path) -> tuple[np.datetime64, np.datetime64]:
+    """Return an HDF-EOS5 granule's ``(start, end)`` span from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the HDF-EOS5 file.
+
+    Returns
+    -------
+    tuple[np.datetime64, np.datetime64]
+        ``(start, end)`` as UTC ``datetime64[ns]``.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be opened.
+    ValueError
+        If any of ``RangeBeginningDate``, ``RangeBeginningTime``, ``RangeEndingDate`` or
+        ``RangeEndingTime`` is missing, or they do not form a valid span (see
+        :func:`~libera_utils.footprint_matching.readers._eos_metadata.ecs_range_span`).
+    """
+    with h5py.File(str(path), "r") as f:
+        missing = [name for name in _HE5_RANGE_ATTRIBUTES if name not in f.attrs]
+        if missing:
+            raise ValueError(
+                f"{path}: no root attribute {missing}, so the granule cannot be dated. Check that the file is the "
+                "unmodified granule as distributed."
+            )
+        values = [f.attrs[name] for name in _HE5_RANGE_ATTRIBUTES]
+    text = [value.decode("ascii") if isinstance(value, bytes) else str(value) for value in values]
+    return ecs_range_span(*text, source=path)

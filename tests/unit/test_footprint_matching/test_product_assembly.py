@@ -22,7 +22,7 @@ from libera_utils.footprint_matching.product import (
     CAMTIME_BBOX_WRAPS_DATELINE_BIT,
     CAMTIME_PSEUDOFOOTPRINT_VARIABLES,
     L1B_PASSTHROUGH_VARIABLES,
-    MissingCamtimeVariablesError,
+    FmatchInputError,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     _fill_value_for,
@@ -497,6 +497,7 @@ class _WestHalfReader(StaticReader):
 
     READER_KEY = "_fake_west_half"
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
@@ -846,7 +847,7 @@ class TestPseudofootprintsFromCamtime:
     def test_missing_variable_raises_naming_it(self, cf_cam_camtime_dataset_factory):
         dataset = cf_cam_camtime_dataset_factory().drop_vars(["PSF_Bbox_Flags", "Camera_Pixel_X_Min"])
 
-        with pytest.raises(MissingCamtimeVariablesError, match="Camera_Pixel_X_Min, PSF_Bbox_Flags"):
+        with pytest.raises(FmatchInputError, match="Camera_Pixel_X_Min, PSF_Bbox_Flags"):
             pseudofootprints_from_camtime_dataset(dataset)
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
@@ -858,3 +859,8 @@ class TestPseudofootprintsFromCamtime:
         definition = load_fmatch_definition(mode)
         declared = {*definition.variables, *definition.coordinates}
         assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"PSF_Bbox_Flags"} == set()
+
+
+def test_fmatch_input_error_is_a_value_error():
+    """FmatchInputError subclasses ValueError, so a caller that handles ValueError keeps handling every input failure."""
+    assert issubclass(FmatchInputError, ValueError)

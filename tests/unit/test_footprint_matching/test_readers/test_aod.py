@@ -233,3 +233,33 @@ class TestVIIRSAODReaderRealSubset:
         aod, aerosol_type = sample_at(samples, -15.5, 21.5)
         assert aod == pytest.approx(0.69888, abs=1e-5)
         assert aerosol_type == 4
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``VIIRSAODReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the day ``A2026270`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = VIIRSAODReader.granule_span(fmatch_real_ancillary_granules["VIIRS_AOD"])
+        assert start == np.datetime64("2026-09-27T00:00:00", "ns")
+        assert end == np.datetime64("2026-09-27T23:59:59", "ns")
+
+
+class TestVIIRSAODGranuleSpan:
+    """``VIIRSAODReader.granule_span`` dates a granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes."""
+
+    def test_span_is_the_coverage_date(self, tmp_path):
+        path = make_aod_noaa20_fixture(tmp_path, coverage_date="2026-06-11")
+
+        start, end = VIIRSAODReader.granule_span(path)
+
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T23:59:59", "ns")
+
+    def test_granule_without_a_date_raises(self, tmp_path):
+        """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
+        path = make_aod_noaa20_fixture(tmp_path)
+
+        with pytest.raises(ValueError, match="time_coverage_start"):
+            VIIRSAODReader.granule_span(path)

@@ -413,6 +413,7 @@ def make_nise_hdfeos_fixture(
     lower_right_m: tuple[float, float] = (9_036_842.7625, -9_036_842.7625),
     projection: str = "GCTP_LAMAZ",
     struct_metadata: bool = True,
+    coverage_date: str | None = None,
 ) -> Path:
     """Write a NISE HDF-EOS4 granule with pyhdf: an ``Extent`` and an ``Age`` SDS per hemisphere.
 
@@ -434,6 +435,10 @@ def make_nise_hdfeos_fixture(
         The ``Projection`` both grids name.
     struct_metadata : bool, optional
         Whether to write ``StructMetadata.0`` at all.
+    coverage_date : str, optional
+        A ``YYYY-MM-DD`` day written as the ``RANGEDATETIME`` group of ``coremetadata.0``,
+        00:00 to 00:00 the next day, as the real granule dates itself. ``None`` (the
+        default) writes no ``coremetadata.0``.
 
     Returns
     -------
@@ -472,6 +477,25 @@ def make_nise_hdfeos_fixture(
                 sds.endaccess()
         if struct_metadata:
             hdf.attr("StructMetadata.0").set(sd.SDC.CHAR8, "\n".join(lines) + "\n")
+        if coverage_date is not None:
+            next_day = str(np.datetime64(coverage_date, "D") + np.timedelta64(1, "D"))
+            core = ["GROUP                  = RANGEDATETIME"]
+            for name, value in (
+                ("RANGEBEGINNINGTIME", "00:00:00.00Z"),
+                ("RANGEENDINGTIME", "00:00:00.00Z"),
+                ("RANGEBEGINNINGDATE", coverage_date),
+                ("RANGEENDINGDATE", next_day),
+            ):
+                core.extend(
+                    [
+                        f"  OBJECT                 = {name}",
+                        "    NUM_VAL              = 1",
+                        f'    VALUE                = "{value}"',
+                        f"  END_OBJECT             = {name}",
+                    ]
+                )
+            core.extend(["END_GROUP              = RANGEDATETIME", "END"])
+            hdf.attr("coremetadata.0").set(sd.SDC.CHAR8, "\n".join(core) + "\n")
     finally:
         hdf.end()
     return path
@@ -500,6 +524,7 @@ def make_viirs_brdf_hdf5_fixture(
     omit_attributes: tuple[str, ...] = (),
     projection: str = "HE5_GCTP_GEO",
     metadata_corners: tuple[float, float, float, float] | None = None,
+    coverage_date: str | None = None,
 ) -> Path:
     """Write a synthetic VJ143C1 HDF5 BRDF fixture file.
 
@@ -535,6 +560,11 @@ def make_viirs_brdf_hdf5_fixture(
     metadata_corners : tuple[float, float, float, float], optional
         ``(ul_lon, ul_lat, lr_lon, lr_lat)`` written to StructMetadata in place of the
         region's own corners.
+    coverage_date : str, optional
+        A ``YYYY-MM-DD`` day written as the root ``RangeBeginningDate`` /
+        ``RangeBeginningTime`` / ``RangeEndingDate`` / ``RangeEndingTime`` attributes,
+        00:00 to 00:00 the next day, as the real granule dates itself. ``None`` (the
+        default) writes none.
 
     Returns
     -------
@@ -587,6 +617,13 @@ def make_viirs_brdf_hdf5_fixture(
     }
 
     with h5py.File(str(out_path), "w") as f:
+        if coverage_date is not None:
+            # The real granule dates its day as 00:00 to 00:00 the next day, as fixed-length strings.
+            next_day = str(np.datetime64(coverage_date, "D") + np.timedelta64(1, "D"))
+            f.attrs["RangeBeginningDate"] = np.bytes_(coverage_date)
+            f.attrs["RangeBeginningTime"] = np.bytes_("00:00:00.000000")
+            f.attrs["RangeEndingDate"] = np.bytes_(next_day)
+            f.attrs["RangeEndingTime"] = np.bytes_("00:00:00.000000")
         f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.bytes_(struct_metadata))
         grp = f.require_group("HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields")
         grp.create_dataset("lat", data=lat_edges.astype(np.float64)).attrs["units"] = "degrees_north"
@@ -619,6 +656,7 @@ def make_aod_noaa20_fixture(
     aerosol_type_valid_range: tuple[int, int] | None = (0, 7),
     aod_fill_value: float | None = -999.0,
     aerosol_type_fill_value: int | None = -999,
+    coverage_date: str | None = None,
 ) -> Path:
     """Write a synthetic AERDB_D3_VIIRS_NOAA20 Deep Blue aerosol NetCDF4 file.
 
@@ -662,6 +700,10 @@ def make_aod_noaa20_fixture(
     aod_fill_value, aerosol_type_fill_value : float, int or None
         The ``_FillValue`` attribute written on each field; ``None`` writes none.
         Default −999, as in the real product.
+    coverage_date : str, optional
+        A ``YYYY-MM-DD`` day written as the ``time_coverage_start`` (00:00:00) and
+        ``time_coverage_end`` (23:59:59) global attributes, as the real daily product
+        dates itself. ``None`` (the default) writes neither.
 
     Returns
     -------
@@ -676,6 +718,9 @@ def make_aod_noaa20_fixture(
     lons = np.linspace(lon_min, lon_max, n_lon)
 
     with netCDF4.Dataset(str(out_path), "w") as ds:
+        if coverage_date is not None:
+            ds.time_coverage_start = f"{coverage_date}T00:00:00.000000"
+            ds.time_coverage_end = f"{coverage_date}T23:59:59.000000"
         # Note the ``_1D`` coordinate names — they differ from the merged product.
         ds.createDimension("Latitude_1D", n_lat)
         ds.createDimension("Longitude_1D", n_lon)
@@ -749,6 +794,7 @@ def make_viirs_cldprop_d3_fixture(
     cot_fill: float = 4.0,
     ctp_fill: float = 700.0,
     mean_fill_value: float | None = -9999.0,
+    coverage_date: str | None = None,
 ) -> Path:
     """Write a synthetic CLDPROP_D3 VIIRS cloud properties NetCDF4 file.
 
@@ -781,6 +827,10 @@ def make_viirs_cldprop_d3_fixture(
     mean_fill_value : float or None
         ``_FillValue`` declared on each ``Mean``. ``None`` writes none, to test a file
         without one.
+    coverage_date : str, optional
+        A ``YYYY-MM-DD`` day written as the ``time_coverage_start`` (00:00:00) and
+        ``time_coverage_end`` (23:59:59) global attributes, as the real daily product
+        dates itself. ``None`` (the default) writes neither.
 
     Returns
     -------
@@ -794,6 +844,9 @@ def make_viirs_cldprop_d3_fixture(
     lons = np.linspace(lon_min, lon_max, n_lon)
 
     with netCDF4.Dataset(str(out_path), "w") as ds:
+        if coverage_date is not None:
+            ds.time_coverage_start = f"{coverage_date}T00:00:00.000000"
+            ds.time_coverage_end = f"{coverage_date}T23:59:59.000000"
         # Root-level dimensions and coordinate variables.
         ds.createDimension("latitude", n_lat)
         ds.createDimension("longitude", n_lon)
@@ -1339,6 +1392,7 @@ class FakeMeanReader(StaticReader):
 
     READER_KEY = "_fake_agg_mean"
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
@@ -1362,6 +1416,7 @@ class FakeCatReader(StaticReader):
 
     READER_KEY = "_fake_agg_cat"
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (

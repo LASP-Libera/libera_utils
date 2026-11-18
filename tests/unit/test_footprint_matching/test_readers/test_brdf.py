@@ -423,3 +423,33 @@ class TestVIIRSBRDFReaderRealSubset:
         assert values[3] == pytest.approx(0.062)  # vis_fiso
         ocean = reader.samples_in(BoundingBox(36.95, 37.0, -123.0, -122.95), _T)
         assert np.isnan(sample_at(ocean, 36.975, -122.975)).all()
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``VIIRSBRDFReader.granule_span`` dates the real granule from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes: the day ``A2026153`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = VIIRSBRDFReader.granule_span(fmatch_real_ancillary_granules["VIIRS_BRDF"])
+        assert start == np.datetime64("2026-06-02T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-03T00:00:00", "ns")
+
+
+class TestVIIRSBRDFGranuleSpan:
+    """``VIIRSBRDFReader.granule_span`` dates a granule from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes."""
+
+    def test_span_is_the_coverage_date(self, tmp_path):
+        path = make_viirs_brdf_hdf5_fixture(tmp_path, coverage_date="2026-06-11")
+
+        start, end = VIIRSBRDFReader.granule_span(path)
+
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
+
+    def test_granule_without_a_date_raises(self, tmp_path):
+        """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
+        path = make_viirs_brdf_hdf5_fixture(tmp_path)
+
+        with pytest.raises(ValueError, match="RangeBeginningDate"):
+            VIIRSBRDFReader.granule_span(path)

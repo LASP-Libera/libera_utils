@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from libera_utils.footprint_matching.readers._eos_metadata import ecs_range_span
 from libera_utils.footprint_matching.readers.nsidc import (
     _HEMISPHERE_LABEL_NORTH,
     _HEMISPHERE_LABEL_SOUTH,
@@ -439,3 +440,54 @@ class TestNISEReaderRealSubset:
         north_pole = reader.samples_in(BoundingBox(89.5, 90.0, -180.0, 180.0), self._TIME).values
         assert north_pole.size > 0
         assert np.isnan(north_pole).all()
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``NISEReader.granule_span`` dates the real granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``: the day ``20260610`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = NISEReader.granule_span(fmatch_real_ancillary_granules["NISE"])
+        assert start == np.datetime64("2026-06-10T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T00:00:00", "ns")
+
+
+class TestNISEGranuleSpan:
+    """``NISEReader.granule_span`` dates a granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``."""
+
+    def test_span_is_the_coverage_date(self, tmp_path):
+        path = make_nise_hdfeos_fixture(
+            tmp_path / "NISE.HDFEOS",
+            north=np.full((2, 2), 255, dtype=np.uint8),
+            south=np.full((2, 2), 255, dtype=np.uint8),
+            coverage_date="2026-06-11",
+        )
+
+        start, end = NISEReader.granule_span(path)
+
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
+
+    def test_granule_without_a_date_raises(self, tmp_path):
+        """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
+        path = make_nise_hdfeos_fixture(
+            tmp_path / "NISE.HDFEOS",
+            north=np.full((2, 2), 255, dtype=np.uint8),
+            south=np.full((2, 2), 255, dtype=np.uint8),
+        )
+
+        with pytest.raises(ValueError, match="RANGEBEGINNINGDATE"):
+            NISEReader.granule_span(path)
+
+    @pytest.mark.parametrize(
+        ("values", "match"),
+        [
+            (("2026-06-12", "00:00:00", "2026-06-11", "00:00:00"), "ends"),
+            (("2026-13-40", "00:00:00", "2026-06-11", "00:00:00"), "ISO 8601"),
+        ],
+    )
+    def test_invalid_range_raises(self, values, match):
+        """``ecs_range_span`` rejects a range that ends before it begins or is not a date."""
+        with pytest.raises(ValueError, match=match):
+            ecs_range_span(*values, source="NISE.HDFEOS")

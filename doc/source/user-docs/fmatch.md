@@ -4,18 +4,21 @@ FMATCH matches each Libera footprint to the external, non-Libera datasets that d
 reanalysis, IGBP land cover, NISE snow and sea ice, VIIRS surface, cloud and aerosol products and, from the second
 operational year, CERES CLDPIX and FLASHFlux. For every footprint it aggregates each source's native samples inside
 the footprint's point spread function (PSF) to one value, and writes them with the footprint's geolocation and
-viewing geometry to an FMATCH product. Scene ID, Camera Cloud Fraction and ADM binning read those products.
+viewing geometry to an FMATCH product. Scene ID and ADM binning read those products.
 
 The code is in `libera_utils.footprint_matching`:
 
-| Module                         | What it does                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------- |
-| `footprint_match_algorithm`    | The runner: reads an input manifest, writes the products and an output manifest |
-| `product`                      | Product assembly: footprints, PSF aggregation, coverage QA, writing the NetCDF  |
-| `readers`                      | One reader per external source, registered by its reader key                    |
-| `sources`, `aggregation`       | Build the readers for a run; collapse a footprint's samples to one value        |
-| `geometry`, `psf`, `weighting` | Footprint bounding boxes and the PSF weights of each sample                     |
-| `types`                        | `OperationalMode`, footprint types and the quality flags                        |
+| Module                      | What it does                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `footprint_match_algorithm` | The runner: reads an input manifest, writes the products and an output manifest |
+| `product`                   | Product assembly: footprints, PSF aggregation, coverage QA, writing the NetCDF  |
+| `readers`                   | One reader per external source, registered by its reader key                    |
+| `sources`                   | Builds the readers active in a run over its ancillary granules                  |
+| `aggregation`               | Collapses a footprint's PSF-weighted samples from a source to one value         |
+| `geometry`                  | Turns a footprint's viewing geometry into its latitude/longitude bounding box   |
+| `psf`                       | The point spread function: its shape and the contour that sizes a footprint     |
+| `weighting`                 | Weights each sample by the PSF and measures the footprint's coverage            |
+| `types`                     | `OperationalMode`, footprint types and the quality flags                        |
 
 ## The four products
 
@@ -23,19 +26,22 @@ Each FMATCH product is an operational mode, `OperationalMode`, with its own prod
 `libera_utils/data/product_definitions/fmatch_*.yml`. The modes differ in their time axis, their latency (which sets
 the external sources available to them) and their inputs.
 
-| Product                 | Processing step             | Time axis  | Latency         | Primary input    | Cloud fraction                 |
-| ----------------------- | --------------------------- | ---------- | --------------- | ---------------- | ------------------------------ |
-| `FMATCH-CAM`            | `aux-fmatch-cam`            | radiometer | near real time  | L1B `RAD-4CH`    | CF-CAM, matched by time        |
-| `FMATCH-CAM-CAMTIME`    | `aux-fmatch-cam-camtime`    | camera     | near real time  | `CF-CAM-CAMTIME` | carried in `CF-CAM-CAMTIME`    |
-| `FMATCH-IMAGER`         | `aux-fmatch-imager`         | radiometer | climate quality | L1B `RAD-4CH`    | none (from the imager readers) |
-| `FMATCH-IMAGER-CAMTIME` | `aux-fmatch-imager-camtime` | camera     | climate quality | `CF-CAM-CAMTIME` | none (from the imager readers) |
+| Product                 | Processing step (`ProcessingStepIdentifier`) | Time axis  | Latency         | Libera input     | `Cloud_Fraction_Camera` from |
+| ----------------------- | -------------------------------------------- | ---------- | --------------- | ---------------- | ---------------------------- |
+| `FMATCH-CAM`            | `aux-fmatch-cam`                             | radiometer | near real time  | L1B `RAD-4CH`    | `CF-CAM`, matched by time    |
+| `FMATCH-CAM-CAMTIME`    | `aux-fmatch-cam-camtime`                     | camera     | near real time  | `CF-CAM-CAMTIME` | `CF-CAM-CAMTIME`             |
+| `FMATCH-IMAGER`         | `aux-fmatch-imager`                          | radiometer | climate quality | L1B `RAD-4CH`    | not carried                  |
+| `FMATCH-IMAGER-CAMTIME` | `aux-fmatch-imager-camtime`                  | camera     | climate quality | `CF-CAM-CAMTIME` | not carried                  |
+
+The IMAGER products carry no camera cloud fraction; their cloud information comes from the CERES and VIIRS readers.
 
 The CAM products run from mission start. The IMAGER products need the RBSP CERES inputs (CLDPIX, FLASHFlux), so they
-do not run in the first operational year.
+do not run in the first operational year; once those inputs exist, the IMAGER products are produced from mission
+start by reprocessing.
 
-The camera-timescale products rebuild their camera pseudo-footprints from the `CF-CAM-CAMTIME` product the Camera
+The camera-timescale products read their camera pseudo-footprints from the `CF-CAM-CAMTIME` product the Camera
 Cloud Fraction algorithm writes. Those pseudo-footprints do not yet carry the spacecraft ephemeris the PSF is sized
-from, so a camera-timescale run stops with a `ValueError` before it writes a product (LIBSDC-884).
+from, so a camera-timescale run stops with a `ValueError` before it writes a product (LIBSDC-943).
 
 ## Running FMATCH
 
@@ -85,20 +91,22 @@ given with `--processing_step_id`. When both are given they must match, or the r
 `ancillary_inputs`
 : Maps each reader key active for the product to the ancillary granules listed for it. Every path must also be in
 `files`. The mapping must name exactly the readers the product uses (see
-[Ancillary inputs](#ancillary-inputs)), each with at least one granule, or the run raises `AncillaryManifestError`.
-When the key is absent, the runner reads the granules from a directory tree under `FMATCH_ANCILLARY_PATH`
-instead.
+[Ancillary inputs](#ancillary-inputs)), each with at least one granule. A manifest without the key, or with a
+mapping that does not meet these rules, raises `FmatchInputError`.
 
 The runner picks its Libera inputs out of `files` by their parsed product IDs: L1B `RAD-4CH` or `CF-CAM-CAMTIME` as
-the primary input, and CF-CAM for FMATCH-CAM. Files whose names are not Libera product names, such as the ancillary
-granules, are skipped there.
+the Libera input, and CF-CAM for FMATCH-CAM. Files whose names do not start with `LIBERA_`, such as the ancillary
+granules, are skipped there; a `LIBERA_` name that does not parse as a Libera product filename raises
+`FmatchInputError`.
+
+Every way a run's inputs can fail it, a missing or unusable input in the manifest or an input without a variable
+FMATCH reads, raises `FmatchInputError`, a `ValueError`. The message names the input and what to change.
 
 ### Environment and configuration
 
 | Name                         | Required | Meaning                                                                                |
 | ---------------------------- | -------- | -------------------------------------------------------------------------------------- |
 | `PROCESSING_PATH`            | yes      | The dropbox directory or S3 prefix the products and the output manifest are written to |
-| `FMATCH_ANCILLARY_PATH`      | no       | Root of a staged ancillary tree, read only when the manifest has no `ancillary_inputs` |
 | `FMATCH_WORKERS`             | no       | Worker processes for the PSF aggregation: a positive integer, or `auto` (the default)  |
 | `FMATCH_WORKER_MEMORY_BYTES` | no       | Memory one worker is assumed to need when `FMATCH_WORKERS` is `auto`                   |
 
@@ -107,20 +115,20 @@ overrides them. With `auto`, the pool is the smaller of the CPUs the process may
 affinity set capped by its cgroup CPU quota) and the number of workers whose memory fits in what the process can
 still use (the lower of its cgroup headroom and the host's `MemAvailable`) after a 512 MiB reserve, and at least one.
 Where neither memory figure can be read, it is one worker. `config.json` gives the per-worker memory per product,
-since the IMAGER products load the ERA5 pressure levels; an environment value applies to every product. The defaults
-are estimates until they are measured on full-size inputs. A run with fewer than 50 footprints per worker stays in
-the calling process.
+since the IMAGER products load the ERA5 pressure levels; an environment value applies to every product. The 512 MiB
+reserve, the per-product worker memory and the 50-footprint minimum are estimates until LIBSDC-928 measures
+them on full-size inputs. A run with fewer than 50 footprints per worker stays in the calling process.
 
 When it runs in a forked pool, the PSF aggregation's result is identical to the single-process result.
 
 ### What a run does
 
 1. Reads the input manifest and selects the product from `processing_step_id`.
-2. Locates the ancillary granules: the manifest's `ancillary_inputs`, or the tree under `FMATCH_ANCILLARY_PATH`.
-   When the manifest lists them and the variable is also set, the variable is ignored with a warning.
-3. Selects the primary inputs from the manifest, and for FMATCH-CAM reads every CF-CAM input once.
+2. Locates the ancillary granules the manifest lists in `ancillary_inputs`.
+3. Selects the Libera inputs from the manifest by product ID. For FMATCH-CAM it also reads every CF-CAM file once
+   and matches each L1B footprint to its CF-CAM row by time.
 4. Copies any S3 ancillary granule to a temporary local directory, because the readers open real files, then writes
-   one FMATCH product per primary input.
+   the product `processing_step_id` selects, one file per Libera input.
 5. Builds the output manifest from the input manifest.
 6. Adds the written products to it.
 7. Writes it to `PROCESSING_PATH`.
@@ -156,28 +164,16 @@ ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
 Each reader takes the granule or granules of its source for the period; a reader that reads one granule per period
 raises when it is handed more.
 
-### The directory tree
+Before a product is written, the runner checks each granule's date against the Libera input's footprint times: a
+granule whose own time span, read from its metadata (`AncillaryReader.granule_span`), does not overlap the footprint
+times widened by its reader's `GRANULE_DATE_WINDOW` raises `FmatchInputError`, naming the granule, its reader and
+the range it had to overlap. The window is one day either side for every reader, so a granule from the input's
+previous or next day is accepted (LIBSDC-942). IGBP has none, since MCD12Q1 is an annual map whose newest year
+is applied to later dates.
 
-Without `ancillary_inputs` in the manifest, the runner looks under `FMATCH_ANCILLARY_PATH` for one subdirectory per
-active reader, named by its reader key, holding that reader's granules:
-
-```text
-$FMATCH_ANCILLARY_PATH/
-    ERA5_Surface/       ERA5 single-level granules
-    ERA5_Pressure/      ERA5 pressure-level granules
-    IGBP/               MCD12Q1 land-cover granules
-    NISE/               NISE snow/ice granules
-    VIIRS_BRDF/         VIIRS BRDF granules
-    VIIRS_CLDPROP_D3/   VIIRS daily L3 cloud-property granules
-    VIIRS_AOD/          VIIRS Deep Blue aerosol granules
-    CLDPIX/             CERES CLDPIX granules    (IMAGER products)
-    FLASHFlux/          CERES FLASHFlux granules (IMAGER products)
-```
-
-A run with neither `ancillary_inputs` nor `FMATCH_ANCILLARY_PATH` raises `ValueError`. A missing root, a missing
-reader directory or an empty one raises `FileNotFoundError`. The tree may be local or in
-S3. No SDC pipeline stages these granules yet, since Data Ingester does not handle them, so the tree is for local and
-development runs; a processing step lists the granules in its manifest.
+Every run lists its granules in `ancillary_inputs`; the manifest creator will write that key once it selects the
+ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself, as
+`notebooks/09_runners.ipynb` does.
 
 ## Inputs by time axis
 
@@ -185,45 +181,47 @@ development runs; a processing step lists the granules in its manifest.
 
 The runner reads the footprint geolocation and viewing angles from L1B `RAD-4CH`, which the product carries unchanged
 (`product.L1B_PASSTHROUGH_VARIABLES`), and the scan-reference geometry (subsatellite point, satellite radius,
-cone-angle rate) that orients each footprint's PSF. A footprint with a non-finite value in any of those, other than
-the cone-angle rate, is dropped: L1B writes them as fill where the boresight misses the Earth. A file with no usable
-footprint raises `ValueError`.
+cone-angle rate) that orients each footprint's PSF. FMATCH writes no row for a footprint with a non-finite value in
+any of those, other than the cone-angle rate; L1B writes them as fill where the boresight misses the Earth. A file
+with no usable footprint raises `ValueError`.
 
 FMATCH-CAM also needs CF-CAM, whose `Cloud_Fraction` (percent) it writes as `Cloud_Fraction_Camera`. CF-CAM carries
 the L1B `radiometer_time` values unchanged, and its rows are matched to the footprints by exact time:
 
 - a footprint with no CF-CAM row gets fill, since the camera sees only part of the radiometer track;
 - a CF-CAM row outside the L1B granule's time span belongs to another granule and is ignored;
-- a CF-CAM row with a value inside the span that matches no footprint raises `CloudFractionTimeMismatchError`, as do
-  two rows at the same time, or no footprint matching any row;
-- a missing CF-CAM input, or one without `Cloud_Fraction` or `radiometer_time`, raises
-  `MissingCloudFractionInputError`.
+- a CF-CAM row at the time of a footprint FMATCH writes no row for is ignored;
+- a CF-CAM row with a value inside the span that matches no L1B time raises `CloudFractionTimeMismatchError`, as do
+  two rows at the same time, or no L1B time matching any row;
+- a missing CF-CAM input, or one without `Cloud_Fraction` or `radiometer_time`, raises `FmatchInputError`.
 
 ### Camera time: CF-CAM-CAMTIME
 
 The camera-timescale products read their pseudo-footprints, one per real cell of the `CAMERA_TIME` by
 `PSEUDOFOOTPRINT` grid, from `CF-CAM-CAMTIME` (`product.pseudofootprints_from_camtime_dataset`). FMATCH-CAM-CAMTIME
-also reads `Cloud_Fraction` from it. A missing pseudo-footprint variable raises `MissingCamtimeVariablesError`.
+also reads `Cloud_Fraction` from it. A missing pseudo-footprint variable raises `FmatchInputError`.
 
 ## What the product carries
 
-Each column a product definition declares is filled one of three ways:
+Each variable a product definition declares is filled one of three ways:
 
 - **Pass-through**: the geolocation and viewing angles, from L1B or from the pseudo-footprints, and each footprint's
   PSF bounding box (`PSF_Bbox_*`).
 - **Computed**: `Sunglint_Angle`; every external variable, named `<READER_KEY>_<variable>` (for example
-  `ERA5_Surface_Wind_U10`) with a `long_name` ending in the reader's instrument; and the coverage columns
+  `ERA5_Surface_Wind_U10`) with a `long_name` ending in the reader's instrument; and the coverage variables
   `PSF_Coverage_Fraction` and `Quality_Flag`.
 - **Fill**: a footprint with no usable sample for a variable gets `NaN`, or `-1` for an integer category
   (`product.FMATCH_INTEGER_FILL_VALUE`).
 
 Coverage is the fraction of the PSF's energy backed by usable samples, the lowest across the active sources.
-Following the CERES rule, a footprint is kept and flagged rather than discarded: coverage from 75% to below 95% sets
+Following the CERES coverage rule (Footprint Matching design doc, sections 2.4.2.7 and 2.8.1.1.3;
+`aggregation.ACCEPT_COVERAGE_THRESHOLD` and `aggregation.PARTIAL_COVERAGE_THRESHOLD`), a footprint is kept and
+flagged rather than discarded: coverage from 75% to below 95% sets
 `PARTIAL_COVERAGE` in `Quality_Flag`, below 75% sets `INSUFFICIENT_COVERAGE`, a bounding box clipped at the limb sets
 `LIMB_TRUNCATED`, and a view off the Earth's limb sets `OFF_LIMB` (`types.FmatchCoverageFlag`).
 
-The product's `InputGranules` attribute names the primary input, any CF-CAM input and every ancillary granule it was
-made from.
+The product's `InputGranules` attribute names the Libera input, any CF-CAM input and every ancillary granule it was
+made from. It is the product's record of its inputs until the UMM-G writer (LIBSDC-869) records them.
 
 ## Extending FMATCH
 
@@ -246,8 +244,8 @@ For example, moving the VIIRS readers from NOAA-20 to NOAA-21:
    conventions), update the reader's field table and its `_load_granule` or `_load_native`, and add a cut of a real
    granule under `tests/test_data/footprint_matching/` with a test that reads it.
 
-The reader key and the product variable names do not change, so the manifest's `ancillary_inputs`, the staging tree
-and downstream consumers are unaffected unless step 3 changes a variable.
+The reader key and the product variable names do not change, so the manifest's `ancillary_inputs` and downstream
+consumers are unaffected unless step 3 changes a variable.
 
 ### Add a variable to an existing reader
 
@@ -268,11 +266,11 @@ and downstream consumers are unaffected unless step 3 changes a variable.
    and import it in `libera_utils/footprint_matching/readers/__init__.py` to register it.
 2. Name the products it feeds in each of its variables' `modes`; `FMATCH_MODE_READERS` is derived from them.
 3. Add its variables to those products' definitions, as above.
-4. List its granules under its reader key in the manifest's `ancillary_inputs`, or stage them under
-   `$FMATCH_ANCILLARY_PATH/<reader key>/`; the runner derives the readers it needs from the registry.
+4. List its granules under its reader key in the manifest's `ancillary_inputs`; the runner derives the readers it
+   needs from the registry.
 
-Renaming a reader key renames its product variables, its `ancillary_inputs` key and its staging directory, so it is a
-change consumers and whatever writes the manifests must follow.
+Renaming a reader key renames its product variables and its `ancillary_inputs` key, so it is a change consumers and
+whatever writes the manifests must follow.
 
 ### Add a product variant
 
@@ -282,9 +280,9 @@ A variant needs:
    `product.FMATCH_DEFINITION_FILENAMES`; a camera-timescale mode is also added to `product._CAMERA_TIMESCALE_MODES`,
    or it is assembled on the radiometer time axis;
 2. the mode named in the `modes` of each reader variable it carries, which gives it its active readers and its
-   external columns;
+   external variables;
 3. a `ProcessingStepIdentifier` member for the step that writes it, with the product it writes;
-4. an `FmatchRunnerConfig` (the mode, its primary input product, its cloud-fraction input or `None`, its log label
+4. an `FmatchRunnerConfig` (the mode, its Libera input product, its cloud-fraction input or `None`, its log label
    and, for a camera-timescale mode, its footprint loader) added to `RUNNER_CONFIGS` under that step.
 
 The `--processing_step_id` choices and the steps `run_algorithm` accepts follow `RUNNER_CONFIGS`.

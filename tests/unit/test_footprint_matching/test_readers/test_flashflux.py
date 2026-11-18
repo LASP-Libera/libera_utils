@@ -348,3 +348,14 @@ class TestFLASHFluxReaderRealSubset:
             assert np.allclose(samples.values[names.index(name), at_i], value), name
         # Four hours away nothing is served.
         assert reader.samples_in(box, points.times[i] + np.timedelta64(4, "h")).n_samples == 0
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``FLASHFluxReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the hour ``2020040115`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = FLASHFluxReader.granule_span(fmatch_real_ancillary_granules["FLASHFlux"])
+        assert start == np.datetime64("2020-04-01T15:00:00", "ns")
+        assert end == np.datetime64("2020-04-01T15:59:59.999999", "ns")

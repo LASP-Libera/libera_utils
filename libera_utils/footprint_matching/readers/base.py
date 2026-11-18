@@ -20,7 +20,7 @@ Three concrete contracts
   keeps only the step nearest the footprint time in memory.
 * :class:`PassReader` -- the source is swath data in hourly granules, each with a time
   per sample (CERES FLASHFlux, CLDPIX). The reader reads a granule's time span
-  (:meth:`PassReader._granule_span`) and loads one granule as points
+  (:meth:`AncillaryReader.granule_span`) and loads one granule as points
   (:meth:`PassReader._load_granule`); the base class holds only the granules whose span
   lies within ``MAX_TIME_OFFSET`` of the current footprint time.
 
@@ -46,6 +46,15 @@ the observation time of the sample nearest the footprint time) for a ``NEAREST_P
 source. Beyond
 ``MAX_TIME_OFFSET`` the query returns no samples, which the orchestrator scores as zero
 coverage and flags.
+
+Granule date window
+-------------------
+Every reader but one reports the time span a granule covers, read from the granule's own
+metadata (:meth:`AncillaryReader.granule_span`), and declares how far outside a Libera
+input's footprint time range that span may lie (``GRANULE_DATE_WINDOW``). The FMATCH
+runner rejects a staged granule outside that window before aggregating, so a granule
+from the wrong day is reported rather than applied. The window does not choose which
+granule a reader reads.
 
 Auto-registration via ``__init_subclass__``
 -------------------------------------------
@@ -82,6 +91,11 @@ POINT_INDEX_BIN_DEG: float = 1.0
 _KM_PER_DEG: float = 111.0
 _N_LAT_BINS: int = int(round(180.0 / POINT_INDEX_BIN_DEG))
 _N_LON_BINS: int = int(round(360.0 / POINT_INDEX_BIN_DEG))
+# How far either side of a Libera input's footprint time range an ancillary granule's span may lie
+# (``AncillaryReader.GRANULE_DATE_WINDOW``). One day either side accepts a granule from the input's
+# previous or next day, which LIBSDC-942 plans to list in FMATCH input manifests beside the same day's,
+# and rejects one dated farther away.
+DEFAULT_GRANULE_DATE_WINDOW: np.timedelta64 = np.timedelta64(1, "D")
 
 
 def split_dateline(bbox: BoundingBox) -> list[BoundingBox]:
@@ -299,6 +313,12 @@ class AncillaryReader(abc.ABC):
         Product variables that stack several product specs along a second product
         dimension (e.g. ERA5's pressure levels). A stack whose members all have
         standard-deviation companions gains a companion stack (see ``product_stacks``).
+    GRANULE_DATE_WINDOW : np.timedelta64 or None
+        How far outside a Libera input's footprint time range a staged granule's span
+        (:meth:`granule_span`) may lie before the FMATCH runner rejects the granule.
+        Defaults to ``DEFAULT_GRANULE_DATE_WINDOW`` (1 day). ``None`` exempts the
+        reader from the check, for a source applied to dates outside its own span (IGBP's
+        annual land-cover map); a reader with a window must implement :meth:`granule_span`.
 
     Parameters
     ----------
@@ -328,6 +348,7 @@ class AncillaryReader(abc.ABC):
     TIMESTAMP_SOURCE: str | None = None
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = ()
     PRODUCT_STACKS: tuple[ProductStack, ...] = ()
+    GRANULE_DATE_WINDOW: np.timedelta64 | None = DEFAULT_GRANULE_DATE_WINDOW
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Validate and register every concrete subclass in ReaderRegistry.
@@ -344,7 +365,8 @@ class AncillaryReader(abc.ABC):
         TypeError
             If a concrete subclass lacks a required class attribute, declares a window
             attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
-            registered to a different class, or declares a ``PRODUCT_STACKS`` entry that names
+            registered to a different class, sets ``GRANULE_DATE_WINDOW`` without implementing
+            :meth:`granule_span`, or declares a ``PRODUCT_STACKS`` entry that names
             a spec it does not produce, stacks a spec twice, takes the name of a product spec,
             stacks specs only some of which have standard-deviation companions, or stacks
             specs whose ``modes`` differ.
@@ -385,6 +407,15 @@ class AncillaryReader(abc.ABC):
                 f"Reader {cls.__name__!r} uses TIME_MATCH='daily', which applies no time selection; "
                 "remove its MAX_TIME_OFFSET / PASS_WINDOW."
             )
+        # A classmethod override has its own __func__; the base's is the one that raises NotImplementedError.
+        inherits_span = getattr(cls.granule_span, "__func__", None) is AncillaryReader.granule_span.__func__
+        if cls.GRANULE_DATE_WINDOW is not None and inherits_span:
+            raise TypeError(
+                f"Reader {cls.__name__!r} sets GRANULE_DATE_WINDOW={cls.GRANULE_DATE_WINDOW!r} but does not implement "
+                "granule_span, so the runner cannot check its granules' dates. Implement granule_span to read a "
+                "granule's (start, end) from its own metadata, or set GRANULE_DATE_WINDOW = None for a source "
+                "applied to dates outside its own span."
+            )
 
         cls._check_product_stacks()
 
@@ -397,6 +428,37 @@ class AncillaryReader(abc.ABC):
                 f"to {registered.__module__}.{registered.__qualname__}. Give each reader a unique READER_KEY."
             )
         ReaderRegistry._registry[key] = cls
+
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the ``(start, end)`` times one granule covers, read from the granule's own metadata.
+
+        Reads only the granule's metadata, not its data, so it can be called without
+        constructing the reader. Implemented by every reader whose ``GRANULE_DATE_WINDOW``
+        is not ``None``.
+
+        Parameters
+        ----------
+        path : Path
+            A staged granule of this reader's source, on the local filesystem.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)`` as UTC ``datetime64[ns]``, ``start <= end``.
+
+        Raises
+        ------
+        NotImplementedError
+            If the reader does not report granule spans (its ``GRANULE_DATE_WINDOW`` is
+            ``None``).
+        ValueError
+            In an implementation, if the granule's metadata does not give its span.
+        """
+        raise NotImplementedError(
+            f"Reader {cls.__name__!r} does not report granule spans: its GRANULE_DATE_WINDOW is None, so its "
+            "granules' dates are not checked."
+        )
 
     @classmethod
     def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
@@ -924,7 +986,7 @@ class PassReader(AncillaryReader):
 
     CERES FLASHFlux and CLDPIX come as hourly granules, and a CLDPIX hour alone is several
     million pixels, so a day cannot be held at once. The subclass reports each granule's
-    time span (:meth:`_granule_span`) and loads one granule as time-stamped points
+    time span (:meth:`granule_span`) and loads one granule as time-stamped points
     (:meth:`_load_granule`); this class keeps indexed only the granules whose span lies
     within ``MAX_TIME_OFFSET`` of the current footprint time, loading a granule when the
     footprints reach its window and releasing it when they leave. Footprints arrive in
@@ -955,7 +1017,7 @@ class PassReader(AncillaryReader):
         """``(start, end, path)`` per staged granule, ascending by start."""
         spans = []
         for path in self.file_paths:
-            start, end = self._granule_span(path)
+            start, end = self.granule_span(path)
             start, end = np.datetime64(start, "ns"), np.datetime64(end, "ns")
             if np.isnat(start) or np.isnat(end) or end < start:
                 raise ValueError(
@@ -998,10 +1060,6 @@ class PassReader(AncillaryReader):
             if path not in self._loaded:
                 self._loaded[path] = self._index_points(self._load_granule(path))
         return tuple(self._loaded[path] for path in wanted)
-
-    @abc.abstractmethod
-    def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
-        """Return the ``(start, end)`` observation times a granule covers, from its metadata."""
 
     @abc.abstractmethod
     def _load_granule(self, path: Path) -> PointSamples:

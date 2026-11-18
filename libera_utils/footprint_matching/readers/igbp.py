@@ -82,6 +82,9 @@ class IGBPReader(StaticReader):
         The coverage measure credits each pixel with a cell of this side.
     VARIABLES : tuple[VariableSpec, ...]
         Single variable: ``"Surface_Type"`` (categorical, 20 IGBP classes).
+    GRANULE_DATE_WINDOW : None
+        The annual map is applied to dates outside its own year, so its granules' dates
+        are not checked.
 
     Parameters
     ----------
@@ -97,6 +100,10 @@ class IGBPReader(StaticReader):
     # The MCD12Q1 v061 User Guide's sinusoidal grid cell, 463.3 m.
     RESOLUTION_KM: float = 0.463
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
+    # MCD12Q1 is an annual land-cover map (MCD12Q1 v061 User Guide), and its newest year is applied
+    # to every later date until the next is released, so a granule's own year says nothing about
+    # whether it was staged for the right day: its date is not checked.
+    GRANULE_DATE_WINDOW: np.timedelta64 | None = None
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="Surface_Type",

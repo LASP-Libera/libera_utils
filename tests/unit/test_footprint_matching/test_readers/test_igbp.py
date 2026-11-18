@@ -463,3 +463,13 @@ class TestIGBPReaderRealSubset:
         served, counts = np.unique(samples.values[0], return_counts=True)
         assert set(served.tolist()) <= {1, 2, 5, 9, 10, 11, 12, 13, 14, 16, 17}
         assert served[np.argmax(counts)] == 12
+
+    def test_granule_date_is_not_checked(self, fmatch_real_ancillary_granules):
+        """``IGBPReader`` sets no ``GRANULE_DATE_WINDOW`` and reports no granule span.
+
+        MCD12Q1 is an annual map whose newest year is applied to later dates, so the runner must never reject the real
+        2024 granule for its date; ``granule_span`` raises rather than dating it.
+        """
+        assert IGBPReader.GRANULE_DATE_WINDOW is None
+        with pytest.raises(NotImplementedError, match="GRANULE_DATE_WINDOW is None"):
+            IGBPReader.granule_span(fmatch_real_ancillary_granules["IGBP"])

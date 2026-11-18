@@ -48,6 +48,7 @@ class _PixelReader(StaticReader):
 
     READER_KEY = "_native_stats"
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (

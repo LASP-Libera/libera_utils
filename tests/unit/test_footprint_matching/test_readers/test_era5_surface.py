@@ -320,3 +320,26 @@ class TestERA5ReaderRealSubset:
         assert values["Temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
         assert values["Surface_Pressure"] == pytest.approx(88917.95, abs=0.1)
         assert values["Wind_U10"] == pytest.approx(1.84288, abs=1e-4)
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``ERA5SurfaceReader.granule_span`` dates the real granule from its first and last time step: the one step ``20250101T00`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = ERA5SurfaceReader.granule_span(fmatch_real_ancillary_granules["ERA5_Surface"])
+        assert start == np.datetime64("2025-01-01T00:00:00", "ns")
+        assert end == np.datetime64("2025-01-01T00:00:00", "ns")
+
+    @pytest.mark.parametrize(
+        "times",
+        [np.array([], dtype="datetime64[ns]"), np.array(["2025-01-01T00:00", "NaT"], dtype="datetime64[ns]")],
+        ids=["empty", "missing-step"],
+    )
+    def test_granule_span_without_a_full_time_axis_raises(self, monkeypatch, tmp_path, times):
+        """A granule whose time axis is empty or has a missing step cannot be dated, so the date check cannot pass it."""
+        monkeypatch.setattr(ERA5SurfaceReader, "_granule_times", classmethod(lambda cls, path: times))
+
+        with pytest.raises(ValueError, match="empty time axis or a missing time step"):
+            ERA5SurfaceReader.granule_span(tmp_path / "era5.nc")

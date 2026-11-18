@@ -252,6 +252,7 @@ def _stub_reader(key: str, modes: frozenset[OperationalMode]) -> type[StaticRead
     class _Stub(StaticReader):
         READER_KEY = key
         INSTRUMENT = "FAKE"
+        GRANULE_DATE_WINDOW = None
         RESOLUTION_KM = 1.0
         TIME_MATCH = TimeMatch.DAILY
         VARIABLES = (VariableSpec(name="v", dtype="int16", aggregation="weighted_mode", modes=modes),)
@@ -498,6 +499,7 @@ class TestDuplicateKey:
         class _First(StaticReader):
             READER_KEY = "_registry_test_duplicate"
             INSTRUMENT = "FAKE"
+            GRANULE_DATE_WINDOW = None
             RESOLUTION_KM = 1.0
             TIME_MATCH = TimeMatch.DAILY
             VARIABLES = (_SPEC,)
@@ -511,6 +513,7 @@ class TestDuplicateKey:
             class _Second(StaticReader):
                 READER_KEY = "_registry_test_duplicate"
                 INSTRUMENT = "FAKE"
+                GRANULE_DATE_WINDOW = None
                 RESOLUTION_KM = 1.0
                 TIME_MATCH = TimeMatch.DAILY
                 VARIABLES = (_SPEC,)

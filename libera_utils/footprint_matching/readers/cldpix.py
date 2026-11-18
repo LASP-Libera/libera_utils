@@ -67,6 +67,7 @@ from libera_utils.footprint_matching.readers._points import (
     decode_hours_of_day,
     granule_time_coverage,
     neighbor_spacing_km,
+    read_granule_time_coverage,
 )
 from libera_utils.footprint_matching.readers.base import PassReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
@@ -264,16 +265,26 @@ class CLDPIXReader(PassReader):
         for f in _CLDPIX_FIELDS
     )
 
-    def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
-        """The granule's ``time_coverage_start`` / ``time_coverage_end`` global attributes.
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the granule's ``time_coverage_start`` / ``time_coverage_end`` global attributes.
+
+        Parameters
+        ----------
+        path : Path
+            One staged granule.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)`` as UTC ``datetime64[ns]``.
 
         Raises
         ------
         ValueError
             If either attribute is missing or is not an ISO 8601 instant.
         """
-        with netCDF4.Dataset(str(path), "r") as ds:
-            return granule_time_coverage(ds, source=f"cldpix {path.name}")
+        return read_granule_time_coverage(path, source="cldpix")
 
     def _load_granule(self, path: Path) -> PointSamples:
         """Parse one granule into a time-stamped pixel point cloud.
