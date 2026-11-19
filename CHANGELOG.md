@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (FLASHFlux, SSF, CLDPIX), `ModisViirsDailyFilename`, `ModisIgbpFilename`, `ViirsSdrFilename`, `NsidcNiseFilename`, `NsidcLandOceanMaskFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and covered UTC range. Daily products archive under `<ProductID>/YYYY/MM/DD`, the land/ocean mask under `<ProductID>/<version>` and IGBP under `<ProductID>/<collection>`. (#107)
+- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ModisIgbpFilename`, `ViirsSdrFilename`, `NsidcNiseFilename`, `NsidcLandOceanMaskFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and covered UTC range. Daily products archive under `<ProductID>/YYYY/MM/DD`, the land/ocean mask under `<ProductID>/<version>` and IGBP under `<ProductID>/<collection>`. (#107)
 - `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the land/ocean mask and IGBP files it staged but cannot verify. (#107)
 
 ### Changed
 
 - **BREAKING:** `DataProductIdentifier.anc_modis_igbp` and `anc_nsidc_land_ocean_mask` are partitioned by `PartitionScheme.VERSION`, not `DAILY`. (#107)
 - `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
+
+### Removed
+
+- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 
 ## [5.27.0] - 2026-11-18
 

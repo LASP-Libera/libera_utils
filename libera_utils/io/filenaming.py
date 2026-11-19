@@ -154,13 +154,8 @@ LIBERA_VERSION_PARTITIONED_DATA_PRODUCT_REGEX = re.compile(
 # identifiers name.
 
 # NOAA-20 CERES Level 2 products from NASA Langley ASDC: the collection part of the name, mapped to its identifier.
-# FLASHFlux is distributed as its own collection, FLASH_SSF_NOAA20-FM6-VIIRS (ASDC; Version1A, then Version1B from
-# 2023-10-01). The standard CERES SSF (CER_SSF_...) is a different product, with its own identifier. The footprint
-# matching CLDPIX reader consumes the CLDPIX files, and its CERES SSF reader consumes the CER_SSF files, whose
-# layout FLASH_SSF Version1B does not share.
-# TODO[LIBSDC-932]: read the FLASH_SSF Version1B layout in footprint matching.
+# The footprint matching CERES SSF reader consumes the CER_SSF files and its CLDPIX reader the CER_CLDPIX files.
 _CERES_PRODUCTS = {
-    "FLASH_SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_flashflux,
     "CER_SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_ssf,
     "CER_CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
 }
@@ -1517,12 +1512,11 @@ class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
 class CeresFilename(DailyAncillaryDataProductFilename):
     """Filename class for NOAA-20 CERES Level 2 products from NASA Langley ASDC.
 
-    Form: ``<CER|FLASH>_<product>_<platform and instruments>_<production strategy>_<configuration code>.<YYYYMMDDHH>.nc``,
-    e.g. ``FLASH_SSF_NOAA20-FM6-VIIRS_Version1B_405410.2026071200.nc`` (FLASHFlux),
-    ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`` (SSF) or
+    Form: ``CER_<product>_<platform and instruments>_<production strategy>_<configuration code>.<YYYYMMDDHH>.nc``,
+    e.g. ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`` (SSF) or
     ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc`` (CLDPIX). One file holds one hour of footprints.
 
-    - ``version`` is the production strategy, e.g. ``Version1B`` for FLASHFlux or ``Edition1C`` for SSF.
+    - ``version`` is the production strategy, e.g. ``Edition1C`` for SSF or ``1P9test`` for CLDPIX.
     - ``configuration_code`` is the six-digit CERES configuration code.
     - ``utc_start`` is the start of the hour and ``utc_end`` the start of the next; ``applicable_date`` is the UTC
       date of ``utc_start``.

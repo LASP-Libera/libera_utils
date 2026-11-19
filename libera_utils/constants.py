@@ -97,7 +97,7 @@ class DataProductIdentifier(StrEnum):
     Ancillary (``DataLevel.ANC``) values follow the pattern ``<SOURCE>-<PRODUCT>``: SOURCE is the mission or dataset
     family the product belongs to (``CERES``, ``ERA5``, ``MODIS``, ``VIIRS``), or the distributing provider where no
     mission name fits (``NSIDC``), and PRODUCT names the product within it, led by the observing platform where the
-    upstream product is made per platform, e.g. ``CERES-NOAA20-FLASHFLUX``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
+    upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
     Each member is defined as a tuple: (product_name, data_level) or (product_name, data_level, partition_scheme)
 
@@ -415,8 +415,6 @@ class DataProductIdentifier(StrEnum):
     # Each comment names the distributing provider and the upstream product.
     # NASA Langley ASDC, CERES Cloud Pixel L2 imager-resolution cloud retrievals (CER_CLDPIX, NOAA-20 FM6)
     anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC)
-    # NASA Langley ASDC, CERES FLASHFlux L2 rapid-release TOA and surface fluxes and clouds (FLASH_SSF, NOAA-20 FM6)
-    anc_ceres_noaa20_flashflux = ("CERES-NOAA20-FLASHFLUX", DataLevel.ANC)
     # NASA Langley ASDC, CERES Single Scanner Footprint L2 TOA and surface fluxes and clouds (CER_SSF, NOAA-20 FM6)
     anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
