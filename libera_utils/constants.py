@@ -416,6 +416,8 @@ class DataProductIdentifier(StrEnum):
     anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC)
     # NASA Langley ASDC, CERES FLASHFlux L2 rapid-release TOA and surface fluxes and clouds (FLASH_SSF, NOAA-20 FM6)
     anc_ceres_noaa20_flashflux = ("CERES-NOAA20-FLASHFLUX", DataLevel.ANC)
+    # NASA Langley ASDC, CERES Single Scanner Footprint L2 TOA and surface fluxes and clouds (CER_SSF, NOAA-20 FM6)
+    anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
     anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC)
     # NSIDC, Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2)
