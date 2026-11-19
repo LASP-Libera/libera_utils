@@ -1,6 +1,7 @@
 """Constants module used throughout the libera_utils package"""
 
 import warnings
+from datetime import timedelta
 from enum import IntEnum, StrEnum
 from typing import Union
 
@@ -65,28 +66,77 @@ class DataLevel(StrEnum):
 
 
 class PartitionScheme(StrEnum):
-    """How a data product's files are partitioned, which decides how each file is named and archived.
+    """How a data product's files are partitioned, which decides how each file is named, archived and keyed.
 
-    - DAILY: each file holds data for one applicable date. Its filename carries the time range of its data, and it
-      is archived under that date. Named by LiberaDataProductFilename. DAILY is also the default for every product not
-      given another scheme, including some whose files fit this description only in part: L0 files are named by
-      L0Filename or LiberaGroundCcsdsFilename and archived under their APID, and TRIMMED and CAL calibration event
-      files are dated by the UTC day of their ``utc_start``.
+    A partition holds one logical file. A newer revision of that file, such as an L0 gap fill, is a new
+    materialization of the same partition, not a second partition. Every data product filename class gives its
+    file's partition key as ``partition_key``, a string in the scheme's ``key_format``.
+
+    - TWO_HOUR: L0 files, one per two-hour chunk. An EDOS PDS file's name carries no chunk start, so its
+      ``partition_key`` is None and the chunk start comes from its Construction Record. A ground-test capture
+      (LiberaGroundCcsdsFilename) is named by its two-hour bin start, which is its key.
+    - HOURLY: each file holds one UTC hour of data, keyed by the start of that hour. The CERES SSF and CLDPIX files
+      (CeresFilename) are hourly; they are still archived under the UTC day of that hour.
+    - DAILY: each file holds data for one applicable date, which is its key. Its filename carries the time range of
+      its data, and it is archived under that date. A Libera product is named by LiberaDataProductFilename.
+    - EVENT: each file holds one calibration event, the TRIMMED or CAL product of a calibration ObsID, keyed by the
+      event's UTC start to the second. Named by LiberaDataProductFilename and archived under the UTC day of its
+      ``utc_start``. An ObsID that recurs within a day has one file, and one key, per occurrence.
     - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
-      carries no time range, and it is archived once under its product ID and version. Named by
-      LiberaVersionPartitionedDataProductFilename, except the external ancillary products with this scheme (IGBP and
-      the land/ocean mask), named by AncillaryVersionArchiveFilename: one SDC-named zip per version, whose files keep
-      their providers' names, each archived under its version and production date.
+      carries no time range, it is archived once under its product ID and version, and its key is its version in
+      PEP 440 form. A Libera product is named by LiberaVersionPartitionedDataProductFilename. An external ancillary
+      product with this scheme (IGBP and the land/ocean mask) is named by AncillaryVersionArchiveFilename: one
+      SDC-named zip per version, whose files keep their providers' names, archived under its version and production
+      date and keyed by its version as named.
 
-    ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class the writer uses for each
-    scheme. A new scheme needs a member here, a filename class, an entry in that mapping, and the arguments
-    ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class. In libera_cdk it also needs
-    a partitions definition in ``libera_dagster/partitions.py`` and a selection rule in the Manifest Creator.
+    A new scheme needs:
+
+    - a member here, and its format in ``key_format``;
+    - ``partition_key`` in every filename class that names products of the scheme;
+    - if the SDC writes products of the scheme, an entry in
+      ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` and the arguments
+      ``LiberaDataProductDefinition.generate_data_product_filename`` builds for that class;
+    - in libera_cdk, a partitions definition in ``libera_dagster/partitions.py`` that uses ``key_format``, and a
+      selection rule in the Manifest Creator.
     """
 
-    # TODO[LIBSDC-936]: add schemes for L0, TRIMMED and CAL products, which take DAILY until then.
+    TWO_HOUR = "TWO_HOUR"
+    HOURLY = "HOURLY"
     DAILY = "DAILY"
+    EVENT = "EVENT"
     VERSION = "VERSION"
+
+    @property
+    def key_format(self) -> str | None:
+        """The ``strftime`` format of a partition key in this scheme, which is the Dagster partition key.
+
+        DAILY and HOURLY are the defaults of Dagster's ``DailyPartitionsDefinition`` (``%Y-%m-%d``) and
+        ``HourlyPartitionsDefinition`` (``%Y-%m-%d-%H:%M``). Dagster has no two-hour definition, so a libera_cdk
+        ``TimeWindowPartitionsDefinition`` for TWO_HOUR passes this format. EVENT is the ``utc_start`` format of a
+        Libera data product filename, ``libera_utils.time.PRINTABLE_TS_FORMAT``. All key times are UTC.
+
+        Returns
+        -------
+        str | None
+            The format, or None for VERSION, whose key is the PEP 440 version string rather than a time.
+        """
+        return _PARTITION_KEY_FORMATS[self]
+
+
+_PARTITION_KEY_FORMATS: dict[PartitionScheme, str | None] = {
+    PartitionScheme.TWO_HOUR: "%Y-%m-%d-%H:%M",
+    PartitionScheme.HOURLY: "%Y-%m-%d-%H:%M",
+    PartitionScheme.DAILY: "%Y-%m-%d",
+    PartitionScheme.EVENT: "%Y%m%dT%H%M%S",
+    PartitionScheme.VERSION: None,
+}
+
+
+# Upper bounds on one L0 file's data time span (see DataProductIdentifier.longest_file_span). The three JPSS-1 SC-POS
+# test PDS files in tests/test_data/packets hold 1 h 59 min 59.1 s of data time each, under 2 h 10 min. WFOV science
+# data time can lag its packet time, so WFOV-SCI-PDS is given 3 h.
+_L0_LONGEST_FILE_SPAN = timedelta(hours=2, minutes=10)
+_WFOV_SCI_LONGEST_FILE_SPAN = timedelta(hours=3)
 
 
 class DataProductIdentifier(StrEnum):
@@ -100,13 +150,14 @@ class DataProductIdentifier(StrEnum):
     mission name fits (``NSIDC``), and PRODUCT names the product within it, led by the observing platform where the
     upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
-    Each member is defined as a tuple: (product_name, data_level) or (product_name, data_level, partition_scheme)
+    Each member is defined as a tuple: (product_name, data_level[, partition_scheme[, longest_file_span]])
 
     - product_name: The string value used in filenames and AWS resources
     - data_level: The DataLevel enum value indicating the processing level
-    - partition_scheme: The PartitionScheme of the product's files, such as PartitionScheme.VERSION for a
-      version-partitioned product. Omitted, and therefore PartitionScheme.DAILY, for a daily product and for a
-      product not given another scheme (see PartitionScheme).
+    - partition_scheme: The PartitionScheme of the product's files. Omitted, and therefore PartitionScheme.DAILY,
+      for a daily product.
+    - longest_file_span: For an L0 product other than the Construction Record, the longest span of data time one of
+      its files holds, as a ``datetime.timedelta``. Omitted, and therefore None, for every other product.
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -116,15 +167,21 @@ class DataProductIdentifier(StrEnum):
 
     When adding new products:
         1. Add the enum member with its product name and DataLevel, and its PartitionScheme as a third element when
-           it is not PartitionScheme.DAILY
+           it is not PartitionScheme.DAILY: TWO_HOUR for an L0 product, EVENT for a calibration ObsID's TRIMMED and
+           CAL products. An L0 product other than the Construction Record also takes its longest file span.
         2. No need to update any lookup dictionaries - metadata is embedded!
     """
 
     _level: DataLevel
     _partition_scheme: PartitionScheme
+    _longest_file_span: timedelta | None
 
     def __new__(  # type: ignore
-        cls, value: str, level: DataLevel = None, partition_scheme: PartitionScheme = PartitionScheme.DAILY
+        cls,
+        value: str,
+        level: DataLevel = None,
+        partition_scheme: PartitionScheme = PartitionScheme.DAILY,
+        longest_file_span: timedelta | None = None,
     ):
         """Create a new DataProductIdentifier with embedded metadata.
 
@@ -136,6 +193,8 @@ class DataProductIdentifier(StrEnum):
             The processing level for this data product
         partition_scheme : PartitionScheme
             How the product's files are partitioned. Default PartitionScheme.DAILY.
+        longest_file_span : datetime.timedelta | None
+            The longest span of data time one file of an L0 product holds. Default None.
 
         Raises
         ------
@@ -150,43 +209,44 @@ class DataProductIdentifier(StrEnum):
         obj._value_ = value
         obj._level = level
         obj._partition_scheme = partition_scheme
+        obj._longest_file_span = longest_file_span
         return obj
 
     # L0 2hr PDS Products (Binary CCSDS)
     # ==================================
     # PDS Construction Record (metadata file)
-    l0_pds_cr = ("PDS-CR", DataLevel.L0)
+    l0_pds_cr = ("PDS-CR", DataLevel.L0, PartitionScheme.TWO_HOUR)
     # Demuxed ground-test CCSDS files (TVAC/DITL/ISTR/IOV); not EDOS PDS
-    l0_ground_ccsds = ("GROUND-CCSDS", DataLevel.L0)
+    l0_ground_ccsds = ("GROUND-CCSDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # PDS data files (contain CCSDS packets for a single APID)
     # NOTE: These names are derived directly from the packet names used by Libera FSW (see LiberaApid)
     # JPSS spacecraft position (attitude quaternions and ephemeris coordinates) in 1Hz packets with 1 sample per packet for 1Hz samples
-    l0_jpss_sc_pos_pds = ("SC-POS-PDS", DataLevel.L0)
+    l0_jpss_sc_pos_pds = ("SC-POS-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # Radiometer (4 bands) sample data in 4Hz packets with 50 samples per packet for 200Hz samples
-    l0_icie_rad_sample_pds = ("RAD-SAMPLE-PDS", DataLevel.L0)
+    l0_icie_rad_sample_pds = ("RAD-SAMPLE-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # Camera science
-    l0_icie_wfov_sci_pds = ("WFOV-SCI-PDS", DataLevel.L0)
+    l0_icie_wfov_sci_pds = ("WFOV-SCI-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _WFOV_SCI_LONGEST_FILE_SPAN)
     # Azimuth and Elevation encoder sample data in 4Hz packets with 50 samples per packet for 200Hz samples
-    l0_icie_axis_sample_pds = ("AXIS-SAMPLE-PDS", DataLevel.L0)
-    l0_pev_sw_stat_pds = ("PEV-SW-STAT-PDS", DataLevel.L0)
-    l0_pec_sw_stat_pds = ("PEC-SW-STAT-PDS", DataLevel.L0)
-    l0_icie_sw_stat_pds = ("SW-STAT-PDS", DataLevel.L0)
-    l0_icie_seq_hk_pds = ("SEQ-HK-PDS", DataLevel.L0)
-    l0_icie_fp_hk_pds = ("FP-HK-PDS", DataLevel.L0)
-    l0_icie_log_msg_pds = ("LOG-MSG-PDS", DataLevel.L0)
+    l0_icie_axis_sample_pds = ("AXIS-SAMPLE-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_pev_sw_stat_pds = ("PEV-SW-STAT-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_pec_sw_stat_pds = ("PEC-SW-STAT-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_sw_stat_pds = ("SW-STAT-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_seq_hk_pds = ("SEQ-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_fp_hk_pds = ("FP-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_log_msg_pds = ("LOG-MSG-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # Radiometer (4 bands) stream data in 10Hz packets with 100 samples per packet for 1kHz samples
-    l0_icie_rad_full_pds = ("RAD-FULL-PDS", DataLevel.L0)
-    l0_icie_axis_hk_pds = ("AXIS-HK-PDS", DataLevel.L0)
-    l0_icie_wfov_hk_pds = ("WFOV-HK-PDS", DataLevel.L0)
+    l0_icie_rad_full_pds = ("RAD-FULL-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_axis_hk_pds = ("AXIS-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_wfov_hk_pds = ("WFOV-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # Internal cal radiometer used in SW cal in 10Hz packets with 100 samples per packet for 1kHz samples
-    l0_icie_cal_full_pds = ("CAL-FULL-PDS", DataLevel.L0)
+    l0_icie_cal_full_pds = ("CAL-FULL-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
     # Internal cal radiometer used in SW cal in 4Hz packets with 50 samples per packet for 200Hz samples
-    l0_icie_cal_sample_pds = ("CAL-SAMPLE-PDS", DataLevel.L0)
-    l0_icie_wfov_resp_pds = ("WFOV-RESP-PDS", DataLevel.L0)
-    l0_icie_crit_hk_pds = ("CRIT-HK-PDS", DataLevel.L0)
-    l0_icie_nom_hk_pds = ("NOM-HK-PDS", DataLevel.L0)
-    l0_icie_ana_hk_pds = ("ANA-HK-PDS", DataLevel.L0)
-    l0_icie_temp_hk_pds = ("TEMP-HK-PDS", DataLevel.L0)
+    l0_icie_cal_sample_pds = ("CAL-SAMPLE-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_wfov_resp_pds = ("WFOV-RESP-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_crit_hk_pds = ("CRIT-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_nom_hk_pds = ("NOM-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_ana_hk_pds = ("ANA-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
+    l0_icie_temp_hk_pds = ("TEMP-HK-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
 
     # L1A 24hr Decoded Packet Products
     # ================================
@@ -216,106 +276,122 @@ class DataProductIdentifier(StrEnum):
     # Produced by L1A processing; the input of the event's calibration combiner step.
     # ===============================================================================================
     # Gain and Noise Calibration (ObsID 512 + 515)
-    l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_noise_trimmed = ("NOM-HK-NOISE-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_noise_trimmed = ("NOM-HK-NOISE-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Shortwave LED Calibration (ObsIDs 256-261)
-    l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_635nm_trimmed = ("NOM-HK-SWC-635NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_840nm_trimmed = ("NOM-HK-SWC-840NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_1550nm_trimmed = ("NOM-HK-SWC-1550NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_swc_635nm_trimmed = ("NOM-HK-SWC-635NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_swc_840nm_trimmed = ("NOM-HK-SWC-840NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_swc_1550nm_trimmed = ("NOM-HK-SWC-1550NM-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Longwave Blackbody Calibration (ObsIDs 320-324)
-    l1a_icie_nom_hk_lwc_310k_trimmed = ("NOM-HK-LWC-310K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_320k_trimmed = ("NOM-HK-LWC-320K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_335k_trimmed = ("NOM-HK-LWC-335K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_300k_trimmed = ("NOM-HK-LWC-300K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_305k_trimmed = ("NOM-HK-LWC-305K-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_310k_trimmed = ("NOM-HK-LWC-310K-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_lwc_320k_trimmed = ("NOM-HK-LWC-320K-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_lwc_335k_trimmed = ("NOM-HK-LWC-335K-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_lwc_300k_trimmed = ("NOM-HK-LWC-300K-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_lwc_305k_trimmed = ("NOM-HK-LWC-305K-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 1 / primary (ObsIDs 384-387)
-    l1a_icie_nom_hk_solar_ssw_pri_trimmed = ("NOM-HK-SOLAR-SSW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_pri_trimmed = ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_pri_trimmed = ("NOM-HK-SOLAR-LW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_pri_trimmed = ("NOM-HK-SOLAR-SW-PRI-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_pri_trimmed = ("NOM-HK-SOLAR-SSW-PRI-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_tot_pri_trimmed = ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_lw_pri_trimmed = ("NOM-HK-SOLAR-LW-PRI-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_sw_pri_trimmed = ("NOM-HK-SOLAR-SW-PRI-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 2 / secondary (ObsIDs 388-391)
-    l1a_icie_nom_hk_solar_ssw_sec_trimmed = ("NOM-HK-SOLAR-SSW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_sec_trimmed = ("NOM-HK-SOLAR-TOT-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_sec_trimmed = ("NOM-HK-SOLAR-LW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_sec_trimmed = ("NOM-HK-SOLAR-SW-SEC-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_sec_trimmed = ("NOM-HK-SOLAR-SSW-SEC-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_tot_sec_trimmed = ("NOM-HK-SOLAR-TOT-SEC-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_lw_sec_trimmed = ("NOM-HK-SOLAR-LW-SEC-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_sw_sec_trimmed = ("NOM-HK-SOLAR-SW-SEC-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 3 / tertiary (ObsIDs 392-395)
-    l1a_icie_nom_hk_solar_ssw_ter_trimmed = ("NOM-HK-SOLAR-SSW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_ter_trimmed = ("NOM-HK-SOLAR-SSW-TER-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Lunar Calibration (ObsIDs 448-449)
-    l1a_icie_nom_hk_lunar_south_pole_trimmed = ("NOM-HK-LUNAR-SOUTH-POLE-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lunar_north_pole_trimmed = ("NOM-HK-LUNAR-NORTH-POLE-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lunar_south_pole_trimmed = ("NOM-HK-LUNAR-SOUTH-POLE-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_lunar_north_pole_trimmed = ("NOM-HK-LUNAR-NORTH-POLE-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # Camera calibration events (WFOV ObsIDs)
-    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
+    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A, PartitionScheme.EVENT)
     # VIIRS lunar cal (ObsIDs 513-514, registered separately on RAD and WFOV)
-    l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed = (
+        "NOM-HK-RAD-VIIRS-LUNAR-POS-START-TRIMMED",
+        DataLevel.L1A,
+        PartitionScheme.EVENT,
+    )
+    l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed = (
+        "NOM-HK-RAD-VIIRS-LUNAR-NEG-START-TRIMMED",
+        DataLevel.L1A,
+        PartitionScheme.EVENT,
+    )
+    l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed = (
+        "NOM-HK-WFOV-VIIRS-LUNAR-POS-START-TRIMMED",
+        DataLevel.L1A,
+        PartitionScheme.EVENT,
+    )
+    l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed = (
+        "NOM-HK-WFOV-VIIRS-LUNAR-NEG-START-TRIMMED",
+        DataLevel.L1A,
+        PartitionScheme.EVENT,
+    )
 
     # Calibration Event Products (one product per radiometer / camera calibration ObsID)
     # ==================================================================================
     # Gain and Noise Calibration (ObsID 512 + 515)
-    cal_gain = ("GAIN", DataLevel.CAL)
-    cal_noise = ("NOISE", DataLevel.CAL)
+    cal_gain = ("GAIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_noise = ("NOISE", DataLevel.CAL, PartitionScheme.EVENT)
     # Shortwave LED Calibration (ObsIDs 256-261)
-    cal_swc_365nm = ("SWC-365NM", DataLevel.CAL)
-    cal_swc_405nm = ("SWC-405NM", DataLevel.CAL)
-    cal_swc_520nm = ("SWC-520NM", DataLevel.CAL)
-    cal_swc_635nm = ("SWC-635NM", DataLevel.CAL)
-    cal_swc_840nm = ("SWC-840NM", DataLevel.CAL)
-    cal_swc_1550nm = ("SWC-1550NM", DataLevel.CAL)
+    cal_swc_365nm = ("SWC-365NM", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_swc_405nm = ("SWC-405NM", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_swc_520nm = ("SWC-520NM", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_swc_635nm = ("SWC-635NM", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_swc_840nm = ("SWC-840NM", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_swc_1550nm = ("SWC-1550NM", DataLevel.CAL, PartitionScheme.EVENT)
     # Longwave Blackbody Calibration (ObsIDs 320-324)
-    cal_lwc_310k = ("LWC-310K", DataLevel.CAL)
-    cal_lwc_320k = ("LWC-320K", DataLevel.CAL)
-    cal_lwc_335k = ("LWC-335K", DataLevel.CAL)
-    cal_lwc_300k = ("LWC-300K", DataLevel.CAL)
-    cal_lwc_305k = ("LWC-305K", DataLevel.CAL)
+    cal_lwc_310k = ("LWC-310K", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_lwc_320k = ("LWC-320K", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_lwc_335k = ("LWC-335K", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_lwc_300k = ("LWC-300K", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_lwc_305k = ("LWC-305K", DataLevel.CAL, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 1 / primary (ObsIDs 384-387)
-    cal_solar_ssw_pri = ("SOLAR-SSW-PRI", DataLevel.CAL)
-    cal_solar_tot_pri = ("SOLAR-TOT-PRI", DataLevel.CAL)
-    cal_solar_lw_pri = ("SOLAR-LW-PRI", DataLevel.CAL)
-    cal_solar_sw_pri = ("SOLAR-SW-PRI", DataLevel.CAL)
+    cal_solar_ssw_pri = ("SOLAR-SSW-PRI", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_tot_pri = ("SOLAR-TOT-PRI", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_lw_pri = ("SOLAR-LW-PRI", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_sw_pri = ("SOLAR-SW-PRI", DataLevel.CAL, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 2 / secondary (ObsIDs 388-391)
-    cal_solar_ssw_sec = ("SOLAR-SSW-SEC", DataLevel.CAL)
-    cal_solar_tot_sec = ("SOLAR-TOT-SEC", DataLevel.CAL)
-    cal_solar_lw_sec = ("SOLAR-LW-SEC", DataLevel.CAL)
-    cal_solar_sw_sec = ("SOLAR-SW-SEC", DataLevel.CAL)
+    cal_solar_ssw_sec = ("SOLAR-SSW-SEC", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_tot_sec = ("SOLAR-TOT-SEC", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_lw_sec = ("SOLAR-LW-SEC", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_sw_sec = ("SOLAR-SW-SEC", DataLevel.CAL, PartitionScheme.EVENT)
     # Solar Diffuser Calibration — Face 3 / tertiary (ObsIDs 392-395)
-    cal_solar_ssw_ter = ("SOLAR-SSW-TER", DataLevel.CAL)
-    cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL)
-    cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL)
-    cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL)
+    cal_solar_ssw_ter = ("SOLAR-SSW-TER", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL, PartitionScheme.EVENT)
     # Lunar Calibration (ObsIDs 448-449)
-    cal_lunar_south_pole = ("LUNAR-SOUTH-POLE", DataLevel.CAL)
-    cal_lunar_north_pole = ("LUNAR-NORTH-POLE", DataLevel.CAL)
+    cal_lunar_south_pole = ("LUNAR-SOUTH-POLE", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_lunar_north_pole = ("LUNAR-NORTH-POLE", DataLevel.CAL, PartitionScheme.EVENT)
     # Camera calibration events (WFOV ObsIDs)
-    cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL)
-    cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL)
-    cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL)
-    cal_raps_video_6min = ("RAPS-VIDEO-6MIN", DataLevel.CAL)
-    cal_raps_video_12min = ("RAPS-VIDEO-12MIN", DataLevel.CAL)
-    cal_raps_video_18min = ("RAPS-VIDEO-18MIN", DataLevel.CAL)
-    cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
-    cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
-    cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
+    cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_raps_video_6min = ("RAPS-VIDEO-6MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_raps_video_12min = ("RAPS-VIDEO-12MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_raps_video_18min = ("RAPS-VIDEO-18MIN", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL, PartitionScheme.EVENT)
     # VIIRS lunar cal (ObsIDs 513-514, registered separately on RAD and WFOV)
-    cal_rad_viirs_lunar_pos_start = ("RAD-VIIRS-LUNAR-POS-START", DataLevel.CAL)
-    cal_rad_viirs_lunar_neg_start = ("RAD-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
-    cal_wfov_viirs_lunar_pos_start = ("WFOV-VIIRS-LUNAR-POS-START", DataLevel.CAL)
-    cal_wfov_viirs_lunar_neg_start = ("WFOV-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
+    cal_rad_viirs_lunar_pos_start = ("RAD-VIIRS-LUNAR-POS-START", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_rad_viirs_lunar_neg_start = ("RAD-VIIRS-LUNAR-NEG-START", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_wfov_viirs_lunar_pos_start = ("WFOV-VIIRS-LUNAR-POS-START", DataLevel.CAL, PartitionScheme.EVENT)
+    cal_wfov_viirs_lunar_neg_start = ("WFOV-VIIRS-LUNAR-NEG-START", DataLevel.CAL, PartitionScheme.EVENT)
     # SPICE kernels
     # =============
     spice_az_ck = ("AZROT-CK", DataLevel.SPICE)
@@ -415,9 +491,9 @@ class DataProductIdentifier(StrEnum):
     # ======================================================================================
     # Each comment names the distributing provider and the upstream product.
     # NASA Langley ASDC, CERES Cloud Pixel L2 imager-resolution cloud retrievals (CER_CLDPIX, NOAA-20 FM6)
-    anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC)
+    anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC, PartitionScheme.HOURLY)
     # NASA Langley ASDC, CERES Single Scanner Footprint L2 TOA and surface fluxes and clouds (CER_SSF, NOAA-20 FM6)
-    anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
+    anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC, PartitionScheme.HOURLY)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
     anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC, PartitionScheme.VERSION)
     # NSIDC, Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2)
@@ -467,9 +543,23 @@ class DataProductIdentifier(StrEnum):
         Returns
         -------
         PartitionScheme
-            PartitionScheme.VERSION for a version-partitioned product, PartitionScheme.DAILY otherwise
+            TWO_HOUR for an L0 product, HOURLY for the CERES FLASHFlux and CLDPIX products, EVENT for a calibration
+            ObsID's TRIMMED and CAL products, VERSION for a version-partitioned product, DAILY otherwise
         """
         return self._partition_scheme
+
+    @property
+    def longest_file_span(self) -> timedelta | None:
+        """Get the longest span of data time one file of this product holds.
+
+        It bounds how far before a day the L0 coverage index's window query looks for files with data in that day.
+
+        Returns
+        -------
+        datetime.timedelta | None
+            The span for an L0 product other than the Construction Record, which holds no packets; None otherwise
+        """
+        return self._longest_file_span
 
     @property
     def associated_apid(self) -> Union["LiberaApid", None]:

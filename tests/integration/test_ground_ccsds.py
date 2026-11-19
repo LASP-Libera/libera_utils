@@ -17,17 +17,17 @@ pytestmark = pytest.mark.integration
 @pytest.mark.parametrize(
     ("basename", "apid", "packet_date", "data_date", "data_span"),
     [
-        ("LIBERA_SDC_1036_ccsds_2025_318_13_00_00", LiberaApid.icie_rad_sample, "2028-02-15", "2028-02-15", "interval"),
+        ("LIBERA_SDC_1036_ccsds_2025_318_12_00_00", LiberaApid.icie_rad_sample, "2028-02-15", "2028-02-15", "interval"),
         (
-            "LIBERA_SDC_1048_ccsds_2025_318_13_00_00",
+            "LIBERA_SDC_1048_ccsds_2025_318_12_00_00",
             LiberaApid.icie_axis_sample,
             "2028-02-15",
             "2028-02-15",
             "interval",
         ),
-        ("LIBERA_SDC_1057_ccsds_2025_318_13_00_00", LiberaApid.icie_nom_hk, "2028-02-15", None, None),
-        ("LIBERA_SDC_1040_ccsds_2025_318_13_00_00", LiberaApid.icie_wfov_sci, "2028-02-15", "2028-02-14", "point"),
-        ("LIBERA_SDC_1040_ccsds_2025_318_13_20_00", LiberaApid.icie_wfov_sci, "2028-02-15", None, None),
+        ("LIBERA_SDC_1057_ccsds_2025_318_12_00_00", LiberaApid.icie_nom_hk, "2028-02-15", None, None),
+        ("LIBERA_SDC_1040_ccsds_2025_318_12_00_00", LiberaApid.icie_wfov_sci, "2028-02-15", "2028-02-14", "point"),
+        ("LIBERA_SDC_1040_ccsds_2025_318_14_00_00", LiberaApid.icie_wfov_sci, "2028-02-15", None, None),
     ],
     ids=("rad_sample", "axis_sample", "nom_hk_no_data_times", "wfov_with_sop", "wfov_no_sop"),
 )
@@ -53,7 +53,7 @@ def test_scan_demuxed_ground_ccsds_file(basename, apid, packet_date, data_date, 
 
 def test_scan_demuxed_wfov_without_sop_is_degraded_not_failed(test_ditl_demux_path):
     """A WFOV file with no SOP keeps its packet span and explains the missing data times."""
-    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_13_20_00")
+    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_14_00_00")
 
     assert span.first_packet_time is not None
     assert span.first_data_time is None
@@ -62,7 +62,7 @@ def test_scan_demuxed_wfov_without_sop_is_degraded_not_failed(test_ditl_demux_pa
 
 def test_demuxed_wfov_data_time_precedes_its_packet_time(test_ditl_demux_path):
     """Camera images are downlinked well after capture, so data time can precede packet time."""
-    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_13_00_00")
+    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_12_00_00")
 
     assert span.first_data_time < span.first_packet_time
 

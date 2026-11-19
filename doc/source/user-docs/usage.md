@@ -347,11 +347,14 @@ External ancillary product files are staged, but the SDC Data Ingester does not 
 out on the daily ones.
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
-block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
-record and (for Libera and daily external ancillary data products) a Data Availability record. A non-daily
+block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata record
+and (for Libera and daily external ancillary data products) a Data Availability record. For a data product, the File
+Metadata record checked is the one whose sort key is the file's partition key (see File Naming Conventions). That is the
+applicable date for a daily product, but the start hour for a CERES file and the event start for a TRIMMED or CAL file,
+so `--verify` times out for those until the SDC Data Ingester records File Metadata by partition key. A non-daily
 ancillary file (the version archive of IGBP or the land/ocean mask) has no applicable date and cannot be verified yet:
-it is staged with the other files, which are verified, and the command then exits with an error naming it.
-Verification needs only read permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully
+it is staged with the other files, which are verified, and the command then exits with an error naming it. Verification
+needs only read permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully
 ingested by then the command logs a per-file summary and exits with an error.
 
 % TODO[LIBSDC-880]: once --verify verifies version-partitioned data product files, remove the paragraph below and the

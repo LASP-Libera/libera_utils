@@ -106,13 +106,15 @@ full (below).
 
 A TRIMMED or CAL file holds one calibration **event**, not one day: an ObsID can occur more than
 once a day, and each occurrence is its own file of the ObsID's product, told apart by the time
-range in its filename. The event's start time, `utc_start` in the filename (`%Y%m%dT%H%M%S`, UTC),
-identifies it.
+range in its filename. Every TRIMMED and CAL product has partition scheme `PartitionScheme.EVENT`:
+the event's start time, `utc_start` in the filename (`%Y%m%dT%H%M%S`, UTC), identifies it and is
+its file's `partition_key`.
 
 `LiberaDataProductFilename.applicable_date`, and with it `archive_prefix`, dates an event file by
 the UTC day the event **started**, whatever its length, so an event that crosses midnight is
-archived under its start day. Every other product is dated by the midpoint of its time range.
-`is_calibration_event_product` says which rule a ProductID follows.
+archived under its start day. Every other product is dated by the midpoint of its time range. A
+ProductID's `partition_scheme` says which rule it follows; `is_calibration_event_product` answers
+the same question from the registry.
 
 ## Consumer 1: the L1A trim step
 
@@ -212,9 +214,10 @@ full ObsID list, which the engineering team owns.
 When a new calibration ObsID needs to be added:
 
 1. In `libera_utils/constants.py`, add its `CAL` `DataProductIdentifier` member, its
-   `l1a_icie_nom_hk_<x>_trimmed` member (`NOM-HK-<CAL ProductID>-TRIMMED`), and its
-   `cal_combine_<x>` `ProcessingStepIdentifier` producing only that CAL product, with
-   `shared_ecr_name=CAL_RAD_SHARED_ECR_NAME`.
+   `l1a_icie_nom_hk_<x>_trimmed` member (`NOM-HK-<CAL ProductID>-TRIMMED`), both with
+   `PartitionScheme.EVENT` as their third element (a unit test checks that the EVENT products are
+   exactly the registry's), and its `cal_combine_<x>` `ProcessingStepIdentifier` producing only that
+   CAL product, with `shared_ecr_name=CAL_RAD_SHARED_ECR_NAME`.
 2. Add a row to `libera_utils/data/obsid_registry.csv` naming the TRIMMED and CAL members, with a
    plain-language `description` (it shows up in error messages and this documentation, so keep it
    accurate rather than terse). Edit the file with a text editor or the `csv` module — never a

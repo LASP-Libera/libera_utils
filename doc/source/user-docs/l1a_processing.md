@@ -71,8 +71,12 @@ header stripped. Basenames (no extension) match:
 LIBERA_SDC_<apid>_ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
 ```
 
+The time fields are the UTC start of the two-hour bin the file was cut from: an even hour, with minutes and seconds
+`00`. A name with any other time raises `ValueError`. The bin start is the file's `TWO_HOUR` partition key (see
+[Partition Schemes](file_naming.md#partition-schemes)).
+
 Example: `LIBERA_SDC_1057_ccsds_2026_191_14_00_00`. Use `LiberaGroundCcsdsFilename` /
-`AbstractValidFilename.from_file_path` to validate one and to read its APID and archive prefix:
+`AbstractValidFilename.from_file_path` to validate one and to read its APID, archive prefix and partition key:
 
 ```python
 from libera_utils.io.filenaming import LiberaGroundCcsdsFilename
@@ -81,6 +85,7 @@ fn = LiberaGroundCcsdsFilename("LIBERA_SDC_1057_ccsds_2026_191_14_00_00")
 fn.apid              # 1057
 fn.bin_start         # datetime(2026, 7, 10, 14, 0, tzinfo=UTC)
 fn.archive_prefix    # "GroundCCSDS/1057/2026/07/10"
+fn.partition_key     # "2026-07-10-14:00"
 ```
 
 The APID field accepts any value in the CCSDS 11-bit range (0-2047), including APIDs with no

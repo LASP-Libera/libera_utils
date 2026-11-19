@@ -21,7 +21,6 @@ from libera_utils.constants import (
     PartitionScheme,
     ProcessingStepIdentifier,
 )
-from libera_utils.obsids import is_calibration_event_product
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{PRINTABLE_TS_FORMAT}%f"
@@ -110,11 +109,14 @@ DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 # A filename revision is REVISION_TS_FORMAT: R + 8-digit date, T, 6-digit time, 6-digit microseconds.
 _REVISION_REGEX = r"R[0-9]{8}T[0-9]{12}"
 
+# A Libera algorithm version in a filename: V<major>-<minor>-<patch>, with an optional RC<n> release candidate suffix.
+LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]+-[0-9]+-[0-9]+(RC[0-9])?")
+
 # Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
 _LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
-    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    rf"_(?P<version>{LIBERA_SEM_VER_REGEX.pattern})"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
     rf"_(?P<revision>{_REVISION_REGEX})"
@@ -133,8 +135,6 @@ MANIFEST_FILE_REGEX = re.compile(
     r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
     r"\.json$"
 )
-
-LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
 # A version-partitioned data product filename carries no time range. The product name group admits every
 # DataProductIdentifier, daily ones included, so that a daily product named in this form matches and
@@ -485,6 +485,82 @@ class AbstractDataProductFilename(AbstractValidFilename):
         """Property that contains the ProcessingStepIdentifier that generates this file"""
         return ProcessingStepIdentifier.from_data_product(self.data_product_id)
 
+    @property
+    @abstractmethod
+    def partition_key(self) -> str | None:
+        """The key of the partition this file belongs to, which is its Dagster partition key.
+
+        It is formatted by the ``key_format`` of the product's
+        :class:`~libera_utils.constants.PartitionScheme`, with times in UTC, or is the PEP 440 version for a
+        version-partitioned product.
+
+        Returns
+        -------
+        str | None
+            The partition key, or None when the filename does not carry it
+        """
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def version(self) -> str | None:
+        """The version of the file's product, PEP 440 for a Libera product and as named for an external one.
+
+        Returns
+        -------
+        str | None
+            The version, or None when the filename carries none
+        """
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def revision(self) -> datetime | None:
+        """The UTC time this revision of the file was made, which orders the materializations of one partition.
+
+        Returns
+        -------
+        datetime.datetime | None
+            The timezone-aware UTC revision time, or None when the filename carries none
+        """
+        raise NotImplementedError()
+
+
+def _format_partition_key(scheme: PartitionScheme, instant: date | datetime) -> str:
+    """Format a UTC date or time as a partition key in a time-keyed scheme.
+
+    Parameters
+    ----------
+    scheme : libera_utils.constants.PartitionScheme
+        A scheme whose ``key_format`` is not None.
+    instant : datetime.date | datetime.datetime
+        The date or UTC time the key names.
+
+    Returns
+    -------
+    str
+        The partition key
+    """
+    return instant.strftime(cast(str, scheme.key_format))
+
+
+def _libera_version_to_pep440(version: str) -> str:
+    """Convert a Libera filename version, ``V1-2-3`` or ``V1-2-3RC1``, to PEP 440 form, ``1.2.3`` or ``1.2.3rc1``.
+
+    The inverse of :func:`format_from_semantic_version`.
+
+    Parameters
+    ----------
+    version : str
+        A version that matches ``LIBERA_SEM_VER_REGEX``, as parsed from a filename.
+
+    Returns
+    -------
+    str
+        The normalized PEP 440 version string
+    """
+    return str(Version(version.removeprefix("V").replace("-", ".")))
+
 
 class L0Filename(AbstractDataProductFilename):
     """Filename validation class for L0 Production Data Set (PDS) files from EDOS."""
@@ -509,6 +585,37 @@ class L0Filename(AbstractDataProductFilename):
 
         # 2023-07-14: This prefix might become too large over the course of the Libera mission
         return f"{l0_file_type}/{apid:0>4}"
+
+    @property
+    def partition_key(self) -> None:
+        """None: an EDOS name carries no chunk start. The two-hour chunk start comes from the Construction Record.
+
+        Returns
+        -------
+        None
+        """
+        return None
+
+    @property
+    def version(self) -> None:
+        """None: an EDOS name carries no version.
+
+        Returns
+        -------
+        None
+        """
+        return None
+
+    @property
+    def revision(self) -> datetime:
+        """The UTC time EDOS created the file, from its name. A gap-filled chunk has a later one.
+
+        Returns
+        -------
+        datetime.datetime
+            The timezone-aware UTC creation time
+        """
+        return _ensure_utc_timezone(self.filename_parts.created_time)
 
     @classmethod
     def from_filename_parts(
@@ -702,6 +809,33 @@ def _version_archive_form(product: DataProductIdentifier) -> str:
     return f"{product}_<version>_<production YYYYMMDD>_<revision>.zip"
 
 
+def _validate_two_hour_bin_start(bin_start: datetime) -> datetime:
+    """Return ``bin_start`` if it starts a two-hour bin (an even UTC hour, minute and second zero).
+
+    Parameters
+    ----------
+    bin_start : datetime.datetime
+        UTC bin start from a ground-test capture's name.
+
+    Returns
+    -------
+    datetime.datetime
+        ``bin_start``, unchanged
+
+    Raises
+    ------
+    ValueError
+        If ``bin_start`` is not the start of a two-hour bin.
+    """
+    if bin_start.hour % 2 or bin_start.minute or bin_start.second:
+        raise ValueError(
+            f"Bin start {bin_start:%Y-%m-%dT%H:%M:%S} is not the start of a two-hour bin. A ground-test capture is "
+            "named by the start of the two-hour bin it was cut from, an even UTC hour with minutes and seconds 00, "
+            "e.g. LIBERA_SDC_1057_ccsds_2026_191_14_00_00. Rename the file to its bin start."
+        )
+    return bin_start
+
+
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     """Filename validation class for demuxed ground-test CCSDS files.
 
@@ -709,10 +843,12 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     e.g. ``LIBERA_SDC_1057_ccsds_2026_191_14_00_00``. Each file holds packets for the single
     APID named in the basename, with no record header before the CCSDS primary header.
 
-    The time fields are the start of the time bin the file was cut from, not the span of the
-    packets inside it: packet times can fall outside the bin. The archive prefix
-    ``GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/`` is an expansion of these fields and carries no
-    guarantee about packet or data times. Searchable times come from File Metadata at ingest.
+    The time fields are the start of the two-hour bin the file was cut from, an even UTC hour, not the
+    span of the packets inside it: packet times can fall outside the bin. A name whose time is not
+    the start of a two-hour bin is rejected. The bin start is the file's TWO_HOUR partition key. The
+    archive prefix ``GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/`` is an expansion of these fields and
+    carries no guarantee about packet or data times. Searchable times come from File Metadata at
+    ingest.
     """
 
     _regex = LIBERA_GROUND_CCSDS_REGEX
@@ -720,10 +856,21 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
 
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
-        """Set the path, rejecting fields that do not form a real instant or a legal APID.
+        """Set the path, rejecting fields that do not form a real instant, a two-hour bin start or a legal APID.
 
-        The base setter validates against the regex only, which cannot express leap years
-        and admits APIDs above the 11-bit CCSDS maximum.
+        The base setter validates against the regex only, which cannot express leap years or bin
+        boundaries and admits APIDs above the 11-bit CCSDS maximum.
+
+        Parameters
+        ----------
+        new_path : str | PathType
+            Path to the ground-test capture.
+
+        Raises
+        ------
+        ValueError
+            If the name does not match the regex, its time fields are not a real instant or not the
+            start of a two-hour bin, or its APID is above 2047.
         """
         AbstractValidFilename.path.fset(self, new_path)
         self._parse_filename_parts()
@@ -752,6 +899,37 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         start = self.bin_start
         return f"GroundCCSDS/{self.apid:04d}/{start.year:04d}/{start.month:02d}/{start.day:02d}"
 
+    @property
+    def partition_key(self) -> str:
+        """The bin start as a TWO_HOUR partition key, ``YYYY-MM-DD-HH:MM`` UTC.
+
+        Returns
+        -------
+        str
+            The partition key
+        """
+        return _format_partition_key(PartitionScheme.TWO_HOUR, self.bin_start)
+
+    @property
+    def version(self) -> None:
+        """None: a ground-test capture's name carries no version.
+
+        Returns
+        -------
+        None
+        """
+        return None
+
+    @property
+    def revision(self) -> None:
+        """None: a ground-test capture's name carries no revision.
+
+        Returns
+        -------
+        None
+        """
+        return None
+
     @classmethod
     def from_filename_parts(
         cls,  # noqa pylint: disable=arguments-differ
@@ -775,13 +953,19 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         doy : int
             Day of year (1-366).
         hour, minute, second : int
-            Bin start time-of-day in UTC.
+            Bin start time-of-day in UTC: the start of a two-hour bin, so an even hour with minute and second 0.
         basepath : Optional[Union[str, Path, S3Path]]
             Optional directory or S3 prefix prepended to the basename.
 
         Returns
         -------
         LiberaGroundCcsdsFilename
+
+        Raises
+        ------
+        ValueError
+            If the APID is above 2047, the fields do not form a real UTC instant, or that instant is not the start of
+            a two-hour bin.
         """
         return cls._from_filename_parts(
             basepath=basepath,
@@ -806,7 +990,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     ):
         """Construct a basename from filename parts."""
         _validate_ccsds_apid(apid)
-        _parse_doy_datetime(year, doy, hour, minute, second)
+        _validate_two_hour_bin_start(_parse_doy_datetime(year, doy, hour, minute, second))
         return cls._fmt.format(apid=apid, year=year, doy=doy, hour=hour, minute=minute, second=second)
 
     def _parse_filename_parts(self):
@@ -825,7 +1009,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
             hour=hour,
             minute=minute,
             second=second,
-            bin_start=_parse_doy_datetime(year, doy, hour, minute, second),
+            bin_start=_validate_two_hour_bin_start(_parse_doy_datetime(year, doy, hour, minute, second)),
         )
 
 
@@ -845,8 +1029,11 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
     - ``extension`` is ``nc`` for NetCDF-4 products, or ``bsp`` / ``bc`` for SPICE kernels.
 
-    A product whose ``partition_scheme`` is ``PartitionScheme.VERSION`` is not accepted. It is named by
-    :class:`~libera_utils.io.filenaming.LiberaVersionPartitionedDataProductFilename`.
+    Only a product whose ``partition_scheme`` is ``PartitionScheme.DAILY`` or ``PartitionScheme.EVENT`` is
+    accepted. A VERSION product is named by
+    :class:`~libera_utils.io.filenaming.LiberaVersionPartitionedDataProductFilename`, an L0 product by
+    :class:`~libera_utils.io.filenaming.L0Filename` or :class:`~libera_utils.io.filenaming.LiberaGroundCcsdsFilename`,
+    and an HOURLY CERES product by :class:`~libera_utils.io.filenaming.CeresFilename`.
     """
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
@@ -855,7 +1042,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
         """Set the path, rejecting a utc_start, utc_end or revision that is not a real UTC time, or a product whose
-        partition scheme is VERSION.
+        partition scheme is not DAILY or EVENT.
 
         The regex admits any digits in the time fields and every product name, so the name is parsed and its product
         checked before it is assigned.
@@ -869,7 +1056,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         ------
         ValueError
             If the path does not match the filename regex, a time field is not a real UTC time, or it names a product
-            whose partition scheme is VERSION.
+            whose partition scheme is not DAILY or EVENT.
         """
         if isinstance(new_path, str):
             _new_path: PathType = cast(PathType, AnyPath(new_path))
@@ -889,6 +1076,13 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
                 f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a valid "
                 "filename for it: its filename carries no time range. Name it with "
                 "LiberaVersionPartitionedDataProductFilename."
+            )
+        if product_id.partition_scheme not in (PartitionScheme.DAILY, PartitionScheme.EVENT):
+            raise ValueError(
+                f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a valid "
+                "filename for it: this form names only DAILY and EVENT products. An L0 file keeps its EDOS name "
+                "(L0Filename) or ground-test capture name (LiberaGroundCcsdsFilename), and a CERES file its upstream "
+                "name (CeresFilename)."
             )
         self._path = _new_path
 
@@ -936,11 +1130,10 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     def applicable_date(self) -> date:
         """Property that returns the UTC date a file is archived and recorded under.
 
-        A calibration event file (the TRIMMED or CAL product of a calibration ObsID, see
-        :func:`~libera_utils.obsids.is_calibration_event_product`) holds one event and is dated by the
-        UTC day the event started, the date of ``utc_start``, whatever its length. Every other file is
-        dated by the midpoint of ``utc_start`` and ``utc_end``, with a warning if its time range covers
-        more than 24 hours.
+        A calibration event file (a product whose partition scheme is ``PartitionScheme.EVENT``, the TRIMMED
+        or CAL product of a calibration ObsID) holds one event and is dated by the UTC day the event started,
+        the date of ``utc_start``, whatever its length. Every other file is dated by the midpoint of
+        ``utc_start`` and ``utc_end``, with a warning if its time range covers more than 24 hours.
 
         Returns
         -------
@@ -949,7 +1142,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             ``utc_start`` and ``utc_end``.
         """
         utc_start = self.filename_parts.utc_start
-        if is_calibration_event_product(self.data_product_id):
+        if self.data_product_id.partition_scheme is PartitionScheme.EVENT:
             return utc_start.date()
         utc_end = self.filename_parts.utc_end
 
@@ -962,6 +1155,47 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         # The applicable date is considered to be the mean between the two, ignoring hours, minutes, seconds
         t_mean = utc_start + 0.5 * (utc_end - utc_start)
         return t_mean.date()
+
+    @property
+    def partition_key(self) -> str:
+        """The file's partition key, by its product's scheme.
+
+        For an EVENT product it is its ``utc_start``, ``YYYYMMDDTHHMMSS`` UTC, so two events of one ObsID on one day
+        have different keys; for a DAILY product it is its applicable date, ``YYYY-MM-DD``.
+
+        Returns
+        -------
+        str
+            The partition key
+        """
+        scheme = self.data_product_id.partition_scheme
+        if scheme is PartitionScheme.EVENT:
+            return _format_partition_key(scheme, self.filename_parts.utc_start)
+        return _format_partition_key(scheme, self.applicable_date)
+
+    @property
+    def version(self) -> str:
+        """The algorithm version in PEP 440 form, e.g. ``1.2.3rc1`` for a name carrying ``V1-2-3RC1``.
+
+        ``filename_parts.version`` keeps the form the name carries.
+
+        Returns
+        -------
+        str
+            The PEP 440 version
+        """
+        return _libera_version_to_pep440(self.filename_parts.version)
+
+    @property
+    def revision(self) -> datetime:
+        """The UTC time the file was created, from its ``R`` field.
+
+        Returns
+        -------
+        datetime.datetime
+            The timezone-aware UTC revision time
+        """
+        return self.filename_parts.revision
 
     @classmethod
     def from_filename_parts(
@@ -1131,8 +1365,8 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
     A version-partitioned product, such as an ADM, is valid over more than one day (indefinitely until the next version
     update). Its filename carries no time range, so it has no applicable date. The period it covers is recorded in
     the file's variables and metadata. Only a DataProductIdentifier whose ``partition_scheme`` is
-    ``PartitionScheme.VERSION`` is accepted. A daily product is named by
-    :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
+    ``PartitionScheme.VERSION`` is accepted, and not an external ancillary (``DataLevel.ANC``) one, whose versions
+    are named by :class:`~libera_utils.io.filenaming.AncillaryVersionArchiveFilename`. A daily product is named by :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`.
 
     Version-partitioned data product filenames follow the convention::
 
@@ -1154,7 +1388,7 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
         """Set the path, rejecting a revision that is not a real UTC time, a product whose partition scheme is not
-        VERSION, or a data level that is not the product's.
+        VERSION, an external ancillary product, or a data level that is not the product's.
 
         The regex admits any digits in the revision, every product name, and every data level, so the name is parsed
         and its product and level checked before it is assigned.
@@ -1168,7 +1402,8 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
         ------
         ValueError
             If the path does not match the filename regex, its revision is not a real UTC time, it names a product
-            whose partition scheme is not VERSION, or its data level is not the data level of its product.
+            whose partition scheme is not VERSION or whose data level is ANC, or its data level is not the data level
+            of its product.
         """
         if isinstance(new_path, str):
             _new_path: PathType = cast(PathType, AnyPath(new_path))
@@ -1188,6 +1423,12 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
                 "valid version-partitioned filename. Name it with LiberaDataProductFilename, which carries the time "
                 "range of its data."
             )
+        if product_id.data_level is DataLevel.ANC:
+            raise ValueError(
+                f"{product_id} is an external ancillary product, so {_new_path.name} is not a valid filename for it: "
+                "each version is ingested as one zip named by AncillaryVersionArchiveFilename. Name it "
+                f"{_version_archive_form(product_id)}"
+            )
         if DataLevel(parsed.data_level) != product_id.data_level:
             raise ValueError(
                 f"{_new_path.name} has data level {parsed.data_level}, but the data level of {product_id} is "
@@ -1204,9 +1445,45 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
     def archive_prefix(self) -> str:
         """Property that contains the generated prefix for archiving, ``<product_name>/<version>``
 
-        Each file is archived once under this prefix, whatever period it covers.
+        Each file is archived once under this prefix, whatever period it covers. The version here keeps the
+        ``VM-m-p`` form of the name.
         """
         return f"{self.filename_parts.product_name}/{self.filename_parts.version}"
+
+    @property
+    def partition_key(self) -> str:
+        """The file's VERSION partition key, its version in PEP 440 form, the same string as ``version``.
+
+        Returns
+        -------
+        str
+            The partition key
+        """
+        return self.version
+
+    @property
+    def version(self) -> str:
+        """The algorithm version in PEP 440 form, e.g. ``1.2.3rc1`` for a name carrying ``V1-2-3RC1``.
+
+        ``filename_parts.version`` and ``archive_prefix`` keep the form the name carries.
+
+        Returns
+        -------
+        str
+            The PEP 440 version
+        """
+        return _libera_version_to_pep440(self.filename_parts.version)
+
+    @property
+    def revision(self) -> datetime:
+        """The UTC time the file was created, from its ``R`` field.
+
+        Returns
+        -------
+        datetime.datetime
+            The timezone-aware UTC revision time
+        """
+        return self.filename_parts.revision
 
     @classmethod
     def from_filename_parts(
@@ -1323,9 +1600,12 @@ class LiberaVersionPartitionedDataProductFilename(AbstractDataProductFilename):
 
 
 # The filename class write_libera_data_product names a product with, by the product's partition scheme. Other filename
-# classes can name products of the same scheme, so this is not a way to validate a filename against a scheme.
+# classes can name products of the same scheme, so this is not a way to validate a filename against a scheme. The SDC
+# writes no TWO_HOUR (L0) or HOURLY (CERES) product, whose files keep their EDOS or upstream names, so those schemes
+# have no entry.
 PARTITION_SCHEME_FILENAME_CLASSES: dict[PartitionScheme, type[AbstractDataProductFilename]] = {
     PartitionScheme.DAILY: LiberaDataProductFilename,
+    PartitionScheme.EVENT: LiberaDataProductFilename,
     PartitionScheme.VERSION: LiberaVersionPartitionedDataProductFilename,
 }
 
@@ -1420,12 +1700,12 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     not build them. Setting the path parses every field, so a name whose fields match the pattern but do not form
     a real date or time is rejected when the object is created.
 
-    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string) and
-    ``utc_start`` / ``utc_end``, the UTC period the file is used for. CERES gives its hour, and VIIRS L3 and NISE
-    their day, each ending at the start of the next hour or day (end exclusive); the VJ143C1 BRDF composite gives
-    its nominal day, although it spans 16 days; a VIIRS SDR granule gives its ``t`` and ``e`` times; ERA5 gives its
-    first and last hourly steps (end inclusive). They are ``None`` for a version archive and the files inside it,
-    whose names give no period.
+    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string),
+    ``revision`` (the production or creation time the name carries, or ``None``) and ``utc_start`` / ``utc_end``,
+    the UTC period the file is used for. CERES gives its hour, and VIIRS L3 and NISE their day, each ending at the
+    start of the next hour or day (end exclusive); the VJ143C1 BRDF composite gives its nominal day, although it
+    spans 16 days; a VIIRS SDR granule gives its ``t`` and ``e`` times; ERA5 gives its first and last hourly steps
+    (end inclusive). They are ``None`` for a version archive and the files inside it, whose names give no period.
     """
 
     @AbstractValidFilename.path.setter
@@ -1495,6 +1775,47 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier the filename names"""
         return self.filename_parts.data_product_id
+
+    @property
+    def partition_key(self) -> str:
+        """The file's partition key in its product's scheme.
+
+        A DAILY file's key is its applicable date, ``YYYY-MM-DD``; an HOURLY file's the start of its hour,
+        ``YYYY-MM-DD-HH:MM`` UTC; a VERSION file's its upstream version.
+
+        Returns
+        -------
+        str
+            The partition key
+        """
+        scheme = self.data_product_id.partition_scheme
+        if scheme is PartitionScheme.VERSION:
+            return self.version
+        if scheme is PartitionScheme.DAILY:
+            return _format_partition_key(scheme, self.filename_parts.applicable_date)
+        return _format_partition_key(scheme, self.filename_parts.utc_start)
+
+    @property
+    def version(self) -> str:
+        """The upstream version as the name carries it, or the dataset version where the name carries none.
+
+        Returns
+        -------
+        str
+            The version
+        """
+        return self.filename_parts.version
+
+    @property
+    def revision(self) -> datetime | None:
+        """The UTC production or creation time the name carries.
+
+        Returns
+        -------
+        datetime.datetime | None
+            The timezone-aware UTC revision time, or None when the name carries none
+        """
+        return self.filename_parts.revision
 
     @classmethod
     def from_filename_parts(cls, *args: Any, **kwargs: Any) -> NoReturn:
@@ -1587,6 +1908,7 @@ class CeresFilename(DailyAncillaryDataProductFilename):
             data_product_id=_CERES_PRODUCTS[d["product"]],
             version=d["version"],
             configuration_code=d["configuration_code"],
+            revision=None,
             utc_start=utc_start,
             utc_end=utc_start + timedelta(hours=1),
             applicable_date=utc_start.date(),
@@ -1605,7 +1927,7 @@ def _parse_modis_viirs_name(d: dict[str, Any]) -> SimpleNamespace:
     -------
     : types.SimpleNamespace
         ``short_name``, ``data_product_id``, ``version`` (the collection), ``tile`` (``None`` for a global grid),
-        ``acquisition_date`` (the ``A`` date) and ``production_time``
+        ``acquisition_date`` (the ``A`` date), ``production_time`` and ``revision`` (the production time)
 
     Raises
     ------
@@ -1626,19 +1948,21 @@ def _parse_modis_viirs_name(d: dict[str, Any]) -> SimpleNamespace:
             "Check that the file is the product its name says"
         )
     production = d["production_time"]
+    production_time = _parse_doy_datetime(
+        int(production[:4]),
+        int(production[4:7]),
+        int(production[7:9]),
+        int(production[9:11]),
+        int(production[11:13]),
+    )
     return SimpleNamespace(
         short_name=d["short_name"],
         data_product_id=data_product_id,
         version=d["version"],
         tile=d["tile"],
         acquisition_date=_parse_doy_datetime(int(d["year"]), int(d["doy"])).date(),
-        production_time=_parse_doy_datetime(
-            int(production[:4]),
-            int(production[4:7]),
-            int(production[7:9]),
-            int(production[9:11]),
-            int(production[11:13]),
-        ),
+        production_time=production_time,
+        revision=production_time,
     )
 
 
@@ -1811,6 +2135,7 @@ class ViirsSdrFilename(DailyAncillaryDataProductFilename):
             kind=d["kind"],
             data_product_id=DataProductIdentifier.anc_viirs_noaa20_m4_sdr,
             version=d["creation_time"],
+            revision=None,
             utc_start=utc_start,
             utc_end=utc_end,
             applicable_date=start_date.date(),
@@ -1856,6 +2181,7 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
             data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
             version=NISE_VERSION,
+            revision=None,
             applicable_date=applicable_date,
             utc_start=utc_start,
             utc_end=utc_end,
@@ -1895,6 +2221,7 @@ class NsidcLandOceanMaskFilename(AncillaryArchiveMemberFilename):
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys the mask on; its archive is keyed on the
             # version in the zip's name
             version=NSIDC_LAND_OCEAN_MASK_VERSION,
+            revision=None,
             utc_start=None,
             utc_end=None,
             resolution_km=float(d["resolution_km"]),

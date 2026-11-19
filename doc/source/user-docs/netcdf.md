@@ -166,15 +166,16 @@ The function automatically:
 - Validates data against the product definition
 - Sets the `date_created` attribute to the creation time, overwriting (with a warning) any value already set
 - Generates a standardized filename whose revision is that `date_created`. Every product's filename includes its data
-  level, product ID, version, and revision. A daily product's filename also includes the data time range from
-  `time_variable`, and a version-partitioned product's (one whose `DataProductIdentifier` has partition scheme
+  level, product ID, version, and revision. A daily or calibration event (`PartitionScheme.EVENT`) product's filename
+  also includes the data time range from `time_variable`, and a version-partitioned product's (one whose `DataProductIdentifier` has partition scheme
   `PartitionScheme.VERSION`, such as an ADM) has no time range.
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 
-`time_variable` is required for a daily product, and `write_libera_data_product` raises a `ValueError` without it.
+`time_variable` is required for a daily or event product, and `write_libera_data_product` raises a `ValueError`
+without it. L0 and CERES products (`TWO_HOUR` and `HOURLY`) keep their EDOS and upstream names and cannot be written.
 `time_variable` is not used for version-partitioned products and `write_libera_data_product` issues a `UserWarning`
-if it is given. The function returns a `LiberaDataProductFilename` for a daily product and a
+if it is given. The function returns a `LiberaDataProductFilename` for a daily or event product and a
 `LiberaVersionPartitionedDataProductFilename` for a version-partitioned one.
 
 ## Advanced Usage

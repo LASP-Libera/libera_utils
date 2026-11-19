@@ -26,9 +26,9 @@ from libera_utils.io import filenaming
         ("/some/fake/path/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
         (Path("/fake-path/P1590011SOMESCIENCEAAA99030231459001.PDS"), filenaming.L0Filename),
         ("s3://fake-bucket/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
-        ("/data/LIBERA_SDC_1040_ccsds_2025_318_13_16_34", filenaming.LiberaGroundCcsdsFilename),
-        (Path("/data/LIBERA_SDC_1057_ccsds_2025_318_13_53_06"), filenaming.LiberaGroundCcsdsFilename),
-        ("s3://bucket/dropbox/LIBERA_SDC_11_ccsds_2025_346_13_29_47", filenaming.LiberaGroundCcsdsFilename),
+        ("/data/LIBERA_SDC_1040_ccsds_2025_318_12_00_00", filenaming.LiberaGroundCcsdsFilename),
+        (Path("/data/LIBERA_SDC_1057_ccsds_2025_318_12_00_00"), filenaming.LiberaGroundCcsdsFilename),
+        ("s3://bucket/dropbox/LIBERA_SDC_11_ccsds_2025_346_12_00_00", filenaming.LiberaGroundCcsdsFilename),
         (
             "/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R20270103T080910123456.nc",
             filenaming.LiberaDataProductFilename,
@@ -69,9 +69,9 @@ def test_from_filename(filename, filename_type):
             S3Path("s3://my-bucket/PDS/0011/P1590011SOMESCIENCEAAA99030231459001.PDS"),
         ),
         (
-            "/ignore/this/LIBERA_SDC_1040_ccsds_2025_318_13_16_34",
+            "/ignore/this/LIBERA_SDC_1040_ccsds_2025_318_12_00_00",
             "s3://my-l0-bucket",
-            S3Path("s3://my-l0-bucket/GroundCCSDS/1040/2025/11/14/LIBERA_SDC_1040_ccsds_2025_318_13_16_34"),
+            S3Path("s3://my-l0-bucket/GroundCCSDS/1040/2025/11/14/LIBERA_SDC_1040_ccsds_2025_318_12_00_00"),
         ),
         (
             "/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R20270103T080910123456.nc",
@@ -211,10 +211,10 @@ def test_L0Filename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     "filename",
     [
-        "/some/fake/path/LIBERA_SDC_1040_ccsds_2025_318_13_16_34",
-        Path("/fake-path/LIBERA_SDC_1057_ccsds_2025_318_13_53_06"),
-        "s3://fake-bucket/LIBERA_SDC_1036_ccsds_2025_346_13_29_47",
-        S3Path("s3://fake-bucket/LIBERA_SDC_1040_ccsds_2025_318_13_16_34"),
+        "/some/fake/path/LIBERA_SDC_1040_ccsds_2025_318_12_00_00",
+        Path("/fake-path/LIBERA_SDC_1057_ccsds_2025_318_12_00_00"),
+        "s3://fake-bucket/LIBERA_SDC_1036_ccsds_2025_346_12_00_00",
+        S3Path("s3://fake-bucket/LIBERA_SDC_1040_ccsds_2025_318_12_00_00"),
         "LIBERA_SDC_11_ccsds_2025_001_00_00_00",
         "LIBERA_SDC_0_ccsds_2025_001_00_00_00",
         "LIBERA_SDC_2047_ccsds_2025_001_00_00_00",
@@ -228,22 +228,22 @@ def test_LiberaGroundCcsdsFilename(filename):
 
 def test_LiberaGroundCcsdsFilename_parts_and_archive_prefix():
     """Test round-trip from parts and the APID-scoped GroundCCSDS archive prefix."""
-    filename = "LIBERA_SDC_1040_ccsds_2025_318_13_16_34"
+    filename = "LIBERA_SDC_1040_ccsds_2025_318_12_00_00"
     fn = filenaming.LiberaGroundCcsdsFilename(filename)
     parts = fn.filename_parts
     assert parts.apid == 1040
     assert parts.year == 2025
     assert parts.doy == 318
-    assert parts.hour == 13
-    assert parts.minute == 16
-    assert parts.second == 34
-    assert parts.bin_start == dt.datetime(2025, 11, 14, 13, 16, 34, tzinfo=dt.UTC)
+    assert parts.hour == 12
+    assert parts.minute == 0
+    assert parts.second == 0
+    assert parts.bin_start == dt.datetime(2025, 11, 14, 12, 0, 0, tzinfo=dt.UTC)
     assert fn.archive_prefix == "GroundCCSDS/1040/2025/11/14"
     assert fn.apid == parts.apid
     assert fn.bin_start == parts.bin_start
 
     fn_from_parts = filenaming.LiberaGroundCcsdsFilename.from_filename_parts(
-        apid=1040, year=2025, doy=318, hour=13, minute=16, second=34
+        apid=1040, year=2025, doy=318, hour=12, minute=0, second=0
     )
     assert fn_from_parts.path.name == filename
     assert fn_from_parts.archive_prefix == fn.archive_prefix
@@ -251,7 +251,7 @@ def test_LiberaGroundCcsdsFilename_parts_and_archive_prefix():
 
 def test_LiberaGroundCcsdsFilename_archive_prefix_zero_pads_short_apid():
     """A sub-1000 APID pads to four digits so the archive sorts consistently."""
-    fn = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_11_ccsds_2025_318_13_16_34")
+    fn = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_11_ccsds_2025_318_12_00_00")
     assert fn.apid == 11
     assert fn.archive_prefix == "GroundCCSDS/0011/2025/11/14"
 
@@ -1095,14 +1095,10 @@ def test_LiberaVersionPartitionedDataProductFilename(filename):
 
 @pytest.mark.parametrize(
     "product_id",
-    [
-        dpi
-        for dpi in DataProductIdentifier
-        if dpi.data_level != DataLevel.L0 and dpi.partition_scheme is not PartitionScheme.VERSION
-    ],
+    [dpi for dpi in DataProductIdentifier if dpi.partition_scheme in (PartitionScheme.DAILY, PartitionScheme.EVENT)],
 )
 def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(product_id):
-    """No daily filename, of any non-L0 product that has one, parses as a version-partitioned filename"""
+    """No daily or event filename parses as a version-partitioned filename"""
     daily = filenaming.LiberaDataProductFilename.from_filename_parts(
         product_name=product_id,
         version="V1-2-3",
@@ -1255,10 +1251,15 @@ def test_LiberaVersionPartitionedDataProductFilename_processing_step_id(filename
     assert filenaming.LiberaVersionPartitionedDataProductFilename(filename).processing_step_id == expected
 
 
-def test_partition_scheme_filename_classes_cover_every_scheme():
-    """Every partition scheme maps to the filename class that names its products"""
-    assert set(filenaming.PARTITION_SCHEME_FILENAME_CLASSES) == set(PartitionScheme)
+def test_partition_scheme_filename_classes_cover_every_written_scheme():
+    """Every scheme the SDC writes maps to the filename class that names its products; L0 and CERES are not written"""
+    assert set(filenaming.PARTITION_SCHEME_FILENAME_CLASSES) == {
+        PartitionScheme.DAILY,
+        PartitionScheme.EVENT,
+        PartitionScheme.VERSION,
+    }
     assert filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.DAILY] is filenaming.LiberaDataProductFilename
+    assert filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.EVENT] is filenaming.LiberaDataProductFilename
     assert (
         filenaming.PARTITION_SCHEME_FILENAME_CLASSES[PartitionScheme.VERSION]
         is filenaming.LiberaVersionPartitionedDataProductFilename
@@ -1874,3 +1875,172 @@ def test_era5_name_revision_defaults_to_now():
 
     # The revision keeps microseconds, so it lands between the two clock reads.
     assert before <= fn.filename_parts.revision <= after
+
+
+@pytest.mark.parametrize(
+    ("product_id", "start", "expected_key"),
+    [
+        (DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed, "20270102T013000", "20270102T013000"),
+        (DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed, "20270102T193000", "20270102T193000"),
+        (DataProductIdentifier.cal_swc_365nm, "20270102T013000", "20270102T013000"),
+        (DataProductIdentifier.cal_swc_365nm, "20270102T193000", "20270102T193000"),
+    ],
+)
+def test_LiberaDataProductFilename_event_partition_key_is_its_start(product_id, start, expected_key):
+    """Two events of one ObsID on one day have different keys, their starts, and the same applicable date"""
+    name = f"LIBERA_{product_id.data_level}_{product_id}_V1-0-0_{start}_20270102T220000_R20270103T080910123456.nc"
+    filename = filenaming.LiberaDataProductFilename(name)
+    assert filename.partition_key == expected_key
+    assert filename.applicable_date == dt.date(2027, 1, 2)
+
+
+def test_LiberaDataProductFilename_partition_key_version_and_revision():
+    """A daily file's key is its applicable date, its version PEP 440, and its revision a UTC datetime"""
+    filename = filenaming.LiberaDataProductFilename(
+        "LIBERA_L1B_RAD-4CH_V3-14-159RC1_20270102T000000_20270103T000000_R20270103T080910123456.nc"
+    )
+    assert filename.partition_key == "2027-01-02"
+    assert filename.version == "3.14.159rc1"
+    assert filename.filename_parts.version == "V3-14-159RC1"
+    assert filename.revision == dt.datetime(2027, 1, 3, 8, 9, 10, 123456, tzinfo=dt.UTC)
+
+
+def test_LiberaVersionPartitionedDataProductFilename_partition_key_is_its_pep440_version():
+    """A version-partitioned file's key is its PEP 440 version; its archive prefix keeps the filename form"""
+    filename = filenaming.LiberaVersionPartitionedDataProductFilename(
+        "LIBERA_AUX_ADM-CAM_V1-2-3RC1_R20270102T112233000000.nc"
+    )
+    assert filename.partition_key == "1.2.3rc1"
+    assert filename.version == "1.2.3rc1"
+    assert filename.archive_prefix == "ADM-CAM/V1-2-3RC1"
+    assert filename.revision == dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize("version", ["V1-2-3", "V1-2-3RC1", "V10-0-12", "V0-0-0RC9"])
+def test_libera_version_to_pep440_inverts_format_from_semantic_version(version):
+    """A filename version converted to PEP 440 and back is unchanged"""
+    assert filenaming.format_from_semantic_version(filenaming._libera_version_to_pep440(version)) == version
+
+
+@pytest.mark.parametrize("version", ["V--", "V1--3", "V-2-3RC1"])
+def test_version_with_an_empty_part_is_rejected(version):
+    """A version part with no digits is not a version, in a filename or on its own"""
+    assert not filenaming.check_version_number_format(version)
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        filenaming.LiberaDataProductFilename(
+            f"LIBERA_L1B_RAD-4CH_{version}_20270102T000000_20270103T000000_R20270103T080910123456.nc"
+        )
+
+
+def test_LiberaGroundCcsdsFilename_partition_key_is_its_bin_start():
+    """A ground-test capture's key is its two-hour bin start; its name carries no version or revision"""
+    filename = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_1057_ccsds_2025_318_12_00_00")
+    assert filename.partition_key == "2025-11-14-12:00"
+    assert filename.version is None
+    assert filename.revision is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "LIBERA_SDC_1057_ccsds_2025_318_13_00_00",  # odd hour
+        "LIBERA_SDC_1057_ccsds_2025_318_12_20_00",  # minutes
+        "LIBERA_SDC_1057_ccsds_2025_318_12_00_01",  # seconds
+    ],
+)
+def test_LiberaGroundCcsdsFilename_rejects_a_time_that_is_not_a_bin_start(name):
+    """A ground-test capture named by a time that does not start a two-hour bin is rejected where it is named"""
+    with pytest.raises(ValueError, match="is not the start of a two-hour bin"):
+        filenaming.LiberaGroundCcsdsFilename(name)
+    with pytest.raises(ValueError, match="is not the start of a two-hour bin"):
+        filenaming.LiberaGroundCcsdsFilename.from_filename_parts(
+            apid=1057, year=2025, doy=318, hour=int(name[-8:-6]), minute=int(name[-5:-3]), second=int(name[-2:])
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["P1590011SOMESCIENCEAAA99030231459001.PDS", "P1590011SOMESCIENCEAAA99030231459000.PDS"],
+)
+def test_L0Filename_has_no_partition_key_or_version(name):
+    """An EDOS name carries no chunk start or version; its revision is its UTC creation time"""
+    filename = filenaming.L0Filename(name)
+    assert filename.partition_key is None
+    assert filename.version is None
+    assert filename.revision == dt.datetime(1999, 1, 30, 23, 14, 59, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize(
+    ("filename_class", "name", "partition_key", "revision"),
+    [
+        (filenaming.CeresFilename, "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc", "2020-04-10-15:00", None),
+        (filenaming.CeresFilename, "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc", "2023-01-01-00:00", None),
+        (
+            filenaming.ModisViirsDailyFilename,
+            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
+            "2026-09-27",
+            dt.datetime(2026, 10, 1, 0, 10, 51, tzinfo=dt.UTC),
+        ),
+        (
+            filenaming.ModisIgbpFilename,
+            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+            "061",
+            dt.datetime(2025, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
+        ),
+        (
+            filenaming.ViirsSdrFilename,
+            "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
+            "2024-10-02",
+            None,
+        ),
+        (filenaming.NsidcNiseFilename, "NISE_AMSR2_20260610.HDFEOS", "2026-06-10", None),
+        (filenaming.NsidcLandOceanMaskFilename, "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin", "1", None),
+        (
+            filenaming.AncillaryVersionArchiveFilename,
+            "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
+            "061",
+            dt.datetime(2026, 10, 20, 12, tzinfo=dt.UTC),
+        ),
+        (
+            filenaming.Era5Filename,
+            "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
+            "2025-01-01",
+            dt.datetime(2025, 10, 28, 12, tzinfo=dt.UTC),
+        ),
+    ],
+)
+def test_ancillary_partition_key_version_and_revision(filename_class, name, partition_key, revision):
+    """An ancillary file's key is in its product's scheme, its version as named, and its revision the time it carries"""
+    filename = filename_class(name)
+    assert filename.partition_key == partition_key
+    assert filename.version == filename.filename_parts.version
+    assert filename.revision == revision
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [
+        dpi
+        for dpi in DataProductIdentifier
+        if dpi.partition_scheme in (PartitionScheme.TWO_HOUR, PartitionScheme.HOURLY)
+    ],
+)
+def test_LiberaDataProductFilename_rejects_two_hour_and_hourly_products(product_id):
+    """An L0 or CERES product named in the Libera data product form is rejected where it is named"""
+    name = (
+        f"LIBERA_{product_id.data_level}_{product_id}_V1-2-3_20270102T000000_20270102T020000_R20270102T112233000000.nc"
+    )
+    with pytest.raises(ValueError, match="this form names only DAILY and EVENT products"):
+        filenaming.LiberaDataProductFilename(name)
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [DataProductIdentifier.anc_modis_igbp, DataProductIdentifier.anc_nsidc_land_ocean_mask],
+)
+def test_LiberaVersionPartitionedDataProductFilename_rejects_ancillary_products(product_id):
+    """A version-partitioned ancillary product keeps its upstream name, so the Libera form is rejected"""
+    with pytest.raises(ValueError, match="is an external ancillary product"):
+        filenaming.LiberaVersionPartitionedDataProductFilename(
+            f"LIBERA_ANC_{product_id}_V1-0-0_R20270102T112233000000.nc"
+        )

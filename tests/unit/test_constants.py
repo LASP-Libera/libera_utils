@@ -1,6 +1,7 @@
 """Tests for the top level constants module"""
 
 import warnings
+from datetime import timedelta
 from enum import IntEnum, StrEnum
 
 import pytest
@@ -13,6 +14,7 @@ from libera_utils.constants import (
     PartitionScheme,
     ProcessingStepIdentifier,
 )
+from libera_utils.time import PRINTABLE_TS_FORMAT
 
 
 class TestManifestType:
@@ -88,6 +90,28 @@ class TestDataLevel:
         assert DataLevel.CAL.archive_bucket_name == "libera-calibration-data"
         assert DataLevel.AUX.archive_bucket_name == "libera-auxiliary-data"
         assert DataLevel.ANC.archive_bucket_name == "libera-ancillary-data"
+
+
+class TestPartitionScheme:
+    """Tests for PartitionScheme"""
+
+    @pytest.mark.parametrize(
+        ("scheme", "expected"),
+        [
+            (PartitionScheme.TWO_HOUR, "%Y-%m-%d-%H:%M"),
+            (PartitionScheme.HOURLY, "%Y-%m-%d-%H:%M"),
+            (PartitionScheme.DAILY, "%Y-%m-%d"),
+            (PartitionScheme.EVENT, "%Y%m%dT%H%M%S"),
+            (PartitionScheme.VERSION, None),
+        ],
+    )
+    def test_key_format(self, scheme, expected):
+        """Each scheme's key format is its Dagster partition key format; VERSION keys are versions, not times"""
+        assert scheme.key_format == expected
+
+    def test_event_key_format_is_the_filename_time_format(self):
+        """An event key is the utc_start field of its Libera filename, unchanged"""
+        assert PartitionScheme.EVENT.key_format == PRINTABLE_TS_FORMAT
 
 
 class TestDataProductIdentifier:
@@ -295,20 +319,37 @@ class TestDataProductIdentifier:
             assert level in DataLevel
 
     def test_partition_scheme_property(self):
-        """The ADMs, IGBP and the land/ocean mask are partitioned by version, and every other product is daily"""
-        assert DataProductIdentifier.aux_adm_cam.partition_scheme is PartitionScheme.VERSION
-        assert DataProductIdentifier.aux_adm_imager.partition_scheme is PartitionScheme.VERSION
-        assert DataProductIdentifier.l1b_rad.partition_scheme is PartitionScheme.DAILY
-        assert DataProductIdentifier.aux_adm_stats_cam.partition_scheme is PartitionScheme.DAILY
-        version_products = {p for p in DataProductIdentifier if p.partition_scheme is PartitionScheme.VERSION}
-        assert version_products == {
+        """L0 is two-hour, CERES hourly, TRIMMED and CAL event, four products version, and the rest daily"""
+        hourly = {DataProductIdentifier.anc_ceres_noaa20_ssf, DataProductIdentifier.anc_ceres_noaa20_cldpix}
+        version = {
             DataProductIdentifier.aux_adm_cam,
             DataProductIdentifier.aux_adm_imager,
             DataProductIdentifier.anc_modis_igbp,
             DataProductIdentifier.anc_nsidc_land_ocean_mask,
         }
         for product in DataProductIdentifier:
-            assert isinstance(product.partition_scheme, PartitionScheme)
+            if product.data_level is DataLevel.L0:
+                expected = PartitionScheme.TWO_HOUR
+            elif product.data_level is DataLevel.CAL or product.name.endswith("_trimmed"):
+                expected = PartitionScheme.EVENT
+            elif product in hourly:
+                expected = PartitionScheme.HOURLY
+            elif product in version:
+                expected = PartitionScheme.VERSION
+            else:
+                expected = PartitionScheme.DAILY
+            assert product.partition_scheme is expected, product
+
+    def test_longest_file_span_property(self):
+        """Every L0 product but the Construction Record has a span: 3 h for WFOV science, 2 h 10 min otherwise"""
+        for product in DataProductIdentifier:
+            if product.data_level is not DataLevel.L0 or product is DataProductIdentifier.l0_pds_cr:
+                expected = None
+            elif product is DataProductIdentifier.l0_icie_wfov_sci_pds:
+                expected = timedelta(hours=3)
+            else:
+                expected = timedelta(hours=2, minutes=10)
+            assert product.longest_file_span == expected, product
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
