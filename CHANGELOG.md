@@ -26,10 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
 - **BREAKING:** `AncillaryReader.granule_span(path)` is public (was `PassReader._granule_span`), and `GRANULE_DATE_WINDOW` is a class attribute, one day by default and `None` for IGBP. A reader with a window and no `granule_span` raises `TypeError` when defined. (#92)
 - `FMATCH_WORKERS` defaults to `"auto"`, sizing the aggregation pool from the available CPUs and memory (`FMATCH_WORKER_MEMORY_BYTES`). (#92)
+- **BREAKING:** The footprint reader `FLASHFluxReader` (module `readers.flashflux`) is `CeresSsfReader` (module `readers.ceres_ssf`), registry key `CERES_SSF` (was `FLASHFlux`), since the granules it reads are CERES SSF (`CER_SSF_NOAA20-FM6-VIIRS_...`). A manifest's `ancillary_inputs` keys its SSF granules `CERES_SSF`, and the FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME `FLASHFlux_*` variables are `CERES_SSF_*`. (#92)
+- **BREAKING:** `CeresSsfReader` reads the CERES SSF Edition1C layout: cloud-layer fields from `Cloudy_Footprint_Area`, TOA insolation and `Surface_Albedo` (`broadband_surface_albedo`) from `TOA_and_Surface_Fluxes`, and the lower/upper layer and multilayer coverages from the `Conditions` and `MultiCld` entries. It raises `ValueError` on a granule in another layout, such as the Edition 5 development (`alpha4`) layout it read before. (#92)
 
 ### Removed
 
 - **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
+- **BREAKING:** The FMATCH variables with no source in CERES SSF Edition1C, each with its `_Standard_Deviation` companion: `Aerosol_Optical_Depth` from FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, and `Match_AOT` and `Aerosol_Type_Percentage_Type0`–`Type6` from FMATCH-IMAGER. (#92)
 
 ## [5.27.0] - 2026-11-18
 

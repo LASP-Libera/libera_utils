@@ -497,10 +497,10 @@ def _hours(n: float) -> np.timedelta64:
 
 # Every reader that checks its granules' dates, by the key of its real granule in fmatch_real_ancillary_granules.
 _WINDOWED_READERS = [
+    "CERES_SSF",
     "CLDPIX",
     "ERA5_Pressure",
     "ERA5_Surface",
-    "FLASHFlux",
     "NISE",
     "VIIRS_AOD",
     "VIIRS_BRDF",

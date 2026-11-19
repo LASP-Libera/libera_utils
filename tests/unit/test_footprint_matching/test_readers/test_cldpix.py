@@ -307,7 +307,7 @@ class TestCLDPIXReaderLayoutChecks:
     def test_missing_variable_raises(self, cldpix_file_factory):
         """``CLDPIXReader`` raises ``ValueError``, not ``KeyError``, naming a variable the granule lacks.
 
-        A granule in another layout should fail with a message saying what is missing and what to do, as the FLASHFlux reader
+        A granule in another layout should fail with a message saying what is missing and what to do, as the CERES SSF reader
         does, rather than an opaque ``KeyError`` from inside the netCDF library.
 
         Builds the fixture, renames ``Cld_Radius`` so the granule lacks it, and asserts a ``ValueError`` naming

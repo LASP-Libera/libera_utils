@@ -399,14 +399,14 @@ def aggregate_external_variables(
     sample is averaged, binned or interpolated before the weigher sees it. The active
     reader set - and therefore the keys of the returned dict - grows with the mode's
     latency (e.g. CAM has ERA5_Surface, IGBP, NISE, VIIRS_BRDF, VIIRS_CLDPROP_D3; IMAGER
-    additionally has ERA5_Pressure, VIIRS_AOD, and the RBSP FLASHFlux and CLDPIX fields).
+    additionally has ERA5_Pressure, VIIRS_AOD, and the CERES SSF and RBSP CLDPIX fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<READER_KEY>_<spec_name>`` (e.g.
     ``ERA5_Surface_Wind_U10``, ``IGBP_Surface_Type``, ``CLDPIX_Cloud_Mask``), the name the
     product definition declares. The reader's ``INSTRUMENT`` is recorded in each
     variable's ``long_name`` rather than in the name. A spec is aggregated only
-    when ``mode`` is in its ``modes`` (e.g. the extended FLASHFlux
+    when ``mode`` is in its ``modes`` (e.g. the extended CERES SSF
     cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
     Processing is done one footprint at a time, so only the current footprint's
@@ -767,7 +767,7 @@ def _aggregate_footprints(
         entries: list[tuple[str, str]] = []
         for name, spec, width in variables:
             # Per-spec mode gating: a reader may declare variables that only some of its
-            # products carry (e.g. the extended FLASHFlux cloud/aerosol/albedo fields are
+            # products carry (e.g. the extended CERES SSF cloud/aerosol/albedo fields are
             # FMATCH-IMAGER only), so skip specs whose modes exclude this one.
             if mode not in spec.modes:
                 continue

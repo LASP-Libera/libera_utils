@@ -2,7 +2,7 @@
 
 FMATCH matches each Libera footprint to the external, non-Libera datasets that describe the scene under it: ERA5
 reanalysis, IGBP land cover, NISE snow and sea ice, VIIRS surface, cloud and aerosol products and, from the second
-operational year, CERES CLDPIX and FLASHFlux. For every footprint it aggregates each source's native samples inside
+operational year, CERES CLDPIX and SSF. For every footprint it aggregates each source's native samples inside
 the footprint's point spread function (PSF) to one value, and writes them with the footprint's geolocation and
 viewing geometry to an FMATCH product. Scene ID and ADM binning read those products.
 
@@ -35,7 +35,7 @@ the external sources available to them) and their inputs.
 
 The IMAGER products carry no camera cloud fraction; their cloud information comes from the CERES and VIIRS readers.
 
-The CAM products run from mission start. The IMAGER products need the RBSP CERES inputs (CLDPIX, FLASHFlux), so they
+The CAM products run from mission start. The IMAGER products need the RBSP CERES inputs (CLDPIX, SSF), so they
 do not run in the first operational year; once those inputs exist, the IMAGER products are produced from mission
 start by reprocessing.
 
@@ -149,7 +149,7 @@ Each external source has a reader, registered under its reader key:
 | `VIIRS_CLDPROP_D3` | VIIRS daily L3 cloud properties                | NOAA20     |
 | `VIIRS_AOD`        | VIIRS Deep Blue aerosol optical depth and type | NOAA20     |
 | `CLDPIX`           | CERES CLDPIX imager-pixel swath                | NOAA20     |
-| `FLASHFlux`        | CERES FLASHFlux footprint swath                | NOAA20     |
+| `CERES_SSF`        | CERES SSF footprint swath                      | NOAA20     |
 
 Which readers a product uses is derived from each reader variable's `modes`, and is held in
 `readers.registry.FMATCH_MODE_READERS`. To list them:
@@ -237,7 +237,7 @@ dtype, and `test_reader_instrument_is_recorded_in_long_name` fails when a `long_
 For example, moving the VIIRS readers from NOAA-20 to NOAA-21:
 
 1. In each affected reader, set `INSTRUMENT` (`INSTRUMENT = "NOAA21"` in `aod.py`, `brdf.py`, `viirs.py`,
-   `cldpix.py` and `flashflux.py`), and update the module docstring's product and file-naming lines.
+   `cldpix.py` and `ceres_ssf.py`), and update the module docstring's product and file-naming lines.
 2. In every FMATCH product definition, change the instrument in parentheses at the end of each affected `long_name`,
    for example `(NOAA20)` to `(NOAA21)`.
 3. If the new product's file layout differs (group paths, variable names, dimension order, fill or geolocation
@@ -249,8 +249,8 @@ consumers are unaffected unless step 3 changes a variable.
 
 ### Add a variable to an existing reader
 
-1. Add the field to the reader's table: `_CLDPIX_FIELDS` in `cldpix.py`, `_FLASHFLUX_BASE_FIELDS` or
-   `_IMAGER_FLASHFLUX_SOURCES` in `flashflux.py`, `_D3_FIELDS` in `viirs.py`, or the reader's `VARIABLES` elsewhere.
+1. Add the field to the reader's table: `_CLDPIX_FIELDS` in `cldpix.py`, `_SSF_BASE_FIELDS` or
+   `_IMAGER_SSF_SOURCES` in `ceres_ssf.py`, `_D3_FIELDS` in `viirs.py`, or the reader's `VARIABLES` elsewhere.
    Give it its aggregation, the products that carry it in `modes`, its valid range with the document it comes from,
    and for a mode-aggregated code `n_categories` and an `int16` dtype.
 2. Add the product variable to each product definition whose mode carries it, named `<READER_KEY>_<variable name>`

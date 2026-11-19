@@ -40,9 +40,9 @@ VIIRS Cloud CLDPROP_D3 (NetCDF4 with groups):
     NCEI CDR: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/
     Example filename: CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc
 
-CERES FLASHFlux (NetCDF4, per-footprint swath, in the CERES SSF file layout):
-    NASA CERES: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-flashflux
-    Example layout source: CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc
+CERES SSF (NetCDF4, per-footprint swath):
+    NASA CERES: https://ceres.larc.nasa.gov/data/#ssf-level-2
+    Example layout source: CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc
 
 CERES CLDPIX (NetCDF4, imager-pixel swath):
     NASA CERES: https://ceres.larc.nasa.gov/data/
@@ -874,19 +874,19 @@ def viirs_cldprop_d3_file_factory(tmp_path: Path) -> Callable[..., Path]:
 
 
 SWATH_FIXTURE_TIME = np.datetime64("2026-01-01T12:00:00", "ns")
-"""The observation time the default FLASHFlux and CLDPIX fixtures carry; query them at this time."""
+"""The observation time the default CERES SSF and CLDPIX fixtures carry; query them at this time."""
 _SWATH_TIME_EPOCH = np.datetime64("2026-01-01T00:00:00", "ns")
 _SWATH_TIME_UNITS = "seconds since 2026-01-01 00:00:00"
 
 
 @pytest.fixture
-def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
-    """Factory writing synthetic CERES FLASHFlux (footprint/swath) NetCDF4 files.
+def ceres_ssf_file_factory(tmp_path: Path) -> Callable[..., Path]:
+    """Factory writing synthetic CERES SSF (footprint/swath) NetCDF4 files.
 
-    Replicates the grouped, per-footprint structure of the real FLASHFlux product (the CERES SSF file layout):
+    Replicates the grouped, per-footprint structure of the real CERES SSF product:
     - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
-      ``AeroTypePct`` (7) secondary axis the reader flattens, with
-      ``product_version = "alpha4"``
+      four-entry ``Conditions`` and ``MultiCld`` axes the reader takes its lower and
+      upper entries from, with ``product_version = "Edition1C"``
     - ``Time_and_Position/instrument_fov_latitude`` and ``..._longitude``
       (**longitude stored in the 0..360 convention**, matching the real file), and
       ``Time_and_Position/time``, the per-footprint observation time encoded with
@@ -895,10 +895,11 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
     - One variable per supported reader field across the corresponding groups,
       with float fill ``3.4028235e38`` and int16 fill ``32767``. This includes the
       FMATCH-IMAGER-only extended fields: the layered cloud fields (both layers,
-      upper offset from lower), ``Assimilated_Aerosol_Properties`` (``match_aot``,
-      ``aerosol_type_percentage``), the land/ocean 0.55 µm imager AODs,
-      ``Auxillary_Properties/surface_albedo`` (1-D, 0..1), and
-      ``Observed_TOA_Fluxes/toa_incoming_solar_radiation`` (1-D, W/m²).
+      upper offset from lower), ``layers_coverages`` (clear, lower, upper, overlap) and
+      ``Multilayer_Footprint_Area/cloud_coverage_multilayer`` (single lower, single
+      upper, multi lower, multi upper), each entry with its own values, the land/ocean
+      0.55 µm imager AODs, ``TOA_and_Surface_Fluxes/toa_incoming_solar_radiation``
+      (1-D, W/m²) and ``TOA_and_Surface_Fluxes/broadband_surface_albedo`` (1-D).
 
     All arrays default to a small deterministic set of footprints clustered near
     lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
@@ -914,7 +915,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
     times : np.ndarray, optional
         Per-footprint observation times (``datetime64``). Default: every footprint at
         :data:`SWATH_FIXTURE_TIME`.
-    aerosol_optical_depth, clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
+    clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
         Per-footprint continuous values. ``cloud_optical_depth_lower`` fills the
         lower (index 0) layer of the 2-D ``cloud_optical_depth_mean`` variable.
     cloud_water_particle_radius_lower : np.ndarray, optional
@@ -940,7 +941,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
         variable is left out is not written.
     layer_dim_name : str, optional
         Name of the layered fields' second dimension. Default ``"LowerUpper"``, as
-        the alpha4 product names it.
+        the Edition1C product names it.
 
     and returns the path of the written file.
     """
@@ -949,7 +950,6 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
         lats: np.ndarray | None = None,
         lons_0360: np.ndarray | None = None,
         times: np.ndarray | None = None,
-        aerosol_optical_depth: np.ndarray | None = None,
         clear_coverage: np.ndarray | None = None,
         cloud_optical_depth_lower: np.ndarray | None = None,
         cloud_water_particle_radius_lower: np.ndarray | None = None,
@@ -978,8 +978,6 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
         if times is None:
             times = np.full(n, SWATH_FIXTURE_TIME, dtype="datetime64[ns]")
 
-        if aerosol_optical_depth is None:
-            aerosol_optical_depth = np.array([0.10, 0.20, 0.30, 0.40, 0.50, 0.60], dtype=np.float32)[:n]
         if clear_coverage is None:
             clear_coverage = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np.float32)[:n]
         if cloud_optical_depth_lower is None:
@@ -998,7 +996,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
         if longwave_adm_type is None:
             longwave_adm_type = np.array([50, 50, 50, 50, 50, 60], dtype=np.int16)[:n]
 
-        out_path = tmp_path / "flashflux_fixture.nc"
+        out_path = tmp_path / "ceres_ssf_fixture.nc"
 
         def _create(grp, name, dtype, dims, fill):
             """Create ``grp/name``, making the group on first use; ``None`` when the caller omits it."""
@@ -1040,7 +1038,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
             _set_valid_range(var, valid_range, np.float32)
 
         def _add_2d(grp, name, values_2d, dim_name, fill, valid_range=None):
-            """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct)."""
+            """Write a 2-D (Footprints, <dim_name>) variable (e.g. Conditions)."""
             var = _create(grp, name, "f4", ("Footprints", dim_name), fill)
             if var is None:
                 return
@@ -1054,9 +1052,10 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
         with netCDF4.Dataset(str(out_path), "w") as ds:
             ds.createDimension("Footprints", n)
             ds.createDimension(layer_dim_name, 2)
-            ds.product_version = "alpha4"
-            # Secondary axis flattened by the reader into _typeN 1-D variables.
-            ds.createDimension("AeroTypePct", 7)
+            ds.product_version = "Edition1C"
+            # The sky-condition and multilayer-condition axes of the two coverage fields.
+            ds.createDimension("Conditions", 4)
+            ds.createDimension("MultiCld", 4)
 
             tp = "Time_and_Position"
             lat_var = _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
@@ -1077,13 +1076,10 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
             ds.time_coverage_start = np.datetime_as_string(times_ns.min(), unit="us") + "Z"
             ds.time_coverage_end = np.datetime_as_string(times_ns.max(), unit="us") + "Z"
 
-            aux = "Auxillary_Properties"
-            _add(aux, "aerosol_optical_depth", aerosol_optical_depth.astype(np.float32), fill_f, (0.0, 8.0))
-
             clr = "Clear_Footprint_Area"
             _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
 
-            cif = "Cloudy_Imager_Footprint_Layer"
+            cif = "Cloudy_Footprint_Area"
             # The three fields whose lower layer feeds the base reader specs. Upper-layer
             # values (offset from lower) feed the FMATCH-IMAGER-only *_upper specs.
             _add_lower_upper(
@@ -1094,7 +1090,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
                 (0.0, 512.0),
                 upper_values=cloud_optical_depth_lower + 1.0,
             )
-            # Phase-separated effective particle radii. FLASHFlux does not provide a single
+            # Phase-separated effective particle radii. SSF does not provide a single
             # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
             _add_lower_upper(
                 cif,
@@ -1109,16 +1105,19 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
                 "cloud_ice_particle_radius_37um_mean",
                 cloud_ice_particle_radius_lower,
                 fill_f,
-                (0.0, 300.0),
+                (0.0, 225.0),
                 upper_values=cloud_ice_particle_radius_lower + 2.0,
             )
-            # Five genuinely-new layered fields carried by FMATCH-IMAGER (both layers).
-            _add_lower_upper(
-                cif, "layers_coverages", 10.0 + ramp * 5.0, fill_f, (0.0, 100.0), upper_values=15.0 + ramp * 5.0
+            # (Footprints, Conditions=4): clear, lower clouds, upper clouds, overlap. Each
+            # condition holds its own values, so a read of the wrong condition is caught.
+            layers_coverages = np.stack([1.0 + ramp, 10.0 + ramp * 5.0, 15.0 + ramp * 5.0, 2.0 + ramp], axis=1)
+            _add_2d(cif, "layers_coverages", layers_coverages, "Conditions", fill_f, (0.0, 100.0))
+            # (Footprints, MultiCld=4): single lower, single upper, multi lower, multi upper.
+            multilayer = np.stack([1.5 + ramp, 2.5 + ramp, 5.0 + ramp * 3.0, 8.0 + ramp * 3.0], axis=1)
+            _add_2d(
+                "Multilayer_Footprint_Area", "cloud_coverage_multilayer", multilayer, "MultiCld", fill_f, (0.0, 100.0)
             )
-            _add_lower_upper(
-                cif, "cloud_coverage_multilayer", 5.0 + ramp * 3.0, fill_f, (0.0, 100.0), upper_values=8.0 + ramp * 3.0
-            )
+            # Three more layered fields carried by FMATCH-IMAGER (both layers).
             _add_lower_upper(
                 cif,
                 "cloud_top_pressure_mean",
@@ -1149,13 +1148,7 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
             _add(scn, "shortwave_adm_type", shortwave_adm_type.astype(np.int16), fill_i, (0, 5000))
             _add(scn, "longwave_adm_type", longwave_adm_type.astype(np.int16), fill_i, (0, 5000))
 
-            # FMATCH-IMAGER-only aerosol fields.
-            aap = "Assimilated_Aerosol_Properties"
-            _add(aap, "match_aot", (0.15 + ramp * 0.1).astype(np.float32), fill_f, (0.0, 8.0))
-            # (Footprints, AeroTypePct=7): type t gets (t+1)*5 + footprint index.
-            aerosol_pct = (np.arange(1, 8, dtype=np.float32)[None, :] * 5.0) + ramp[:, None]
-            _add_2d(aap, "aerosol_type_percentage", aerosol_pct, "AeroTypePct", fill_f, (0.0, 100.0))
-
+            # FMATCH-IMAGER-only imager aerosol fields.
             ila = "Imager_Land_Aerosols"
             _add(
                 ila,
@@ -1174,13 +1167,10 @@ def flashflux_file_factory(tmp_path: Path) -> Callable[..., Path]:
                 (0.0, 5.0),
             )
 
-            # FMATCH-IMAGER-only surface albedo: a single 1-D (Footprints,) broadband value
-            # (0..1 fraction) in Auxillary_Properties, matching CER_SSF's surface_albedo.
-            _add(aux, "surface_albedo", (0.1 + ramp * 0.05).astype(np.float32), fill_f, (0.0, 1.0))
-
-            # FMATCH-IMAGER-only TOA incoming solar radiation: 1-D (Footprints,), W/m^2.
-            otf = "Observed_TOA_Fluxes"
+            # FMATCH-IMAGER-only TOA incoming solar radiation (1-D, W/m^2) and broadband surface albedo (1-D).
+            otf = "TOA_and_Surface_Fluxes"
             _add(otf, "toa_incoming_solar_radiation", (1360.0 + ramp).astype(np.float32), fill_f, (0.0, 1400.0))
+            _add(otf, "broadband_surface_albedo", (0.10 + ramp * 0.05).astype(np.float32), fill_f, (0.0, 1.0))
 
         return out_path
 

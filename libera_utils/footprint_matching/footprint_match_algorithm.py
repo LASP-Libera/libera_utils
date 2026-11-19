@@ -329,7 +329,7 @@ CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
 )
 
 # FMATCH-IMAGER (radiometer timescale): the RBSP Climate Quality product -- the highest latency rank of the
-# radiometer-timed modes and thus the largest active reader set (RBSP CLDPIX/FLASHFlux + ERA5 single/pressure + VIIRS).
+# radiometer-timed modes and thus the largest active reader set (CLDPIX and CERES SSF + ERA5 single/pressure + VIIRS).
 # It declares no cloud_fraction_camera (cloud info comes from the imager readers), so it takes no cloud-fraction input.
 IMAGER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER,
@@ -927,7 +927,7 @@ def create_and_write_data_product(
 
     Notes
     -----
-    The external-reader aggregates (``igbp_surface_type``, ``era5_*``, ``flashflux_*``,
+    The external-reader aggregates (``igbp_surface_type``, ``era5_*``, ``ceres_ssf_*``,
     ``cldpix_*``, ...) and the ``psf_coverage_fraction`` and ``q_flags`` columns are computed by
     the PSF aggregation engine from ``ancillary_inputs``. FMATCH-CAM's ``Cloud_Fraction_Camera``
     is the CF-CAM value of each footprint, fill where CF-CAM has none; the camera-timescale modes

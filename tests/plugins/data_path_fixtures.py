@@ -325,7 +325,7 @@ def fmatch_real_ancillary_granules(fmatch_real_data_path) -> dict[str, Path]:
         "CLDPIX": "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc",
         "ERA5_Pressure": "era5_pressure_levels_20250101T00_subset.nc",
         "ERA5_Surface": "era5_single_levels_20250101T00_subset.nc",
-        "FLASHFlux": "CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115_subset.nc",
+        "CERES_SSF": "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_subset.nc",
         "IGBP": "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
         "NISE": "NISE_AMSR2_20260610_subset.HDFEOS",
         "VIIRS_AOD": "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",

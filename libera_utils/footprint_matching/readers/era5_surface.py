@@ -12,7 +12,7 @@ Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 Variables read
 --------------
 Every variable is carried by FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, alongside the RBSP
-CLDPIX/FLASHFlux cloud fields. The CAM products carry none: no consumer of FMATCH-CAM or
+CLDPIX/CERES SSF cloud fields. The CAM products carry none: no consumer of FMATCH-CAM or
 FMATCH-CAM-CAMTIME reads them.
 
 - u10 / v10: 10 m U/V wind components
