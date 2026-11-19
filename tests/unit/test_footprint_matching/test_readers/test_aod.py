@@ -1,7 +1,7 @@
 """Unit tests for VIIRSAODReader.
 
 Uses synthetic AERDB_D3_VIIRS_NOAA20 Deep Blue aerosol NetCDF4 fixtures created
-by ``make_aod_noaa20_fixture``.
+by the ``aod_noaa20_file_factory`` fixture.
 
 Real files come from the NASA Deep Blue single-sensor Level-3 daily product, e.g.
 ``AERDB_D3_VIIRS_NOAA20.A2026001.002.2026005001030.nc``; the reader reads the
@@ -9,12 +9,13 @@ root-level ``Aerosol_Optical_Thickness_550_Land_Ocean_Mean`` (AOD) and
 ``Aerosol_Type_Land_Ocean_Mode`` (aerosol type) fields.
 """
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.types import BoundingBox
-from tests.plugins.footprint_matching_fixtures import make_aod_noaa20_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
@@ -34,20 +35,25 @@ _AOD_AXIS = 0
 _TYPE_AXIS = 1
 
 
-def _make_reader(tmp_path, **kwargs) -> VIIRSAODReader:
-    kwargs.setdefault("aod_fill", _AOD_FILL)
-    kwargs.setdefault("aerosol_type_value", _AEROSOL_TYPE)
-    fixture_path = make_aod_noaa20_fixture(
-        tmp_path,
-        n_lat=_N_LAT,
-        n_lon=_N_LON,
-        lat_min=_LAT_MIN,
-        lat_max=_LAT_MAX,
-        lon_min=_LON_MIN,
-        lon_max=_LON_MAX,
-        **kwargs,
-    )
-    return VIIRSAODReader([fixture_path])
+@pytest.fixture
+def aod_reader_factory(aod_noaa20_file_factory) -> Callable[..., VIIRSAODReader]:
+    """Factory building a ``VIIRSAODReader`` over a file on this module's grid; keywords pass to the file writer."""
+
+    def _make(**kwargs) -> VIIRSAODReader:
+        kwargs.setdefault("aod_fill", _AOD_FILL)
+        kwargs.setdefault("aerosol_type_value", _AEROSOL_TYPE)
+        fixture_path = aod_noaa20_file_factory(
+            n_lat=_N_LAT,
+            n_lon=_N_LON,
+            lat_min=_LAT_MIN,
+            lat_max=_LAT_MAX,
+            lon_min=_LON_MIN,
+            lon_max=_LON_MAX,
+            **kwargs,
+        )
+        return VIIRSAODReader([fixture_path])
+
+    return _make
 
 
 def _full_bbox() -> BoundingBox:
@@ -55,7 +61,7 @@ def _full_bbox() -> BoundingBox:
 
 
 class TestVIIRSAODReaderLoadSpatialRegion:
-    def test_full_box_serves_both_fields(self, tmp_path):
+    def test_full_box_serves_both_fields(self, aod_reader_factory):
         """A query enclosing the whole grid serves both fields' values unchanged, as float32, for every cell.
 
         Aggregation indexes the served values by variable on axis 0, so each cell must come back with one value per
@@ -67,7 +73,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         enclosing it, and asserts a float32 ``(2, 4, 8)`` grid whose AOD plane is 0.2 and aerosol-type plane is 1, with
         source ``"VIIRS_AOD"`` and no timestamp source.
         """
-        reader = _make_reader(tmp_path, include_fill_pixel=False)
+        reader = aod_reader_factory(include_fill_pixel=False)
         data, _, _ = _region(reader, _full_bbox(), _T)
         assert data.shape == (2, _N_LAT, _N_LON)
         assert data.dtype == np.float32
@@ -77,7 +83,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         assert samples.source == "VIIRS_AOD"
         assert samples.timestamp_source is None
 
-    def test_fill_pixel_becomes_nan_in_both_fields(self, tmp_path):
+    def test_fill_pixel_becomes_nan_in_both_fields(self, aod_reader_factory):
         """A cell holding the file's -999 ``_FillValue`` is served as NaN in both the AOD and the aerosol-type plane.
 
         A fill sentinel left as a number would be averaged into the footprint's AOD or counted as an aerosol category,
@@ -86,7 +92,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         Writes the fill value into cell (0, 0) of both fields and asserts that cell is NaN in each plane while the other
         31 cells of each plane stay finite.
         """
-        reader = _make_reader(tmp_path, include_fill_pixel=True)
+        reader = aod_reader_factory(include_fill_pixel=True)
         data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.isnan(data[_AOD_AXIS, 0, 0])
         assert np.isnan(data[_TYPE_AXIS, 0, 0])
@@ -105,7 +111,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
             pytest.param({"aerosol_type_value": 99}, _AOD_FILL, np.nan, id="type-out-of-range"),
         ],
     )
-    def test_values_outside_the_fields_valid_range_are_nan(self, tmp_path, kwargs, aod, aerosol_type):
+    def test_values_outside_the_fields_valid_range_are_nan(self, kwargs, aod, aerosol_type, aod_reader_factory):
         """A value outside its own field's ``valid_range`` is served as NaN, and the other field's value is kept.
 
         An out-of-range AOD is not a valid retrieval and would skew the footprint mean, and an aerosol-type code with no
@@ -117,7 +123,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         AOD ``valid_range`` narrowed to [0, 2], or aerosol type 99 (outside [0, 7]); asserts each plane is NaN or the
         value written.
         """
-        reader = _make_reader(tmp_path, include_fill_pixel=False, **kwargs)
+        reader = aod_reader_factory(include_fill_pixel=False, **kwargs)
         data, _, _ = _region(reader, _full_bbox(), _T)
         np.testing.assert_allclose(data[_AOD_AXIS], np.full((_N_LAT, _N_LON), aod), atol=1e-5)
         np.testing.assert_allclose(data[_TYPE_AXIS], np.full((_N_LAT, _N_LON), aerosol_type), atol=1e-5)
@@ -129,7 +135,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
             ({"aerosol_type_fill_value": _AEROSOL_TYPE}, _TYPE_AXIS, _AOD_AXIS),
         ],
     )
-    def test_fill_value_comes_from_each_field(self, tmp_path, fill_values, masked_axis, kept_axis):
+    def test_fill_value_comes_from_each_field(self, fill_values, masked_axis, kept_axis, aod_reader_factory):
         """Each field is masked with its own ``_FillValue`` attribute, independently of the other field's.
 
         The two fields declare their sentinels separately, so applying one field's fill to the other would keep fill
@@ -139,7 +145,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         0.2 or aerosol type 1); asserts that field's plane is all NaN and the other field's plane is all finite.
         """
         # A field whose own _FillValue equals the fixture's constant is masked; the other field is not.
-        reader = _make_reader(tmp_path, include_fill_pixel=False, **fill_values)
+        reader = aod_reader_factory(include_fill_pixel=False, **fill_values)
         data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.all(np.isnan(data[masked_axis]))
         assert np.all(np.isfinite(data[kept_axis]))
@@ -153,7 +159,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
             ("aerosol_type_valid_range", "has no valid_range attribute"),
         ],
     )
-    def test_field_without_fill_or_range_attribute_raises(self, tmp_path, field, match):
+    def test_field_without_fill_or_range_attribute_raises(self, field, match, aod_reader_factory):
         """``VIIRSAODReader`` raises ``ValueError`` when either field lacks its ``_FillValue`` or ``valid_range``.
 
         Without ``_FillValue`` the reader cannot tell fill from data, and it masks out-of-range values only by the
@@ -163,11 +169,11 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         Parametrized over the two attributes of each field; writes the fixture without that attribute and asserts
         ``samples_in`` raises with a message naming the missing attribute.
         """
-        reader = _make_reader(tmp_path, include_fill_pixel=False, **{field: None})
+        reader = aod_reader_factory(include_fill_pixel=False, **{field: None})
         with pytest.raises(ValueError, match=match):
             reader.samples_in(_full_bbox(), _T)
 
-    def test_aerosol_type_range_beyond_the_categories_raises(self, tmp_path):
+    def test_aerosol_type_range_beyond_the_categories_raises(self, aod_reader_factory):
         """``VIIRSAODReader`` raises ``ValueError`` when the aerosol-type ``valid_range`` admits codes outside 0..7.
 
         The modal and ranked aerosol-type aggregations have one bin per known category, so a file whose valid range
@@ -176,7 +182,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         Writes an aerosol-type ``valid_range`` of [0, 9] and asserts ``samples_in`` raises with a message quoting that
         range and the 0..7 the reader maps.
         """
-        reader = _make_reader(tmp_path, aerosol_type_valid_range=(0, 9))
+        reader = aod_reader_factory(aerosol_type_valid_range=(0, 9))
         with pytest.raises(ValueError, match=r"valid_range is \[0, 9\].*aerosol types 0..7"):
             reader.samples_in(_full_bbox(), _T)
 
@@ -249,17 +255,17 @@ class TestVIIRSAODReaderRealSubset:
 class TestVIIRSAODGranuleSpan:
     """``VIIRSAODReader.granule_span`` dates a granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes."""
 
-    def test_span_is_the_coverage_date(self, tmp_path):
-        path = make_aod_noaa20_fixture(tmp_path, coverage_date="2026-06-11")
+    def test_span_is_the_coverage_date(self, aod_noaa20_file_factory):
+        path = aod_noaa20_file_factory(coverage_date="2026-06-11")
 
         start, end = VIIRSAODReader.granule_span(path)
 
         assert start == np.datetime64("2026-06-11T00:00:00", "ns")
         assert end == np.datetime64("2026-06-11T23:59:59", "ns")
 
-    def test_granule_without_a_date_raises(self, tmp_path):
+    def test_granule_without_a_date_raises(self, aod_noaa20_file_factory):
         """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
-        path = make_aod_noaa20_fixture(tmp_path)
+        path = aod_noaa20_file_factory()
 
         with pytest.raises(ValueError, match="time_coverage_start"):
             VIIRSAODReader.granule_span(path)

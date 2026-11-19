@@ -1,6 +1,6 @@
 """Unit tests for FLASHFluxReader (CERES FLASHFlux footprint reader).
 
-Uses synthetic FLASHFlux NetCDF4 fixtures created by ``make_flashflux_fixture``. The fixture
+Uses synthetic FLASHFlux NetCDF4 fixtures written by the ``flashflux_file_factory`` fixture. The fixture
 clusters five footprints near lat ≈ 10–11°, lon ≈ −10° (stored as 350° in the
 0..360 convention) plus one far-away footprint, so tests can verify longitude
 normalization, fill handling, layer selection, and time matching.
@@ -14,7 +14,7 @@ import pytest
 
 from libera_utils.footprint_matching.readers.flashflux import FLASHFluxReader
 from libera_utils.footprint_matching.types import BoundingBox
-from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_flashflux_fixture
+from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import raw_and_usable, served_at
 
 # Box that contains the default footprint cluster (lon −10° == 350°).
@@ -75,7 +75,7 @@ _CLUSTER_VALUES = {
 
 
 class TestFLASHFluxReaderSamples:
-    def test_cluster_is_served_as_time_stamped_footprints(self, tmp_path):
+    def test_cluster_is_served_as_time_stamped_footprints(self, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` serves each footprint as its own float32 sample, at its position and time.
 
         Each footprint is a native sample for the PSF weigher, tagged ``"FLASHFlux"`` with its own observation time, which
@@ -86,7 +86,7 @@ class TestFLASHFluxReaderSamples:
         ``(len(VARIABLES), 5)``, every longitude is -10 degrees (stored as 350), the source is ``"FLASHFlux"``,
         ``timestamp_source`` is None and every sample time is the fixture time.
         """
-        samples = FLASHFluxReader([make_flashflux_fixture(tmp_path)]).samples_in(_BBOX, _T)
+        samples = FLASHFluxReader([flashflux_file_factory()]).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(FLASHFluxReader.VARIABLES), 5)
         assert samples.values.dtype == np.float32
         assert np.allclose(samples.lons, -10.0, atol=1e-4)
@@ -94,7 +94,7 @@ class TestFLASHFluxReaderSamples:
         assert samples.timestamp_source is None
         assert np.all(samples.times == _T)
 
-    def test_every_field_serves_its_source_values(self, tmp_path):
+    def test_every_field_serves_its_source_values(self, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` serves every field in its own row, from its own layer or type, fill as NaN.
 
         Values are matched to variables by row, so a row out of ``VARIABLES`` order publishes one field under another's
@@ -105,14 +105,14 @@ class TestFLASHFluxReaderSamples:
         Reads the default fixture over the cluster box once and asserts, for every variable, that its sorted finite
         values equal the fixture's (``_CLUSTER_VALUES``): the shortwave ADM row keeps three of its five codes.
         """
-        data = _values(FLASHFluxReader([make_flashflux_fixture(tmp_path)]))
+        data = _values(FLASHFluxReader([flashflux_file_factory()]))
         assert set(_CLUSTER_VALUES) == {v.name for v in FLASHFluxReader.VARIABLES}
         for name, expected in _CLUSTER_VALUES.items():
             np.testing.assert_allclose(_finite_values(data, name), expected, rtol=1e-5, err_msg=name)
 
 
 class TestFLASHFluxReaderTimeMatching:
-    def test_nearest_pass_is_served(self, tmp_path):
+    def test_nearest_pass_is_served(self, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` serves only the pass nearest the query time when two passes cover the box.
 
         Two passes over the same place can both fall inside ``MAX_TIME_OFFSET``; mixing the farther one into a Libera
@@ -129,7 +129,7 @@ class TestFLASHFluxReaderTimeMatching:
         lons = np.full(6, 350.0, dtype=np.float32)
         late_time = _T + np.timedelta64(2, "h")
         times = np.array([_T, _T, _T, late_time, late_time, late_time], dtype="datetime64[ns]")
-        reader = FLASHFluxReader([make_flashflux_fixture(tmp_path, lats=lats, lons_0360=lons, times=times)])
+        reader = FLASHFluxReader([flashflux_file_factory(lats=lats, lons_0360=lons, times=times)])
         near_early = reader.samples_in(_BBOX, _T + np.timedelta64(20, "m"))
         assert near_early.n_samples == 3
         assert np.allclose(_finite_values(near_early.values, "Aerosol_Optical_Depth"), [0.10, 0.20, 0.30], atol=1e-4)
@@ -139,7 +139,7 @@ class TestFLASHFluxReaderTimeMatching:
 
 
 class TestFLASHFluxReaderSpacing:
-    def test_served_resolution_is_the_measured_footprint_spacing(self, tmp_path):
+    def test_served_resolution_is_the_measured_footprint_spacing(self, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` serves the granule's measured footprint spacing as ``resolution_km``.
 
         The coverage measure credits each sample with this spacing; using the nominal value for a sparser swath would
@@ -150,14 +150,14 @@ class TestFLASHFluxReaderSpacing:
         """
         # The default fixture lays five footprints 0.2 deg (~22 km) apart along one scan,
         # so the measured along-scan spacing, not the nominal 20 km, is served.
-        reader = FLASHFluxReader([make_flashflux_fixture(tmp_path)])
+        reader = FLASHFluxReader([flashflux_file_factory()])
         samples = reader.samples_in(_BBOX, _T)
         assert samples.resolution_km == pytest.approx(22.2, rel=0.03)
 
 
 class TestFLASHFluxReaderGeolocationChecks:
     @pytest.mark.parametrize("units", ["degrees", None])
-    def test_latitude_units_other_than_degrees_north_raises(self, tmp_path, units):
+    def test_latitude_units_other_than_degrees_north_raises(self, units, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` raises ``ValueError`` when footprint latitude is not in ``degrees_north``.
 
         The reader assumes a true -90..90 latitude; a granule using another convention, such as a colatitude, would
@@ -166,7 +166,7 @@ class TestFLASHFluxReaderGeolocationChecks:
         Parametrized over a ``"degrees"`` units attribute and no units attribute; asserts the error names
         ``instrument_fov_latitude`` and its units.
         """
-        path = make_flashflux_fixture(tmp_path, latitude_units=units)
+        path = flashflux_file_factory(latitude_units=units)
         with pytest.raises(ValueError, match="instrument_fov_latitude has units"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 
@@ -185,7 +185,7 @@ class TestFLASHFluxReaderGeolocationChecks:
             ("valid_range", "cloud_ice_particle_radius_37um_mean"),
         ],
     )
-    def test_field_without_fill_value_or_valid_range_raises(self, tmp_path, attribute, name):
+    def test_field_without_fill_value_or_valid_range_raises(self, attribute, name, flashflux_file_factory):
         """``FLASHFluxReader.samples_in`` raises ``ValueError`` when a field it reads has no ``_FillValue`` or ``valid_range``.
 
         The reader masks each field with its own fill value and valid range; with either missing, fill sentinels would
@@ -195,13 +195,13 @@ class TestFLASHFluxReaderGeolocationChecks:
         field and a layered field, each written without it; asserts the error names the field and the attribute.
         """
         omit = {"omit_fill_value": (name,)} if attribute == "_FillValue" else {"omit_valid_range": (name,)}
-        path = make_flashflux_fixture(tmp_path, **omit)
+        path = flashflux_file_factory(**omit)
         with pytest.raises(ValueError, match=f"{name} has no {attribute} attribute"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 
 
 class TestFLASHFluxReaderValidRange:
-    def test_valid_range_comes_from_the_file(self, tmp_path):
+    def test_valid_range_comes_from_the_file(self, flashflux_file_factory):
         """``FLASHFluxReader`` range-checks each field with the ``valid_range`` the file declares.
 
         A hard-coded range that differs from the file silently drops valid retrievals or publishes invalid ones; the
@@ -211,8 +211,7 @@ class TestFLASHFluxReaderValidRange:
         five clustered footprints, and asserts all five ice radii are served and no water radius is.
         """
         n = 6
-        path = make_flashflux_fixture(
-            tmp_path,
+        path = flashflux_file_factory(
             cloud_ice_particle_radius_lower=np.full(n, 150.0, dtype=np.float32),
             cloud_water_particle_radius_lower=np.full(n, 50.0, dtype=np.float32),
         )
@@ -221,7 +220,7 @@ class TestFLASHFluxReaderValidRange:
         assert _finite_values(data, "Cloud_Ice_Particle_Radius_Lower").size == 5
         assert _finite_values(data, "Cloud_Water_Particle_Radius_Lower").size == 0
 
-    def test_longitude_valid_range_comes_from_the_file(self, tmp_path):
+    def test_longitude_valid_range_comes_from_the_file(self, flashflux_file_factory):
         """``FLASHFluxReader`` range-checks footprint longitude with the ``valid_range`` the file declares.
 
         Geolocation is held to the file's own range like every other field, so a footprint outside it is dropped
@@ -230,12 +229,12 @@ class TestFLASHFluxReaderValidRange:
         Writes ``instrument_fov_longitude`` with a ``valid_range`` of [0, 340], which excludes the cluster's 350
         degrees, and asserts no footprint is served in the cluster box.
         """
-        path = make_flashflux_fixture(tmp_path, longitude_valid_range=(0.0, 340.0))
+        path = flashflux_file_factory(longitude_valid_range=(0.0, 340.0))
         assert FLASHFluxReader([path]).samples_in(_BBOX, _T).n_samples == 0
 
 
 class TestFLASHFluxReaderLayoutChecks:
-    def test_renamed_layer_dimension_raises(self, tmp_path):
+    def test_renamed_layer_dimension_raises(self, flashflux_file_factory):
         """``FLASHFluxReader`` raises ``ValueError`` naming the field and ``product_version`` when a layer axis is renamed.
 
         The reader picks a cloud layer by position on the second axis; in a layout whose second axis means something
@@ -244,11 +243,11 @@ class TestFLASHFluxReaderLayoutChecks:
         Builds the fixture with the layered fields' second dimension named ``Conditions`` and asserts a ``ValueError``
         naming the first layered field read and ``alpha4``.
         """
-        path = make_flashflux_fixture(tmp_path, layer_dim_name="Conditions")
+        path = flashflux_file_factory(layer_dim_name="Conditions")
         with pytest.raises(ValueError, match=r"read as Cloud_Optical_Depth_Lower\) has dimensions.*'alpha4'"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 
-    def test_missing_variable_raises(self, tmp_path):
+    def test_missing_variable_raises(self, flashflux_file_factory):
         """``FLASHFluxReader`` raises ``ValueError``, not ``KeyError``, naming a variable the granule lacks.
 
         A granule in another layout should fail with a message saying what is missing and what to do, rather than an
@@ -257,11 +256,11 @@ class TestFLASHFluxReaderLayoutChecks:
         Builds the fixture without ``Scene_Type/shortwave_adm_type`` and asserts a ``ValueError`` naming it and
         ``alpha4``.
         """
-        path = make_flashflux_fixture(tmp_path, omit_variables=(("Scene_Type", "shortwave_adm_type"),))
+        path = flashflux_file_factory(omit_variables=(("Scene_Type", "shortwave_adm_type"),))
         with pytest.raises(ValueError, match=r"no variable Scene_Type/shortwave_adm_type .*'alpha4'"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 
-    def test_missing_group_raises(self, tmp_path):
+    def test_missing_group_raises(self, flashflux_file_factory):
         """``FLASHFluxReader`` raises ``ValueError``, not ``KeyError``, naming a group the granule lacks.
 
         A granule without ``Auxillary_Properties`` should fail with a message naming the missing group, not an opaque
@@ -271,7 +270,7 @@ class TestFLASHFluxReaderLayoutChecks:
         asserts a ``ValueError`` naming the group.
         """
         omit = (("Auxillary_Properties", "aerosol_optical_depth"), ("Auxillary_Properties", "surface_albedo"))
-        path = make_flashflux_fixture(tmp_path, omit_variables=omit)
+        path = flashflux_file_factory(omit_variables=omit)
         with pytest.raises(ValueError, match="no group 'Auxillary_Properties'"):
             FLASHFluxReader([path]).samples_in(_BBOX, _T)
 

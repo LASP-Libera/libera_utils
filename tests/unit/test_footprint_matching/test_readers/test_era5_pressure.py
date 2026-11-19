@@ -1,7 +1,7 @@
 """Unit tests for ERA5PressureLevelReader.
 
-Uses real synthetic NetCDF4 fixture files (created by
-make_era5_pressure_netcdf_fixture) so the xarray slicing, pressure-level
+Uses real synthetic NetCDF4 fixture files (written by the
+``era5_pressure_file_factory`` fixture) so the xarray slicing, pressure-level
 selection, and coordinate handling can be exercised without calling real CDS
 services. What both ERA5 readers share is tested once, for both, in ``test_era5_surface.py``.
 
@@ -27,7 +27,6 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition, Libe
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
-    make_era5_pressure_netcdf_fixture,
 )
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
@@ -133,7 +132,7 @@ class TestERA5PressureLevelProductDefinition:
 
 
 class TestERA5PressureLevelReaderPlanes:
-    def test_planes_hold_their_variable_and_level(self, tmp_path):
+    def test_planes_hold_their_variable_and_level(self, era5_pressure_file_factory):
         """Plane ``i`` of the served data holds, as float32, the variable and pressure level ``VARIABLES[i]`` names.
 
         The pressure-level dimension is flattened into axis 0 with the time axis removed; a plane read from the wrong
@@ -146,7 +145,7 @@ class TestERA5PressureLevelReaderPlanes:
         the constant for its spec (so levels are selected by value, not by position), with source ``"ERA5_Pressure"``
         and no timestamp source.
         """
-        reader = ERA5PressureLevelReader([make_era5_pressure_netcdf_fixture(tmp_path)])
+        reader = ERA5PressureLevelReader([era5_pressure_file_factory()])
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
         assert data.shape == (_N_SPECS, 4, 4)
@@ -163,7 +162,7 @@ class TestERA5PressureLevelReaderPlanes:
 
 
 class TestERA5PressureLevelReaderErrors:
-    def test_missing_level_raises_value_error(self, tmp_path):
+    def test_missing_level_raises_value_error(self, era5_pressure_file_factory):
         """``ERA5PressureLevelReader`` raises ``ValueError`` when a file lacks a configured pressure level.
 
         A partial download must be fixed when it is acquired; substituting a neighboring level would publish values from
@@ -175,12 +174,12 @@ class TestERA5PressureLevelReaderErrors:
         # Write a file that omits some configured levels: asserts the reader refuses it by raising
         # ValueError("missing configured pressure") rather than substituting neighboring levels.
         partial_levels = tuple(_ERA5_PRESSURE_LEVELS[:-2])  # drop 975 and 1000 hPa
-        fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, levels=partial_levels)
+        fixture_path = era5_pressure_file_factory(levels=partial_levels)
         reader = ERA5PressureLevelReader([fixture_path])
         with pytest.raises(ValueError, match="missing configured pressure"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
-    def test_missing_variable_raises_key_error(self, tmp_path):
+    def test_missing_variable_raises_key_error(self, tmp_path, era5_pressure_file_factory):
         """``ERA5PressureLevelReader`` raises ``KeyError`` when a file lacks one of the five pressure-level fields.
 
         A download configured without a field would otherwise leave its planes unfilled, and the product would carry
@@ -189,7 +188,7 @@ class TestERA5PressureLevelReaderErrors:
         Drops ``o3`` from a valid synthetic file and asserts a query raises ``KeyError`` saying a variable is missing.
         """
         # Strip one required variable from an otherwise-valid fixture file.
-        fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
+        fixture_path = era5_pressure_file_factory()
         with xr.open_dataset(fixture_path) as ds:
             stripped = ds.drop_vars("o3").load()
         stripped_path = tmp_path / "era5_pressure_missing_o3.nc"

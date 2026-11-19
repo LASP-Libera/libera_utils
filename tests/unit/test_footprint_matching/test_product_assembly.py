@@ -63,8 +63,6 @@ from tests.plugins.footprint_matching_fixtures import (
     FakeMeanReader,
     era5_pressure_fixture_value,
     fake_radiometer_footprint,
-    make_era5_pressure_netcdf_fixture,
-    make_era5_surface_netcdf_fixture,
 )
 
 _PARTIAL = int(FmatchCoverageFlag.PARTIAL_COVERAGE)
@@ -683,7 +681,8 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
 class TestAssemblyWithAggregation:
     """Supplying readers makes the external columns carry real aggregated values."""
 
-    def _era5_sources(self, tmp_path) -> dict[str, AncillaryReader]:
+    @pytest.fixture
+    def era5_sources(self, era5_surface_file_factory, era5_pressure_file_factory) -> dict[str, AncillaryReader]:
         """The real ERA5 surface and pressure-level readers, the IMAGER readers for these tests.
 
         The surface grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
@@ -694,8 +693,7 @@ class TestAssemblyWithAggregation:
         FMATCH-IMAGER declares.
         """
         era5_cls = ReaderRegistry.get("ERA5_Surface")
-        era5_file = make_era5_surface_netcdf_fixture(
-            tmp_path,
+        era5_file = era5_surface_file_factory(
             lat_min=0.0,
             lat_max=2.0,
             lon_min=10.0,
@@ -704,20 +702,20 @@ class TestAssemblyWithAggregation:
             n_lon=21,
             times=[ERA5_FIXTURE_TIME],
         )
-        pressure_file = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        pressure_file = era5_pressure_file_factory(n_lat=41, n_lon=41)
         return {"ERA5_Surface": era5_cls([era5_file]), "ERA5_Pressure": ERA5PressureLevelReader([pressure_file])}
 
     @pytest.fixture(autouse=True)
     def _imager_uses_era5_only(self, set_mode_readers):
         set_mode_readers(OperationalMode.IMAGER, ("ERA5_Surface", "ERA5_Pressure"))
 
-    def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
+    def test_radiometer_assembly_carries_real_era5_values(self, era5_sources):
         # Footprint sits inside the ERA5 grid so every PSF cell has data.
         l1b = _l1b_at(lat=1.0, lon=11.0)
         dataset = assemble_fmatch_dataset(
             OperationalMode.IMAGER,
             l1b,
-            sources=self._era5_sources(tmp_path),
+            sources=era5_sources,
             algorithm_version="1.0.0",
             input_files="l1b.nc,era5.nc",
             allow_placeholders=True,
@@ -736,13 +734,13 @@ class TestAssemblyWithAggregation:
         # The product still conforms strictly with the computed columns in place.
         assert load_fmatch_definition(OperationalMode.IMAGER).check_dataset_conformance(dataset, strict=True) == []
 
-    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, tmp_path):
+    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, era5_sources):
         # Boresight far from the ERA5 grid -> no samples -> zero coverage.
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(
             OperationalMode.IMAGER,
             l1b,
-            sources=self._era5_sources(tmp_path),
+            sources=era5_sources,
             allow_placeholders=True,
         )
 
@@ -752,7 +750,7 @@ class TestAssemblyWithAggregation:
 
 
 class TestStackedProductVariables:
-    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, tmp_path, set_mode_readers):
+    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, set_mode_readers, era5_pressure_file_factory):
         """FMATCH-IMAGER carries each ERA5 pressure-level field as one variable on ``PRESSURE_LEVEL``.
 
         The reader aggregates every (field, level) pair on its own, and the product definition declares one
@@ -764,7 +762,7 @@ class TestStackedProductVariables:
         level order, every stacked standard deviation is zero, and the ``PRESSURE_LEVEL`` coordinate holds the levels.
         """
         set_mode_readers(OperationalMode.IMAGER, ("ERA5_Pressure",))
-        era5_path = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        era5_path = era5_pressure_file_factory(n_lat=41, n_lon=41)
         l1b = _l1b_inputs()
         l1b["RADIOMETER_TIME"] = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "s")
         for name, value in [("Latitude", 1.0), ("Subsatellite_Latitude", 1.0)]:
