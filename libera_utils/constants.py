@@ -74,7 +74,8 @@ class PartitionScheme(StrEnum):
       files are dated by the UTC day of their ``utc_start``.
     - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
       carries no time range, and it is archived once under its product ID and version. Named by
-      LiberaVersionPartitionedDataProductFilename.
+      LiberaVersionPartitionedDataProductFilename, except the external ancillary products with this scheme (the
+      land/ocean mask and IGBP), which keep their providers' names and are parsed by their own filename classes.
 
     ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class the writer uses for each
     scheme. A new scheme needs a member here, a filename class, an entry in that mapping, and the arguments
@@ -419,11 +420,11 @@ class DataProductIdentifier(StrEnum):
     # NASA Langley ASDC, CERES Single Scanner Footprint L2 TOA and surface fluxes and clouds (CER_SSF, NOAA-20 FM6)
     anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
     # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609)
-    anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC)
+    anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC, PartitionScheme.VERSION)
     # NSIDC, Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2)
     anc_nsidc_ice_snow = ("NSIDC-ICE-SNOW", DataLevel.ANC)
     # LP DAAC, MODIS land cover type with the IGBP classification (MCD12Q1)
-    anc_modis_igbp = ("MODIS-IGBP", DataLevel.ANC)
+    anc_modis_igbp = ("MODIS-IGBP", DataLevel.ANC, PartitionScheme.VERSION)
     # ECMWF Copernicus Climate Data Store, ERA5 hourly data on pressure levels, ERA5T preliminary data included
     # (reanalysis-era5-pressure-levels)
     anc_era5_pressure_level = ("ERA5-PRESSURE-LEVEL", DataLevel.ANC)

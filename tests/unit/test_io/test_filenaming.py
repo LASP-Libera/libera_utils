@@ -1328,7 +1328,7 @@ ANCILLARY_SAMPLES = [
         DataProductIdentifier.anc_modis_igbp,
         "061",
         None,
-        "MODIS-IGBP/061/20250724",
+        "MODIS-IGBP/061",
         id="igbp",
     ),
     pytest.param(

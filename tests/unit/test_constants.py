@@ -296,13 +296,18 @@ class TestDataProductIdentifier:
             assert level in DataLevel
 
     def test_partition_scheme_property(self):
-        """The ADMs are partitioned by version, and every other product defaults to daily"""
+        """The ADMs, IGBP and the land/ocean mask are partitioned by version, and every other product is daily"""
         assert DataProductIdentifier.aux_adm_cam.partition_scheme is PartitionScheme.VERSION
         assert DataProductIdentifier.aux_adm_imager.partition_scheme is PartitionScheme.VERSION
         assert DataProductIdentifier.l1b_rad.partition_scheme is PartitionScheme.DAILY
         assert DataProductIdentifier.aux_adm_stats_cam.partition_scheme is PartitionScheme.DAILY
         version_products = {p for p in DataProductIdentifier if p.partition_scheme is PartitionScheme.VERSION}
-        assert version_products == {DataProductIdentifier.aux_adm_cam, DataProductIdentifier.aux_adm_imager}
+        assert version_products == {
+            DataProductIdentifier.aux_adm_cam,
+            DataProductIdentifier.aux_adm_imager,
+            DataProductIdentifier.anc_modis_igbp,
+            DataProductIdentifier.anc_nsidc_land_ocean_mask,
+        }
         for product in DataProductIdentifier:
             assert isinstance(product.partition_scheme, PartitionScheme)
 

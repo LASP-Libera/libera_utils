@@ -71,10 +71,10 @@ records every external file's coverage the same way; they are `None` for the lan
 all time. The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are
 rejected. FLASHFlux files are named `FLASH_SSF_...`; a standard CERES SSF file (`CER_SSF_...`) is `CERES-NOAA20-SSF`, not FLASHFlux.
 
-A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date. A non-daily product has no
-applicable date: the land/ocean mask is archived once under `<ProductID>/<version>`, and the tiles of one IGBP
-production under `<ProductID>/<collection>/<production YYYYMMDD>`, valid for two years from that production. Only
-the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
+A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date. The land/ocean mask and IGBP are
+version-partitioned (`PartitionScheme.VERSION`) and have no applicable date: the mask is archived once under
+`<ProductID>/<version>`, and the IGBP tiles under `<ProductID>/<collection>`, each valid for two years from its
+production time. Only the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
 
 The ERA5 name follows the Libera data product form: `utc_start` and `utc_end` are the first and last hourly steps in
 the file (`YYYYMMDDTHHMMSS`), and `revision` is the time the SDC named it, `R` followed by `YYYYMMDDTHHMMSSffffff`.
