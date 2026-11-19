@@ -172,8 +172,7 @@ previous or next day is accepted (LIBSDC-942). IGBP has none, since MCD12Q1 is a
 is applied to later dates.
 
 Every run lists its granules in `ancillary_inputs`; the manifest creator will write that key once it selects the
-ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself, as
-`notebooks/09_runners.ipynb` does.
+ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself.
 
 ## Inputs by time axis
 

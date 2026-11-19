@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- The footprint-matching demonstration notebooks, `notebooks/01_geometry_psf.ipynb` through `09_runners.ipynb`. (#92)
+
 ## [6.0.0] - 2026-11-19
 
 ### Added
