@@ -22,7 +22,6 @@ from libera_utils.scene_identification.scene_id_algorithm import (
     scene_id_cli_handler,
 )
 from libera_utils.version import version
-from tests.plugins.footprint_matching_fixtures import make_fmatch_product_fixture
 
 pytestmark = pytest.mark.integration
 
@@ -53,7 +52,7 @@ class TestSceneIdRunnerEndToEnd:
 
     @pytest.mark.parametrize("variant", ["cam", "cam-camtime", "imager", "imager-camtime"])
     def test_runner_writes_conformant_product_and_output_manifest(
-        self, variant, generate_input_manifest_local, tmp_path, monkeypatch
+        self, fmatch_product_file_factory, variant, generate_input_manifest_local, tmp_path, monkeypatch
     ):
         """An FMATCH input runs end-to-end into a conformant SCENE-ID product under product names, with real matches.
 
@@ -68,7 +67,7 @@ class TestSceneIdRunnerEndToEnd:
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         fmatch_mode = OperationalMode(runner_config.input_product_id.value)
-        fmatch_path = make_fmatch_product_fixture(inputs, fmatch_mode, n_footprints=6)
+        fmatch_path = fmatch_product_file_factory(fmatch_mode, n_footprints=6, directory=inputs)
         input_manifest_path = generate_input_manifest_local(fmatch_path)
 
         # Step 2: set the environment a processing step provides: the dropbox the runner writes products and the

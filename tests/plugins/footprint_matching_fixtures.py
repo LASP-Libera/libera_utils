@@ -1535,11 +1535,10 @@ def fmatch_single_worker(monkeypatch):
     monkeypatch.setenv("FMATCH_WORKERS", "1")
 
 
-@pytest.fixture
-def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
-    """Factory writing synthetic L1B RAD-4CH NetCDF files (input to the radiometer-timescale FMATCH runners).
+def write_l1b_radiometer_file(directory: Path, n_footprints: int = 8, *, n_invalid: int = 0) -> Path:
+    """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
 
-    Each file contains exactly the variables that
+    The file contains exactly the variables that
     :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
     through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that
@@ -1549,78 +1548,92 @@ def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
     The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
     by product with :func:`libera_utils.footprint_matching.footprint_match_algorithm.manifest_files_by_product_id`.
 
-    The returned writer takes:
-
+    Parameters
+    ----------
+    directory : pathlib.Path
+        Directory to write the file into.
     n_footprints : int, optional
         Total number of footprints written. Defaults to 8.
     n_invalid : int, optional
-        Keyword-only. How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth
-        samples. Those rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should
-        survive. Defaults to 0.
-    directory : pathlib.Path, optional
-        Keyword-only. Directory to write the file into. Defaults to the test's ``tmp_path``.
+        How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth samples. Those
+        rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should survive.
+        Defaults to 0.
 
-    and returns the path of the written file.
+    Returns
+    -------
+    pathlib.Path
+        Path of the written file.
+    """
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
+    times = base_time + np.arange(n_footprints, dtype="int64") * cadence
+
+    # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The
+    # angles stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The
+    # subsatellite point sits a few degrees off the footprint boresight so the ray-traced box has a real scan
+    # azimuth to orient by.
+    ranges = {
+        "Latitude": (-60.0, 60.0),
+        "Longitude": (-170.0, 170.0),
+        # Surface height of the boresight point above the WGS84 ellipsoid, meters.
+        "Altitude": (0.0, 4000.0),
+        "Solar_Zenith_Surface": (10.0, 80.0),
+        "Viewing_Zenith_Surface": (0.0, 45.0),
+        "Relative_Azimuth_Surface": (0.0, 350.0),
+        "Subsatellite_Latitude": (-58.0, 62.0),
+        "Subsatellite_Longitude": (-168.0, 172.0),
+        # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
+        "Radius_of_Satellite_from_Center_of_Earth": (7205.0, 7215.0),
+    }
+    data_vars = {}
+    # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
+    for name in L1B_PASSTHROUGH_VARIABLES:
+        low, high = ranges[name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float32)
+        if n_invalid:
+            # NaN is how the real L1B marks samples whose boresight misses the Earth.
+            values[:n_invalid] = np.nan
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
+    for name in L1B_SCAN_REFERENCE_VARIABLES:
+        low, high = ranges[name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float64)
+        if n_invalid:
+            values[:n_invalid] = np.nan
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
+    # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
+    cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
+    data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
+
+    dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
+    # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
+    dataset[L1B_TIME_VARIABLE].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l1b_rad,
+        version="V1-0-0",
+        utc_start=dt64_to_utc_datetime(times[0]),
+        utc_end=dt64_to_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+@pytest.fixture
+def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
+    """Factory writing synthetic L1B RAD-4CH NetCDF files with :func:`write_l1b_radiometer_file`.
+
+    The returned writer takes ``n_footprints`` and the keyword-only ``n_invalid`` as
+    :func:`write_l1b_radiometer_file` does, and a keyword-only ``directory`` that defaults to the test's
+    ``tmp_path``; it returns the path of the written file.
     """
 
     def _write(n_footprints: int = 8, *, n_invalid: int = 0, directory: Path | None = None) -> Path:
-        base_time = np.datetime64("2026-06-11T00:00:00", "ns")
-        cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
-        times = base_time + np.arange(n_footprints, dtype="int64") * cadence
-
-        # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The
-        # angles stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The
-        # subsatellite point sits a few degrees off the footprint boresight so the ray-traced box has a real scan
-        # azimuth to orient by.
-        ranges = {
-            "Latitude": (-60.0, 60.0),
-            "Longitude": (-170.0, 170.0),
-            # Surface height of the boresight point above the WGS84 ellipsoid, meters.
-            "Altitude": (0.0, 4000.0),
-            "Solar_Zenith_Surface": (10.0, 80.0),
-            "Viewing_Zenith_Surface": (0.0, 45.0),
-            "Relative_Azimuth_Surface": (0.0, 350.0),
-            "Subsatellite_Latitude": (-58.0, 62.0),
-            "Subsatellite_Longitude": (-168.0, 172.0),
-            # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
-            "Radius_of_Satellite_from_Center_of_Earth": (7205.0, 7215.0),
-        }
-        data_vars = {}
-        # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
-        for name in L1B_PASSTHROUGH_VARIABLES:
-            low, high = ranges[name]
-            values = np.linspace(low, high, n_footprints, dtype=np.float32)
-            if n_invalid:
-                # NaN is how the real L1B marks samples whose boresight misses the Earth.
-                values[:n_invalid] = np.nan
-            data_vars[name] = ((L1B_TIME_VARIABLE,), values)
-        for name in L1B_SCAN_REFERENCE_VARIABLES:
-            low, high = ranges[name]
-            values = np.linspace(low, high, n_footprints, dtype=np.float64)
-            if n_invalid:
-                values[:n_invalid] = np.nan
-            data_vars[name] = ((L1B_TIME_VARIABLE,), values)
-        # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
-        cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
-        data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
-
-        dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
-        # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
-        dataset[L1B_TIME_VARIABLE].encoding = {
-            "units": "nanoseconds since 1958-01-01",
-            "calendar": "standard",
-            "dtype": "int64",
-        }
-
-        filename = LiberaDataProductFilename.from_filename_parts(
-            product_name=DataProductIdentifier.l1b_rad,
-            version="V1-0-0",
-            utc_start=dt64_to_utc_datetime(times[0]),
-            utc_end=dt64_to_utc_datetime(times[-1]),
-        ).path.name
-        out_path = Path(directory or tmp_path) / filename
-        dataset.to_netcdf(out_path)
-        return out_path
+        return write_l1b_radiometer_file(Path(directory or tmp_path), n_footprints, n_invalid=n_invalid)
 
     return _write
 
@@ -1807,15 +1820,10 @@ def cf_cam_camtime_file_factory(
     return _write
 
 
-def make_fmatch_product_fixture(
-    directory: Path,
-    mode: OperationalMode = OperationalMode.CAM,
-    n_footprints: int = 8,
-) -> Path:
+def write_fmatch_product_file(upstream_file: Path, mode: OperationalMode, directory: Path) -> Path:
     """Write a conformant FMATCH product NetCDF file (input to the SCENE-ID runners) through FMATCH's own code.
 
-    Writes the mode's upstream input (an L1B RAD-4CH file, or a CF-CAM-CAMTIME file for the camera-timescale modes),
-    reads it with the mode's FMATCH runner config, assembles the product with
+    Reads ``upstream_file`` with the mode's FMATCH runner config, assembles the product with
     :func:`~libera_utils.footprint_matching.product.assemble_fmatch_dataset` (``allow_placeholders=True``, so no
     ancillary data is needed), sets the classification inputs SCENE-ID reads to valid values, and writes it with
     :func:`~libera_utils.io.netcdf.write_libera_data_product` under the product definition, so the file has FMATCH's
@@ -1830,21 +1838,19 @@ def make_fmatch_product_fixture(
 
     Parameters
     ----------
-    directory : Path
-        Directory to write the upstream input (under ``upstream/``) and the product into (e.g. pytest ``tmp_path``).
-    mode : OperationalMode, optional
-        The FMATCH operational mode to write. Defaults to ``OperationalMode.CAM``.
-    n_footprints : int, optional
-        Radiometer timescale: the number of footprints. Camera timescale: the number of images, each segmented into
-        two pseudo-footprints, so every image has the same count and no grid cell is padded. Defaults to 8.
+    upstream_file : pathlib.Path
+        The mode's FMATCH input: an L1B RAD-4CH file for a radiometer-timescale mode, a CF-CAM-CAMTIME file for a
+        camera-timescale mode.
+    mode : OperationalMode
+        The FMATCH operational mode to write.
+    directory : pathlib.Path
+        Directory to write the product into.
 
     Returns
     -------
-    Path
-        Path to the written FMATCH product NetCDF file.
+    pathlib.Path
+        Path of the written FMATCH product.
     """
-    from libera_utils.io.product_variable_names import product_variable_name  # noqa: PLC0415
-
     from libera_utils.footprint_matching.footprint_match_algorithm import (  # noqa: PLC0415
         RUNNER_CONFIGS,
         run_footprint_matching,
@@ -1857,17 +1863,7 @@ def make_fmatch_product_fixture(
     from libera_utils.io.netcdf import write_libera_data_product  # noqa: PLC0415
 
     runner_config = next(config for config in RUNNER_CONFIGS.values() if config.mode is mode)
-    camtime = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
-    upstream = Path(directory) / "upstream"
-    upstream.mkdir(parents=True, exist_ok=True)
-    if camtime:
-        upstream_file = make_cf_cam_camtime_fixture(upstream, n_images=n_footprints, n_pixels_x=2, n_pixels_y=1)
-    else:
-        upstream_file = make_l1b_radiometer_fixture(upstream, n_footprints=n_footprints)
     inputs, cloud_fraction_camera = run_footprint_matching(upstream_file, runner_config)
-    if mode is OperationalMode.CAM:
-        cloud_fraction_camera = np.linspace(0.0, 100.0, n_footprints)
-
     definition = load_fmatch_definition(mode)
     dataset = assemble_fmatch_dataset(
         mode,
@@ -1885,6 +1881,8 @@ def make_fmatch_product_fixture(
 
     n_cells = dataset["IGBP_Surface_Type"].size
     _set("IGBP_Surface_Type", np.arange(n_cells) % 17 + 1)
+    if mode is OperationalMode.CAM:
+        _set("Cloud_Fraction_Camera", np.linspace(0.0, 100.0, n_cells))
     if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
         _set("FLASHFlux_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
         _set("CLDPIX_Cloud_Particle_Phase", np.arange(n_cells) % 2 + 1)
@@ -1901,3 +1899,36 @@ def make_fmatch_product_fixture(
         strict=True,
     )
     return Path(str(written.path))
+
+
+@pytest.fixture
+def fmatch_product_file_factory(
+    tmp_path: Path,
+    l1b_radiometer_file_factory: Callable[..., Path],
+    cf_cam_camtime_file_factory: Callable[..., Path],
+) -> Callable[..., Path]:
+    """Factory writing a FMATCH product, and the upstream input it is read from, with :func:`write_fmatch_product_file`.
+
+    The returned writer takes the FMATCH ``mode`` (an ``OperationalMode``, default ``CAM``), ``n_footprints`` (the
+    radiometer-timescale footprint count, or the camera-timescale image count, each image segmented into two
+    pseudo-footprints so no grid cell is padded; default 8) and a keyword-only ``directory`` (defaults to the test's
+    ``tmp_path``). It writes the mode's upstream input (an L1B RAD-4CH file, or a CF-CAM-CAMTIME file for the
+    camera-timescale modes) under ``directory / "upstream"`` and the product in ``directory``, and returns the path of
+    the written product.
+    """
+
+    def _write(
+        mode: OperationalMode = OperationalMode.CAM, n_footprints: int = 8, *, directory: Path | None = None
+    ) -> Path:
+        directory = Path(directory or tmp_path)
+        upstream = directory / "upstream"
+        upstream.mkdir(parents=True, exist_ok=True)
+        if mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME):
+            upstream_file = cf_cam_camtime_file_factory(
+                directory=upstream, n_images=n_footprints, n_pixels_x=2, n_pixels_y=1
+            )
+        else:
+            upstream_file = l1b_radiometer_file_factory(n_footprints, directory=upstream)
+        return write_fmatch_product_file(upstream_file, mode, directory)
+
+    return _write
