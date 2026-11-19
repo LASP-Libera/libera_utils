@@ -187,7 +187,9 @@ cone-angle rate) that orients each footprint's PSF. FMATCH writes no row for a f
 any of those, other than the cone-angle rate; L1B writes them as fill where the boresight misses the Earth. A file
 with no usable footprint raises `ValueError`.
 
-FMATCH-CAM also needs CF-CAM, whose `Cloud_Fraction` (percent) it writes as `Cloud_Fraction_Camera`. CF-CAM carries
+FMATCH-CAM also needs CF-CAM, whose `cam_cloud_fraction` it writes as `Cloud_Fraction_Camera` in percent, converting
+from the unit the variable's `units` attribute states: a fraction (`1`), as the Camera Cloud Fraction algorithm
+writes it, or `percent`. CF-CAM carries
 the L1B `radiometer_time` values unchanged, and its rows are matched to the footprints by exact time:
 
 - a footprint with no CF-CAM row gets fill, since the camera sees only part of the radiometer track;
@@ -195,7 +197,8 @@ the L1B `radiometer_time` values unchanged, and its rows are matched to the foot
 - a CF-CAM row at the time of a footprint FMATCH writes no row for is ignored;
 - a CF-CAM row with a value inside the span that matches no L1B time raises `CloudFractionTimeMismatchError`, as do
   two rows at the same time, or no L1B time matching any row;
-- a missing CF-CAM input, or one without `Cloud_Fraction` or `radiometer_time`, raises `FmatchInputError`.
+- a missing CF-CAM input, one without `cam_cloud_fraction` or `radiometer_time`, or one whose `cam_cloud_fraction`
+  states no `units` or another unit, raises `FmatchInputError`.
 
 ### Camera time: CF-CAM-CAMTIME
 

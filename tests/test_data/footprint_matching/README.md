@@ -45,10 +45,10 @@ The filename tests parse each file's upstream name, which is its name here witho
 | -------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `LIBERA_L2_CF-CAM_V0-1-0_20260712T032817_20260712T032827_R26294210139_subset.nc` | `load_cf_cam_cloud_fraction` | `LIBERA_L2_CF-CAM_V0-1-0_20260712T032817_20260712T032827_R26294210139.nc`, a development-stage CF-CAM granule from the Camera Cloud Fraction algorithm | Rows 3..7, 11..15 and 33..36 of 37 on `RADIOMETER_TIME`: across the first 2.47 s gap between camera-covered runs, across a 20 ms step (one radiometer sample skipped) and the next gap, and the end of the file. Every variable and global attribute, with its dtype, `_FillValue` and contiguous storage. The source's `summary` attribute marks its values as placeholders, not for science use; the file is kept for its layout and encoding. |
 
-The CF-CAM file keeps the source's names, so it names its cloud fraction
-`cam_cloud_fraction` (a fraction, units `1`) where FMATCH reads `Cloud_Fraction` in
-percent, and its revision field `R26294210139` does not parse as a Libera filename. The
-tests rename the variable in a copy to exercise the read on the real layout.
+The CF-CAM file keeps the source's names: FMATCH reads its `cam_cloud_fraction` (a
+fraction, units `1`) and converts it to percent. Its revision field `R26294210139` does
+not parse as a Libera filename, so the tests read the file by path and no test selects
+it from a manifest.
 
 Sources:
 

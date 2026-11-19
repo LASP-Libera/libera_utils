@@ -777,7 +777,7 @@ class TestLiberaInputsFromS3:
 
 
 class TestLoadCfCamCloudFraction:
-    """CF-CAM is read once per run, sorted by radiometer time, and must carry Cloud_Fraction."""
+    """CF-CAM is read once per run, sorted by radiometer time, and must carry cam_cloud_fraction with its units."""
 
     TIMES = np.datetime64("2026-06-11T00:00:00", "ns") + np.arange(6) * np.timedelta64(10, "ms")
 
@@ -786,9 +786,25 @@ class TestLoadCfCamCloudFraction:
             load_cf_cam_cloud_fraction([])
 
     def test_file_without_cloud_fraction_raises(self, cf_cam_file_factory):
-        cf_cam_file = cf_cam_file_factory(self.TIMES, cloud_fraction_variable="cam_cloud_fraction")
+        cf_cam_file = cf_cam_file_factory(self.TIMES, cloud_fraction_variable="Cloud_Fraction")
 
-        with pytest.raises(FmatchInputError, match="no Cloud_Fraction variable"):
+        with pytest.raises(FmatchInputError, match="no cam_cloud_fraction variable"):
+            load_cf_cam_cloud_fraction([cf_cam_file])
+
+    def test_fraction_is_converted_to_percent(self, cf_cam_file_factory):
+        fraction = np.array([0.0, 0.25, 0.5, 0.75, 1.0, np.nan], dtype=np.float32)
+        cf_cam_file = cf_cam_file_factory(self.TIMES, fraction, units="1")
+
+        values = load_cf_cam_cloud_fraction([cf_cam_file]).cloud_fraction
+
+        np.testing.assert_array_equal(values, np.array([0.0, 25.0, 50.0, 75.0, 100.0, np.nan], dtype=np.float32))
+        assert values.dtype == np.float32
+
+    @pytest.mark.parametrize("units", [None, "fraction", "%"])
+    def test_missing_or_unknown_units_raise(self, cf_cam_file_factory, units):
+        cf_cam_file = cf_cam_file_factory(self.TIMES, units=units)
+
+        with pytest.raises(FmatchInputError, match=rf"states units {units!r} for cam_cloud_fraction"):
             load_cf_cam_cloud_fraction([cf_cam_file])
 
     def test_files_are_combined_in_time_order_with_fill_as_nan(self, tmp_path, cf_cam_file_factory):
@@ -888,12 +904,9 @@ class TestRealCfCamFile:
         return fmatch_real_data_path / REAL_CF_CAM_FILE
 
     @pytest.fixture
-    def renamed_cf_cam(self, real_cf_cam, tmp_path) -> Path:
-        """A copy of the real granule with ``cam_cloud_fraction`` renamed ``Cloud_Fraction`` and nothing else changed."""
-        copy = Path(shutil.copy(real_cf_cam, tmp_path / real_cf_cam.name))
-        with netCDF4.Dataset(copy, "a") as dataset:
-            dataset.renameVariable("cam_cloud_fraction", "Cloud_Fraction")
-        return copy
+    def writable_cf_cam(self, real_cf_cam, tmp_path) -> Path:
+        """A copy of the real granule a test can change."""
+        return Path(shutil.copy(real_cf_cam, tmp_path / real_cf_cam.name))
 
     @staticmethod
     def _raw(path: Path, name: str) -> np.ndarray:
@@ -902,33 +915,33 @@ class TestRealCfCamFile:
             dataset.set_auto_maskandscale(False)
             return dataset[name][:]
 
-    def test_granule_naming_its_cloud_fraction_cam_cloud_fraction_is_rejected(self, real_cf_cam):
-        with pytest.raises(FmatchInputError, match="no Cloud_Fraction variable"):
-            load_cf_cam_cloud_fraction([real_cf_cam])
+    def test_times_decode_and_the_fraction_reads_as_percent(self, real_cf_cam):
+        stored = self._raw(real_cf_cam, "radiometer_time")
 
-    def test_times_decode_from_nanoseconds_since_the_ccsds_epoch(self, renamed_cf_cam):
-        stored = self._raw(renamed_cf_cam, "radiometer_time")
-
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
 
         expected = np.datetime64("1958-01-01T00:00:00", "ns") + stored.astype("timedelta64[ns]")
         np.testing.assert_array_equal(cloud_fraction.radiometer_time, expected)
-        np.testing.assert_array_equal(cloud_fraction.cloud_fraction, self._raw(renamed_cf_cam, "Cloud_Fraction"))
+        # The granule states units "1", a fraction.
+        np.testing.assert_array_equal(
+            cloud_fraction.cloud_fraction, self._raw(real_cf_cam, "cam_cloud_fraction") * np.float32(100.0)
+        )
         assert cloud_fraction.cloud_fraction.dtype == np.float32
 
-    def test_fill_value_reads_as_nan(self, renamed_cf_cam):
+    def test_fill_value_reads_as_nan(self, writable_cf_cam):
         fill = np.float32(-999.0)
-        with netCDF4.Dataset(renamed_cf_cam, "a") as dataset:
-            assert dataset["Cloud_Fraction"].getncattr("_FillValue") == fill
-            dataset["Cloud_Fraction"][2] = fill
+        with netCDF4.Dataset(writable_cf_cam, "a") as dataset:
+            dataset.set_auto_maskandscale(False)
+            assert dataset["cam_cloud_fraction"].getncattr("_FillValue") == fill
+            dataset["cam_cloud_fraction"][2] = fill
 
-        values = load_cf_cam_cloud_fraction([renamed_cf_cam]).cloud_fraction
+        values = load_cf_cam_cloud_fraction([writable_cf_cam]).cloud_fraction
 
         assert np.isnan(values[2])
         assert np.isfinite(np.delete(values, 2)).all()
 
-    def test_rows_match_footprints_by_exact_time(self, renamed_cf_cam):
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+    def test_rows_match_footprints_by_exact_time(self, real_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
         cf_times = cloud_fraction.radiometer_time
         # L1B footprints at every CF-CAM time plus one 5 ms later, which CF-CAM does not cover.
         footprint_time = np.sort(np.concatenate([cf_times, cf_times + np.timedelta64(5, "ms")]))
@@ -939,8 +952,8 @@ class TestRealCfCamFile:
         np.testing.assert_array_equal(values[covered], cloud_fraction.cloud_fraction)
         assert np.isnan(values[~covered]).all()
 
-    def test_row_with_no_footprint_at_its_time_raises(self, renamed_cf_cam):
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+    def test_row_with_no_footprint_at_its_time_raises(self, real_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
 
         granule_time = np.delete(cloud_fraction.radiometer_time, 6)
 

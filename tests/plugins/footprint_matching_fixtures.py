@@ -1643,19 +1643,22 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
     """Factory writing synthetic CF-CAM NetCDF files (the Camera Cloud Fraction input to FMATCH-CAM).
 
     Each file carries the two variables FMATCH-CAM reads: the CF-encoded ``radiometer_time`` coordinate, which CF-CAM
-    passes through from L1B RAD-4CH, and ``Cloud_Fraction`` in percent with a ``-999`` ``_FillValue``. The file is
-    written under a proper Libera ``CF-CAM`` filename so the runner selects it from a manifest.
+    passes through from L1B RAD-4CH, and ``cam_cloud_fraction`` with a ``-999`` ``_FillValue`` and a ``units``
+    attribute. The file is written under a proper Libera ``CF-CAM`` filename so the runner selects it from a manifest.
 
     The returned writer takes:
 
     radiometer_time : numpy.ndarray
         ``datetime64[ns]`` radiometer times of the CF-CAM rows, usually a subset of an L1B file's times.
     cloud_fraction : numpy.ndarray, optional
-        Cloud fraction in percent, one per row; ``NaN`` is written as fill. Defaults to evenly spaced values in
+        Cloud fraction in ``units``, one per row; ``NaN`` is written as fill. Defaults to evenly spaced values in
         ``[0, 100]``.
     cloud_fraction_variable : str, optional
         Keyword-only. Name the cloud fraction is written under, so a test can write a file that lacks
-        ``Cloud_Fraction``. Defaults to ``"Cloud_Fraction"``.
+        ``cam_cloud_fraction``. Defaults to ``"cam_cloud_fraction"``.
+    units : str or None, optional
+        Keyword-only. The variable's ``units`` attribute; ``None`` writes none. Defaults to ``"percent"``, so the
+        values FMATCH reads are the values given, where the real product writes a fraction (``"1"``).
     directory : pathlib.Path, optional
         Keyword-only. Directory to write the file into. Defaults to the test's ``tmp_path``.
 
@@ -1666,7 +1669,8 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
         radiometer_time: np.ndarray,
         cloud_fraction: np.ndarray | None = None,
         *,
-        cloud_fraction_variable: str = "Cloud_Fraction",
+        cloud_fraction_variable: str = "cam_cloud_fraction",
+        units: str | None = "percent",
         directory: Path | None = None,
     ) -> Path:
         radiometer_time = np.asarray(radiometer_time, dtype="datetime64[ns]")
@@ -1677,6 +1681,8 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
             coords={"radiometer_time": (("RADIOMETER_TIME",), radiometer_time)},
         )
         dataset[cloud_fraction_variable].encoding = {"_FillValue": np.float32(-999.0)}
+        if units is not None:
+            dataset[cloud_fraction_variable].attrs["units"] = units
         dataset["radiometer_time"].encoding = {
             "units": "nanoseconds since 1958-01-01",
             "calendar": "standard",
