@@ -5,6 +5,7 @@ import dataclasses
 import functools
 import logging
 import shutil
+import zipfile
 from pathlib import Path
 
 import netCDF4
@@ -307,6 +308,143 @@ class TestMaterializeAncillaryInputs:
 
         assert local == {"IGBP": [local_dir / "IGBP" / "tile.hdf"], "ERA5_Surface": [local_granule]}
         assert (local_dir / "IGBP" / "tile.hdf").read_bytes() == b"igbp granule"
+
+
+IGBP_ARCHIVE_NAME = "MODIS-IGBP_2025_R20261020T120000000000.zip"
+MASK_ARCHIVE_NAME = "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip"
+MASK_SAMPLE = "EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin"
+
+
+def _write_zip(path: Path, entries: dict[str, bytes]) -> Path:
+    """Write a zip at ``path`` holding each entry's bytes under its name, and return ``path``."""
+    with zipfile.ZipFile(path, "w") as zip_file:
+        for name, data in entries.items():
+            zip_file.writestr(name, data)
+    return path
+
+
+class TestUnpackVersionArchives:
+    """A version archive is replaced by the product's files it holds, unpacked once to local disk."""
+
+    @pytest.fixture
+    def igbp_tile(self, fmatch_real_ancillary_granules) -> tuple[str, bytes]:
+        """The real IGBP sample's upstream name and bytes."""
+        sample = fmatch_real_ancillary_granules["IGBP"]
+        return sample.name.replace("_subset", ""), sample.read_bytes()
+
+    def test_local_archive_unpacks_only_the_products_files(self, tmp_path, igbp_tile):
+        tile_name, tile_bytes = igbp_tile
+        archive = _write_zip(
+            tmp_path / IGBP_ARCHIVE_NAME,
+            {f"2025/{tile_name}": tile_bytes, "2025/00README.txt": b"readme", "2025/browse.png": b"png"},
+        )
+        local_dir = tmp_path / "local"
+
+        local = _materialize_ancillary_inputs({"IGBP": [archive]}, local_dir)
+
+        assert local == {"IGBP": [local_dir / "IGBP" / tile_name]}
+        assert (local_dir / "IGBP" / tile_name).read_bytes() == tile_bytes
+        assert sorted(p.name for p in (local_dir / "IGBP").iterdir()) == [tile_name]
+        assert archive.exists()
+
+    def test_unpacked_tile_reads_as_the_sample(self, tmp_path, igbp_tile, fmatch_real_ancillary_granules):
+        tile_name, tile_bytes = igbp_tile
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {tile_name: tile_bytes})
+        reader = ReaderRegistry.get("IGBP")
+
+        local = _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+        unpacked = reader(local["IGBP"])._load_native()
+        sample = reader([fmatch_real_ancillary_granules["IGBP"]])._load_native()
+        np.testing.assert_array_equal(unpacked.data, sample.data)
+
+    def test_s3_archive_is_copied_unpacked_and_its_copy_deleted(
+        self, tmp_path, igbp_tile, create_mock_bucket, write_file_to_s3
+    ):
+        tile_name, tile_bytes = igbp_tile
+        bucket = create_mock_bucket()
+        s3_archive = S3Path(f"s3://{bucket.name}/MODIS-IGBP/2025/{IGBP_ARCHIVE_NAME}")
+        write_file_to_s3(_write_zip(tmp_path / IGBP_ARCHIVE_NAME, {tile_name: tile_bytes}), s3_archive)
+        local_dir = tmp_path / "local"
+
+        local = _materialize_ancillary_inputs({"IGBP": [s3_archive]}, local_dir)
+
+        assert local == {"IGBP": [local_dir / "IGBP" / tile_name]}
+        assert (local_dir / "IGBP" / tile_name).read_bytes() == tile_bytes
+        assert not (local_dir / "IGBP" / IGBP_ARCHIVE_NAME).exists()
+
+    def test_mask_archive_unpacks_the_global_grids(self, tmp_path, fmatch_real_data_path):
+        grid_name = MASK_SAMPLE.replace("_subset", "")
+        grid_bytes = (fmatch_real_data_path / MASK_SAMPLE).read_bytes()
+        archive = _write_zip(
+            tmp_path / MASK_ARCHIVE_NAME,
+            {
+                f"2000/global/{grid_name}": grid_bytes,
+                f"2000/global/{grid_name.replace('.bin', '.png')}": b"png",
+                "2000/temperate/EASE2_T25km.LOCImask_land50_coast0km.1388x540.bin": b"temperate",
+                "2000/00README.txt": b"readme",
+            },
+        )
+
+        local = _materialize_ancillary_inputs({"LandOceanMask": [archive]}, tmp_path / "local")
+
+        assert local == {"LandOceanMask": [tmp_path / "local" / "LandOceanMask" / grid_name]}
+        assert local["LandOceanMask"][0].read_bytes() == grid_bytes
+
+    def test_archive_among_other_granules_raises(self, tmp_path, igbp_tile):
+        tile_name, tile_bytes = igbp_tile
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {tile_name: tile_bytes})
+        loose_tile = tmp_path / tile_name
+        loose_tile.write_bytes(tile_bytes)
+
+        with pytest.raises(FmatchInputError, match="must be the reader's only granule"):
+            _materialize_ancillary_inputs({"IGBP": [archive, loose_tile]}, tmp_path / "local")
+
+    def test_archive_without_the_products_files_raises(self, tmp_path):
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {"00README.txt": b"readme"})
+
+        with pytest.raises(FmatchInputError, match="holds no MODIS-IGBP file"):
+            _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+    def test_archive_holding_one_name_twice_raises(self, tmp_path, igbp_tile):
+        tile_name, tile_bytes = igbp_tile
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {f"a/{tile_name}": tile_bytes, f"b/{tile_name}": tile_bytes})
+
+        with pytest.raises(FmatchInputError, match="twice"):
+            _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+    @pytest.mark.parametrize(
+        "other_tile",
+        [
+            pytest.param("MCD12Q1.A2023001.h21v08.061.2024200000000.hdf", id="other-map-year"),
+            pytest.param("MCD12Q1.A2025001.h21v08.062.2026293135651.hdf", id="other-collection"),
+        ],
+    )
+    def test_archive_of_more_than_one_release_raises(self, tmp_path, other_tile):
+        archive = _write_zip(
+            tmp_path / IGBP_ARCHIVE_NAME,
+            {"MCD12Q1.A2025001.h21v07.061.2026293135651.hdf": b"tile", other_tile: b"tile"},
+        )
+
+        with pytest.raises(FmatchInputError, match="more than one release"):
+            _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+    def test_archive_that_is_not_a_zip_raises(self, tmp_path):
+        archive = tmp_path / IGBP_ARCHIVE_NAME
+        archive.write_bytes(b"not a zip")
+
+        with pytest.raises(FmatchInputError, match="not a readable zip"):
+            _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+    def test_member_path_in_the_zip_is_not_used_for_the_unpacked_file(self, tmp_path, igbp_tile):
+        tile_name, tile_bytes = igbp_tile
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {f"../../{tile_name}": tile_bytes})
+        local_dir = tmp_path / "local"
+
+        local = _materialize_ancillary_inputs({"IGBP": [archive]}, local_dir)
+
+        assert local == {"IGBP": [local_dir / "IGBP" / tile_name]}
+        assert not (tmp_path / tile_name).exists()
 
 
 class TestSelectManifestFilesByProductId:

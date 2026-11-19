@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +46,7 @@ from libera_utils.footprint_matching.product import (
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.filenaming import AncillaryVersionArchiveFilename, LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import is_s3, smart_copy_file, smart_open
 from libera_utils.logutil import configure_task_logging
@@ -462,7 +464,8 @@ def run_algorithm(
     FmatchInputError
         If the manifest lists no file of the runner's input product; if a FMATCH-CAM manifest lists no CF-CAM input;
         if the manifest's ``configuration["ancillary_inputs"]`` is absent, malformed or incomplete for the mode; if a
-        ``LIBERA_`` file in the manifest has a name that does not parse; if an ancillary granule is dated outside its
+        ``LIBERA_`` file in the manifest has a name that does not parse; if a version archive is not its reader's only
+        granule or does not hold one release of its product's files; if an ancillary granule is dated outside its
         reader's window; or if a CF-CAM or CF-CAM-CAMTIME input lacks a variable FMATCH reads from it.
     ValueError
         If no FMATCH processing step is named; if ``PROCESSING_PATH`` is not set; if an L1B input has no usable
@@ -687,24 +690,45 @@ def ancillary_inputs_from_manifest(manifest: Manifest, mode: OperationalMode) ->
 def _materialize_ancillary_inputs(
     ancillary_inputs: dict[str, list[Path | S3Path]], local_dir: Path
 ) -> dict[str, list[Path]]:
-    """Copy every S3 ancillary granule to local disk, where the readers can open it.
+    """Copy every S3 ancillary granule to local disk, and unpack every version archive, where the readers can open
+    them.
 
-    Local granules are passed through unchanged; each S3 granule is copied to ``local_dir/<reader key>/<name>``.
+    Local granules are passed through unchanged; each S3 granule is copied to ``local_dir/<reader key>/<name>``. A
+    version archive (:class:`~libera_utils.io.filenaming.AncillaryVersionArchiveFilename`, the zip holding every
+    file of one version of IGBP or the land/ocean mask) is replaced by the product's files it holds, unpacked to
+    ``local_dir/<reader key>/`` (see :func:`_unpack_version_archive`). An archive must be its reader's only granule.
 
     Parameters
     ----------
     ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
         Reader key to its granules, from :func:`ancillary_inputs_from_manifest`.
     local_dir : pathlib.Path
-        Directory the S3 granules are copied under. It must outlive every use of the returned paths.
+        Directory the S3 granules are copied and the archives unpacked under. It must outlive every use of the
+        returned paths.
 
     Returns
     -------
     dict[str, list[pathlib.Path]]
-        The same mapping with every granule a local path.
+        The same mapping with every granule a local path, and each archive replaced by the files it holds.
+
+    Raises
+    ------
+    FmatchInputError
+        If a reader is given a version archive alongside any other granule, or an archive cannot be unpacked to one
+        version's files (see :func:`_unpack_version_archive`).
     """
     local_inputs: dict[str, list[Path]] = {}
     for reader_key, granules in ancillary_inputs.items():
+        archives = [archive for archive in map(_version_archive, granules) if archive is not None]
+        if archives:
+            if len(granules) > 1:
+                raise FmatchInputError(
+                    f"Ancillary source {reader_key!r} is given version archive(s) "
+                    f"{[archive.path.name for archive in archives]} among {len(granules)} granules, but an archive "
+                    "holds every file of one version and must be the reader's only granule. List one archive for it."
+                )
+            local_inputs[reader_key] = _unpack_version_archive(archives[0], local_dir / reader_key)
+            continue
         local_granules: list[Path] = []
         for granule in granules:
             if is_s3(granule):
@@ -716,6 +740,111 @@ def _materialize_ancillary_inputs(
                 local_granules.append(Path(str(granule)))
         local_inputs[reader_key] = local_granules
     return local_inputs
+
+
+def _version_archive(granule: Path | S3Path) -> AncillaryVersionArchiveFilename | None:
+    """Return the granule's name parsed as a version archive, or ``None`` if it is not one.
+
+    Parameters
+    ----------
+    granule : pathlib.Path | cloudpathlib.S3Path
+        An ancillary granule, local or in S3.
+
+    Returns
+    -------
+    libera_utils.io.filenaming.AncillaryVersionArchiveFilename | None
+        The parsed archive name, or ``None`` for any other granule.
+    """
+    try:
+        return AncillaryVersionArchiveFilename(granule)
+    except ValueError:
+        return None
+
+
+def _unpack_version_archive(archive: AncillaryVersionArchiveFilename, out_dir: Path) -> list[Path]:
+    """Unpack the product's files from a version archive into one directory.
+
+    An S3 archive is copied to ``out_dir`` first and deleted once unpacked, so the run holds one local copy of the
+    files. A file in the archive is unpacked when its name, wherever it sits in the zip, is one of the product's
+    (:meth:`~libera_utils.io.filenaming.AncillaryVersionArchiveFilename.member_filename`), and is written under
+    that name alone, never its path in the zip. Any other file, such as a README or a browse image, is skipped.
+
+    Parameters
+    ----------
+    archive : libera_utils.io.filenaming.AncillaryVersionArchiveFilename
+        The archive, local or in S3.
+    out_dir : pathlib.Path
+        Directory the files are unpacked into. It is created if missing.
+
+    Returns
+    -------
+    list[pathlib.Path]
+        The unpacked files, sorted by name.
+
+    Raises
+    ------
+    FmatchInputError
+        If the archive is not a zip, holds none of the product's files, holds two of them with one name, or holds
+        files of more than one release (collection, or map year where the name gives one).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    local_archive = out_dir / archive.path.name
+    if is_s3(archive.path):
+        smart_copy_file(archive.path, local_archive)
+    else:
+        local_archive = Path(str(archive.path))
+    try:
+        with zipfile.ZipFile(local_archive) as zip_file:
+            members = {}
+            for info in zip_file.infolist():
+                member = archive.member_filename(info.filename)
+                if info.is_dir() or member is None:
+                    continue
+                name = member.path.name
+                if name in members:
+                    raise FmatchInputError(
+                        f"Version archive {archive.path.name} holds {name} twice. Rebuild it with one copy of each "
+                        f"{archive.data_product_id} file."
+                    )
+                members[name] = (info, member)
+            if not members:
+                raise FmatchInputError(
+                    f"Version archive {archive.path.name} holds no {archive.data_product_id} file named as "
+                    f"{archive.member_filename_class.__name__} accepts. Rebuild it from the provider's files."
+                )
+            releases = {
+                (member.filename_parts.version, getattr(member.filename_parts, "acquisition_date", None))
+                for _, member in members.values()
+            }
+            if len(releases) > 1:
+                raise FmatchInputError(
+                    f"Version archive {archive.path.name} holds {archive.data_product_id} files of more than one "
+                    f"release (collection and map date): {sorted(releases, key=str)}. Rebuild it from one release."
+                )
+            unpacked = []
+            for name, (info, _) in sorted(members.items()):
+                target = out_dir / name
+                with zip_file.open(info) as source, target.open("wb") as destination:
+                    shutil.copyfileobj(source, destination)
+                unpacked.append(target)
+            skipped = len(zip_file.infolist()) - len(unpacked)
+    except zipfile.BadZipFile as err:
+        raise FmatchInputError(
+            f"Version archive {archive.path.name} is not a readable zip file ({err}). Replace it with the archive "
+            "as ingested."
+        ) from err
+    finally:
+        if is_s3(archive.path):
+            local_archive.unlink(missing_ok=True)
+    logger.info(
+        {
+            "msg": "Unpacked version archive",
+            "archive": archive.path.name,
+            "files": len(unpacked),
+            "skipped": skipped,
+        }
+    )
+    return unpacked
 
 
 def run_footprint_matching(

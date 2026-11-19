@@ -66,14 +66,14 @@ The manifest (see [Manifest Files](manifest_files.md)) lists every file the run 
   "files": [
     "s3://dropbox/LIBERA_L1B_RAD-4CH_V1-0-0_20260611T000000_20260611T235959_R...nc",
     "s3://dropbox/LIBERA_L2_CF-CAM_V1-0-0_20260611T000000_20260611T235959_R...nc",
-    "s3://ancillary/MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+    "s3://ancillary/MODIS-IGBP_2025_R20261020T120000000000.zip",
     "s3://ancillary/NISE_AMSR2_20260610.HDFEOS",
     "s3://ancillary/CLDPROP_D3_VIIRS_NOAA20.A2026161.011.2026165000710.nc"
   ],
   "configuration": {
     "processing_step_id": "aux-fmatch-cam",
     "ancillary_inputs": {
-      "IGBP": ["s3://ancillary/MCD12Q1.A2024001.h21v07.061.2025205222320.hdf"],
+      "IGBP": ["s3://ancillary/MODIS-IGBP_2025_R20261020T120000000000.zip"],
       "NISE": ["s3://ancillary/NISE_AMSR2_20260610.HDFEOS"],
       "VIIRS_CLDPROP_D3": [
         "s3://ancillary/CLDPROP_D3_VIIRS_NOAA20.A2026161.011.2026165000710.nc"
@@ -127,8 +127,9 @@ When it runs in a forked pool, the PSF aggregation's result is identical to the 
 2. Locates the ancillary granules the manifest lists in `ancillary_inputs`.
 3. Selects the Libera inputs from the manifest by product ID. For FMATCH-CAM it also reads every CF-CAM file once
    and matches each L1B footprint to its CF-CAM row by time.
-4. Copies any S3 ancillary granule to a temporary local directory, because the readers open real files, then writes
-   the product `processing_step_id` selects, one file per Libera input.
+4. Copies any S3 ancillary granule to a temporary local directory, because the readers open real files, and
+   unpacks each version archive there (see [Version archives](#version-archives)), then writes the product
+   `processing_step_id` selects, one file per Libera input.
 5. Builds the output manifest from the input manifest.
 6. Adds the written products to it.
 7. Writes it to `PROCESSING_PATH`.
@@ -170,6 +171,19 @@ times widened by its reader's `GRANULE_DATE_WINDOW` raises `FmatchInputError`, n
 the range it had to overlap. The window is one day either side for every reader, so a granule from the input's
 previous or next day is accepted (LIBSDC-942). IGBP has none, since MCD12Q1 is an annual map whose newest year
 is applied to later dates.
+
+### Version archives
+
+IGBP is version-partitioned: one version of the MCD12Q1 map is every tile of one year, so it is ingested as one zip,
+named `<ProductID>_<version>_<revision>.zip` (`AncillaryVersionArchiveFilename`; see the File Naming page). A
+manifest lists that one archive for `IGBP`, not its tiles. The runner unpacks the archive once per run into the
+temporary local directory, keeping only the files named as MCD12Q1 tiles, wherever they sit in the zip, and hands
+those tiles to the reader. An S3 archive is copied first and its copy deleted once unpacked. One version of the map is
+about 1.5 GB of tiles, so the task needs that much free local storage, and twice that while an S3 archive is copied.
+
+The run raises `FmatchInputError` when a reader is given an archive alongside any other granule, or when an archive
+is not a zip, holds no file of its product, holds two files with one name, or holds files of more than one release
+(collection, or map year). A reader can still be given loose files for a local or development run.
 
 Every run lists its granules in `ancillary_inputs`; the manifest creator will write that key once it selects the
 ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself.
