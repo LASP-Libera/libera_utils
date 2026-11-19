@@ -35,9 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming it. Its version field, like `check_version_number_format`, needs digits in each part, so `V--` is rejected.
 - **BREAKING:** A ground-test capture (`LiberaGroundCcsdsFilename`) must be named by the start of its two-hour bin, an
   even UTC hour with minutes and seconds `00`; any other time is rejected.
-- **BREAKING:** `s3-utils put --verify` looks up a data product's File Metadata record by its `partition_key` instead
-  of its applicable date. The two are the same for a daily product; a CERES, TRIMMED or CAL file is not verified
-  until libera_cdk records File Metadata by partition key, and `--verify` times out for it until then.
+- **BREAKING:** `s3-utils put --verify` checks a data product's File Metadata record at sort key
+  `PARTITION#<partition_key>` instead of its applicable date. Against an SDC whose Data Ingester does not yet write
+  `PARTITION#` records (libera_cdk LIBSDC-938), `--verify` times out for every data product, daily included.
 
 ### Removed
 
