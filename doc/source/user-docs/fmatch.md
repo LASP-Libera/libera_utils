@@ -79,7 +79,7 @@ The manifest (see [Manifest Files](manifest_files.md)) lists every file the run 
 `processing_step_id`
 : The `ProcessingStepIdentifier` value of the product to write, one of the four in the table above. It can also be
 given with `--processing_step_id`. When both are given they must match, or the run raises
-`ProcessingStepIdMismatchError`; when neither is, it raises `ValueError`.
+`ProcessingStepIdMismatchError` (from `libera_utils.io.manifest`); when neither is, it raises `ValueError`.
 
 The runner parses every name in `files` once, as a Libera product or an external ancillary product (see the File
 Naming page), and picks its inputs by product ID: L1B `RAD-4CH` or `CF-CAM-CAMTIME` as the Libera input, CF-CAM for

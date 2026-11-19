@@ -9,12 +9,11 @@ from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier, ManifestType, ProcessingStepIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    PROCESSING_STEP_ID_CONFIGURATION_KEY,
     RUNNER_CONFIGS,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.manifest import Manifest
+from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest
 from libera_utils.io.smart_open import smart_copy_file
 
 # The name a granule of each FMATCH reader's product is staged under for a run: a name in the product's ingested form,

@@ -19,7 +19,6 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_INPUTS_CONFIGURATION_KEY,
-    PROCESSING_STEP_ID_CONFIGURATION_KEY,
     fmatch_cli_handler,
     select_manifest_files_by_product_id,
 )
@@ -31,7 +30,7 @@ from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLe
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
@@ -278,9 +277,15 @@ class TestRunnerOutputThroughSceneId:
     classification from an FMATCH product with valid inputs.
     """
 
-    @pytest.mark.parametrize(("step", "variant"), [(CAM, "cam"), (IMAGER, "imager")])
+    @pytest.mark.parametrize(
+        ("step", "scene_id_step"),
+        [
+            (CAM, ProcessingStepIdentifier.aux_scene_id_cam),
+            (IMAGER, ProcessingStepIdentifier.aux_scene_id_imager),
+        ],
+    )
     def test_runner_product_writes_a_scene_id_product(
-        self, step, variant, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory
+        self, step, scene_id_step, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory
     ):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
@@ -291,7 +296,7 @@ class TestRunnerOutputThroughSceneId:
         )
         fmatch_product_path = Manifest.from_file(_run_cli(step, inputs, tmp_path / "ancillary", *input_files)).files[0]
 
-        scene_id_config = SCENE_ID_RUNNER_CONFIGS[variant]
+        scene_id_config = SCENE_ID_RUNNER_CONFIGS[scene_id_step]
         footprint_data = run_scene_identification(fmatch_product_path, scene_id_config)
         output_dir = tmp_path / "scene_id"
         output_dir.mkdir()

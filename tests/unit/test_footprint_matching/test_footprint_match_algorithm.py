@@ -18,10 +18,8 @@ from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifi
 from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     CAM_CAMTIME_CONFIG,
-    PROCESSING_STEP_ID_CONFIGURATION_KEY,
     RUNNER_CONFIGS,
     CloudFractionTimeMismatchError,
-    ProcessingStepIdMismatchError,
     RadiometerCloudFraction,
     _ancillary_source_file_paths,
     _load_cam_camtime_footprints,
@@ -41,7 +39,12 @@ from libera_utils.footprint_matching.product import FmatchInputError
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import (
+    PROCESSING_STEP_ID_CONFIGURATION_KEY,
+    Manifest,
+    ManifestType,
+    ProcessingStepIdMismatchError,
+)
 from tests.plugins.manifest_fixtures import FMATCH_STAGED_GRANULE_NAMES, FMATCH_STAGED_IGBP_TILE_NAME
 
 # The shortened real CF-CAM granule under tests/test_data/footprint_matching; its README says what was kept.
@@ -99,7 +102,7 @@ class TestResolveRunnerConfig:
         manifest = Manifest(
             manifest_type=ManifestType.INPUT, configuration={PROCESSING_STEP_ID_CONFIGURATION_KEY: value}
         )
-        with pytest.raises(ValueError, match="not an FMATCH processing step"):
+        with pytest.raises(ValueError, match="not a FMATCH processing step"):
             resolve_runner_config(manifest)
 
 

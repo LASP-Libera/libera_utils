@@ -13,11 +13,12 @@ the resulting SCENE-ID product, and emit an output manifest. They differ only by
 * logging labels.
 
 :func:`run_algorithm` is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
-the four :data:`SceneIdRunnerConfig` values collected in ``RUNNER_CONFIGS``, keyed by variant name (``"cam"``,
-``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``). Every variant runs from the one
-``libera-utils scene-id <manifest>`` command, and so from one container image: :func:`scene_id_cli_handler` selects
-the config named by the ``LIBERA_SCENE_ID_VARIANT`` environment variable, which each processing step sets. A new
-SCENE-ID variant is one config plus one registry entry, no new module.
+the four :data:`SceneIdRunnerConfig` values collected in ``RUNNER_CONFIGS``, keyed by the ``ProcessingStepIdentifier``
+that writes each product (``aux-scene-id-cam``, ``aux-scene-id-cam-camtime``, ``aux-scene-id-imager``,
+``aux-scene-id-imager-camtime``). Every variant runs from the one ``libera-utils scene-id <manifest>`` command, and so
+from one container image: the input manifest's ``configuration["processing_step_id"]``, or the
+``--processing_step_id`` option, names the step to run, as for FMATCH. A new SCENE-ID variant is one config plus one
+registry entry, no new module.
 """
 
 import argparse
@@ -34,8 +35,9 @@ from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import Manifest
 from libera_utils.config import config
-from libera_utils.constants import DataProductIdentifier
+from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.manifest import resolve_processing_step_id
 from libera_utils.io.netcdf import fill_in_dtype, write_libera_data_product
 from libera_utils.io.product_definition import ALGORITHM_VERSION_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.logutil import configure_task_logging
@@ -145,49 +147,57 @@ IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
     log_prefix="scene_id_imager_camtime",
 )
 
-# Registry of every SCENE-ID runner, keyed by the variant name the LIBERA_SCENE_ID_VARIANT environment variable
-# selects. Adding a variant is one config plus one entry.
-RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
-    "cam": CAM_CONFIG,
-    "cam-camtime": CAM_CAMTIME_CONFIG,
-    "imager": IMAGER_CONFIG,
-    "imager-camtime": IMAGER_CAMTIME_CONFIG,
+# Registry of every SCENE-ID runner, keyed by the processing step that writes its product. The input manifest's
+# configuration["processing_step_id"] (or --processing_step_id) selects the entry. Adding a variant is one config plus
+# one entry.
+RUNNER_CONFIGS: dict[ProcessingStepIdentifier, SceneIdRunnerConfig] = {
+    ProcessingStepIdentifier.aux_scene_id_cam: CAM_CONFIG,
+    ProcessingStepIdentifier.aux_scene_id_cam_camtime: CAM_CAMTIME_CONFIG,
+    ProcessingStepIdentifier.aux_scene_id_imager: IMAGER_CONFIG,
+    ProcessingStepIdentifier.aux_scene_id_imager_camtime: IMAGER_CAMTIME_CONFIG,
 }
 
-# Environment variable naming the RUNNER_CONFIGS entry to run; set per processing step.
-SCENE_ID_VARIANT_ENV = "LIBERA_SCENE_ID_VARIANT"
 
+def resolve_runner_config(
+    manifest: Manifest, processing_step_id: str | ProcessingStepIdentifier | None = None
+) -> SceneIdRunnerConfig:
+    """Select the SCENE-ID runner config for the processing step a run is for.
 
-def resolve_runner_config_from_env() -> SceneIdRunnerConfig:
-    """Select the SCENE-ID runner config named by the ``LIBERA_SCENE_ID_VARIANT`` environment variable.
+    The step comes from the input manifest's ``configuration["processing_step_id"]``, from ``processing_step_id``
+    (the ``--processing_step_id`` command-line option), or from both when they agree; see
+    :func:`~libera_utils.io.manifest.resolve_processing_step_id`.
+
+    Parameters
+    ----------
+    manifest : Manifest
+        The run's input manifest.
+    processing_step_id : str | ProcessingStepIdentifier, optional
+        The processing step given outside the manifest, as a ``ProcessingStepIdentifier`` or its value (e.g.
+        ``"aux-scene-id-cam"``).
 
     Returns
     -------
     SceneIdRunnerConfig
-        The ``RUNNER_CONFIGS`` entry for the named variant.
+        The ``RUNNER_CONFIGS`` entry for the step.
 
     Raises
     ------
+    ~libera_utils.io.manifest.ProcessingStepIdMismatchError
+        If the manifest and ``processing_step_id`` both name a step and the two differ.
     ValueError
-        If the variable is not set or names no entry in ``RUNNER_CONFIGS``.
+        If neither names a step, or the step named is not one of the SCENE-ID processing steps.
     """
-    variant = os.getenv(SCENE_ID_VARIANT_ENV, "").strip()
-    if not variant:
-        raise ValueError(f"{SCENE_ID_VARIANT_ENV} environment variable is not set")
-    if variant not in RUNNER_CONFIGS:
-        raise ValueError(
-            f"{SCENE_ID_VARIANT_ENV}={variant!r} is not a SCENE-ID variant; expected one of {sorted(RUNNER_CONFIGS)}"
-        )
-    return RUNNER_CONFIGS[variant]
+    return RUNNER_CONFIGS[resolve_processing_step_id(manifest, processing_step_id, RUNNER_CONFIGS, "SCENE-ID")]
 
 
 def scene_id_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
-    """Run the SCENE-ID variant selected by ``LIBERA_SCENE_ID_VARIANT`` from an input manifest.
+    """Run the SCENE-ID variant an input manifest is for.
 
     Parameters
     ----------
     parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path) and
+        ``parsed_args.processing_step_id`` (the ``--processing_step_id`` option, or ``None``).
 
     Returns
     -------
@@ -196,22 +206,26 @@ def scene_id_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
 
     Raises
     ------
+    ~libera_utils.io.manifest.ProcessingStepIdMismatchError
+        If the manifest and ``--processing_step_id`` name different processing steps.
     ValueError
-        If ``LIBERA_SCENE_ID_VARIANT`` is not set or names no SCENE-ID variant.
+        If neither names a SCENE-ID processing step, or for any condition :func:`run_algorithm` raises it for.
     """
-    runner_config = resolve_runner_config_from_env()
-    return run_algorithm(AnyPath(parsed_args.manifest), runner_config)
+    return run_algorithm(AnyPath(parsed_args.manifest), parsed_args.processing_step_id)
 
 
-def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> Path | S3Path:
+def run_algorithm(
+    manifest_path: Path | S3Path, processing_step_id: str | ProcessingStepIdentifier | None = None
+) -> Path | S3Path:
     """Run a SCENE-ID processing workflow from an input manifest.
 
     Parameters
     ----------
     manifest_path : Path | S3Path
         Path to the input manifest file listing the FMATCH input file(s).
-    config : SceneIdRunnerConfig
-        The per-runner parameters (input/output product, reader, definition, time variable, scene types, log label).
+    processing_step_id : str | ProcessingStepIdentifier, optional
+        The SCENE-ID processing step to run, when the manifest's ``configuration["processing_step_id"]`` does not name
+        it; see :func:`resolve_runner_config`.
 
     Returns
     -------
@@ -220,16 +234,17 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
 
     Raises
     ------
+    ~libera_utils.io.manifest.ProcessingStepIdMismatchError
+        If the manifest and ``processing_step_id`` name different processing steps.
     ValueError
-        If the ``PROCESSING_PATH`` environment variable is not set, or if the manifest references no usable inputs.
+        If no SCENE-ID processing step is named, if the ``PROCESSING_PATH`` environment variable is not set, or if the
+        manifest references no usable inputs.
     """
-    now = datetime.now(UTC)
-    configure_task_logging(f"{config.log_prefix}_{now}")
-
-    # Step 1: Read the input manifest.
-    logger.info("Step 1: Reading the input manifest file")
-    input_manifest = Manifest.from_file(manifest_path)
-    logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
+    # Step 1: Read the input manifest and select the runner it is for.
+    input_manifest = Manifest.from_file(AnyPath(manifest_path))
+    config = resolve_runner_config(input_manifest, processing_step_id)
+    configure_task_logging(f"{config.log_prefix}_{datetime.now(UTC)}")
+    logger.info("Step 1: Read the input manifest with %d files for %s", len(input_manifest.files), config.log_prefix)
 
     dropbox_path = os.getenv("PROCESSING_PATH")
     if not dropbox_path:

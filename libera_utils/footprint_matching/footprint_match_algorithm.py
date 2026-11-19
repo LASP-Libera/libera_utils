@@ -53,7 +53,7 @@ from libera_utils.io.filenaming import (
     AncillaryVersionArchiveFilename,
     LiberaDataProductFilename,
 )
-from libera_utils.io.manifest import Manifest
+from libera_utils.io.manifest import Manifest, resolve_processing_step_id
 from libera_utils.io.smart_open import is_s3, smart_copy_file, smart_open
 from libera_utils.logutil import configure_task_logging
 from libera_utils.version import version
@@ -69,8 +69,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Input manifest configuration key naming the processing step, and so the FMATCH product, a run writes.
-PROCESSING_STEP_ID_CONFIGURATION_KEY: str = "processing_step_id"
 
 # Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
 # its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
@@ -99,14 +97,6 @@ class CloudFractionTimeMismatchError(ValueError):
 
     Raised when two CF-CAM rows share a radiometer time, when a CF-CAM cloud fraction falls inside an L1B granule's
     time span without matching one of its footprints, or when no footprint of the granule matches any CF-CAM row.
-    """
-
-
-class ProcessingStepIdMismatchError(ValueError):
-    """The input manifest and the command line name different FMATCH processing steps.
-
-    Raised when the manifest's ``configuration["processing_step_id"]`` and the ``processing_step_id`` given to the
-    run are both set and disagree, so it is not clear which product the run is meant to write.
     """
 
 
@@ -395,27 +385,7 @@ def resolve_runner_config(
     ValueError
         If neither names a step, or the step named is not one of the FMATCH processing steps.
     """
-    from_manifest = manifest.configuration.get(PROCESSING_STEP_ID_CONFIGURATION_KEY)
-    from_argument = None if processing_step_id is None else str(processing_step_id)
-    if from_manifest is not None and from_argument is not None and str(from_manifest) != from_argument:
-        raise ProcessingStepIdMismatchError(
-            f"The input manifest's configuration names processing step {str(from_manifest)!r}, but the "
-            f"processing_step_id argument (--processing_step_id) names {from_argument!r}. Give one, or make the two "
-            "match."
-        )
-    configs_by_step = {str(step): config for step, config in RUNNER_CONFIGS.items()}
-    step_name = str(from_manifest) if from_manifest is not None else from_argument
-    if step_name is None:
-        raise ValueError(
-            "No FMATCH processing step was given. Set the input manifest's "
-            f'configuration["{PROCESSING_STEP_ID_CONFIGURATION_KEY}"] or pass --processing_step_id, '
-            f"to one of {sorted(configs_by_step)}."
-        )
-    if step_name not in configs_by_step:
-        raise ValueError(
-            f"Processing step {step_name!r} is not an FMATCH processing step; expected one of {sorted(configs_by_step)}."
-        )
-    return configs_by_step[step_name]
+    return RUNNER_CONFIGS[resolve_processing_step_id(manifest, processing_step_id, RUNNER_CONFIGS, "FMATCH")]
 
 
 def fmatch_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:

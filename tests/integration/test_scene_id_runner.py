@@ -16,16 +16,15 @@ import pytest
 import xarray as xr
 
 from libera_utils import cli
-from libera_utils.constants import DataProductIdentifier
+from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
-    SCENE_ID_VARIANT_ENV,
     collect_input_files,
     create_and_write_data_product,
     run_scene_identification,
@@ -34,57 +33,63 @@ from libera_utils.version import version
 
 pytestmark = pytest.mark.integration
 
+# The SCENE-ID processing steps, each keying its runner in RUNNER_CONFIGS.
+CAM = ProcessingStepIdentifier.aux_scene_id_cam
+CAM_CAMTIME = ProcessingStepIdentifier.aux_scene_id_cam_camtime
+IMAGER = ProcessingStepIdentifier.aux_scene_id_imager
+IMAGER_CAMTIME = ProcessingStepIdentifier.aux_scene_id_imager_camtime
+
 # Product-definition paths for the variants exercised below, read straight from the runner registry.
-PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["cam"].product_definition_path
-IMAGER_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["imager"].product_definition_path
-IMAGER_CAMTIME_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["imager-camtime"].product_definition_path
+PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS[CAM].product_definition_path
+IMAGER_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS[IMAGER].product_definition_path
+IMAGER_CAMTIME_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS[IMAGER_CAMTIME].product_definition_path
 
 
 # Thin per-variant helpers bind the generic runner functions to a registry config so the test bodies below stay
 # readable.
 def run_scene_identification_cam(path):
     """Run scene identification with the CAM config."""
-    return run_scene_identification(path, RUNNER_CONFIGS["cam"])
+    return run_scene_identification(path, RUNNER_CONFIGS[CAM])
 
 
 def run_scene_identification_imager(path):
     """Run scene identification with the IMAGER config."""
-    return run_scene_identification(path, RUNNER_CONFIGS["imager"])
+    return run_scene_identification(path, RUNNER_CONFIGS[IMAGER])
 
 
 def run_scene_identification_imager_camtime(path):
     """Run scene identification with the IMAGER-CAMTIME config."""
-    return run_scene_identification(path, RUNNER_CONFIGS["imager-camtime"])
+    return run_scene_identification(path, RUNNER_CONFIGS[IMAGER_CAMTIME])
 
 
 def create_and_write_data_product_cam(footprint_data, input_file_name, output_path):
     """Write a SCENE-ID-CAM product."""
-    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam"])
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS[CAM])
 
 
 def create_and_write_data_product_cam_camtime(footprint_data, input_file_name, output_path):
     """Write a SCENE-ID-CAM-CAMTIME product."""
-    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam-camtime"])
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS[CAM_CAMTIME])
 
 
 def create_and_write_data_product_imager(footprint_data, input_file_name, output_path):
     """Write a SCENE-ID-IMAGER product."""
-    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["imager"])
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS[IMAGER])
 
 
 def create_and_write_data_product_imager_camtime(footprint_data, input_file_name, output_path):
     """Write a SCENE-ID-IMAGER-CAMTIME product."""
-    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["imager-camtime"])
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS[IMAGER_CAMTIME])
 
 
 def collect_fmatch_cam_input_files(manifest):
     """Select the FMATCH-CAM input files from ``manifest``."""
-    return collect_input_files(manifest, RUNNER_CONFIGS["cam"].input_product_id)
+    return collect_input_files(manifest, RUNNER_CONFIGS[CAM].input_product_id)
 
 
 def collect_fmatch_imager_camtime_input_files(manifest):
     """Select the FMATCH-IMAGER-CAMTIME input files from ``manifest``."""
-    return collect_input_files(manifest, RUNNER_CONFIGS["imager-camtime"].input_product_id)
+    return collect_input_files(manifest, RUNNER_CONFIGS[IMAGER_CAMTIME].input_product_id)
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -249,21 +254,21 @@ class TestFmatchReaders:
                 "from_fmatch_imager",
                 OperationalMode.CAM,
                 "FLASHFlux_Clear_Coverage",
-                "FMATCH-IMAGER file for LIBERA_SCENE_ID_VARIANT=imager",
+                "FMATCH-IMAGER file",
                 id="imager-on-cam",
             ),
             pytest.param(
                 "from_fmatch_imager_camtime",
                 OperationalMode.CAM_CAMTIME,
                 "FLASHFlux_Clear_Coverage",
-                "FMATCH-IMAGER-CAMTIME file for LIBERA_SCENE_ID_VARIANT=imager-camtime",
+                "FMATCH-IMAGER-CAMTIME file",
                 id="imager-camtime-on-cam-camtime",
             ),
             pytest.param(
                 "from_fmatch_cam",
                 OperationalMode.IMAGER,
                 "Cloud_Fraction_Camera",
-                "FMATCH-CAM file for LIBERA_SCENE_ID_VARIANT=cam",
+                "FMATCH-CAM file",
                 id="cam-on-imager",
             ),
             # A radiometer-timescale file has no camera pixel bounds, so the pass-through check fails too.
@@ -271,7 +276,7 @@ class TestFmatchReaders:
                 "from_fmatch_imager_camtime",
                 OperationalMode.IMAGER,
                 "Camera_Pixel_X_Min",
-                "FMATCH-IMAGER-CAMTIME file for LIBERA_SCENE_ID_VARIANT=imager-camtime",
+                "FMATCH-IMAGER-CAMTIME file",
                 id="imager-camtime-on-imager",
             ),
         ],
@@ -302,7 +307,7 @@ class TestFmatchReaders:
         local_path = fmatch_product_file_factory(OperationalMode.CAM)
         s3_path = write_file_to_s3(local_path, f"s3://fmatch-inputs/{local_path.name}")
 
-        footprint_data = run_scene_identification(s3_path.as_uri() if as_uri else s3_path, RUNNER_CONFIGS["cam"])
+        footprint_data = run_scene_identification(s3_path.as_uri() if as_uri else s3_path, RUNNER_CONFIGS[CAM])
 
         local_data = FootprintData.from_fmatch_cam(local_path)._data
         assert footprint_data._data.sizes["RADIOMETER_TIME"] == local_data.sizes["RADIOMETER_TIME"]
@@ -594,30 +599,30 @@ class TestMissingIgbpCode:
     """
 
     @pytest.mark.parametrize(
-        ("mode", "variant"),
+        ("mode", "step"),
         [
-            (OperationalMode.CAM, "cam"),
-            (OperationalMode.IMAGER, "imager"),
+            (OperationalMode.CAM, CAM),
+            (OperationalMode.IMAGER, IMAGER),
         ],
     )
     def test_radiometer_footprint_is_unmatched_and_the_rest_classify(
-        self, fmatch_product_file_factory, tmp_path, mode, variant
+        self, fmatch_product_file_factory, tmp_path, mode, step
     ):
         input_path = _with_missing_igbp(fmatch_product_file_factory(mode, n_footprints=4), tmp_path, 1)
 
-        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
+        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[step])._data
 
         assert np.isnan(dataset["Surface_Type"].values[1])
-        for scene_definition in standard_scene_definitions(RUNNER_CONFIGS[variant].scene_types):
+        for scene_definition in standard_scene_definitions(RUNNER_CONFIGS[step].scene_types):
             name = f"Scene_ID_{scene_definition.type}"
             assert dataset[name].values[1] == 0, name
         assert (dataset["Scene_ID_ERBE"].values[[0, 2, 3]] > 0).all()
 
-    @pytest.mark.parametrize(("mode", "variant"), [(OperationalMode.CAM_CAMTIME, "cam-camtime")])
-    def test_padded_camera_cell_is_unmatched(self, fmatch_product_file_factory, tmp_path, mode, variant):
+    @pytest.mark.parametrize(("mode", "step"), [(OperationalMode.CAM_CAMTIME, CAM_CAMTIME)])
+    def test_padded_camera_cell_is_unmatched(self, fmatch_product_file_factory, tmp_path, mode, step):
         input_path = _with_missing_igbp(fmatch_product_file_factory(mode, n_footprints=3), tmp_path, (2, -1))
 
-        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
+        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[step])._data
 
         assert dataset["Scene_ID_ERBE"].values[2, -1] == 0
         assert (dataset["Scene_ID_ERBE"].values[0] > 0).all()
@@ -627,11 +632,11 @@ class TestMissingIgbpCode:
         input_path = _with_missing_igbp(
             fmatch_product_file_factory(OperationalMode.IMAGER, n_footprints=4), tmp_path, 1
         )
-        footprint_data = run_scene_identification(input_path, RUNNER_CONFIGS["imager"])
+        footprint_data = run_scene_identification(input_path, RUNNER_CONFIGS[IMAGER])
         output_dir = tmp_path / "out"
         output_dir.mkdir()
 
-        written = create_and_write_data_product(footprint_data, input_path.name, output_dir, RUNNER_CONFIGS["imager"])
+        written = create_and_write_data_product(footprint_data, input_path.name, output_dir, RUNNER_CONFIGS[IMAGER])
 
         with xr.open_dataset(written.path, mask_and_scale=False) as product:
             for name in ("IGBP_Surface_Type", "Surface_Type"):
@@ -645,15 +650,15 @@ class TestMissingIgbpCode:
 class TestSceneIdContainerRun:
     """Each SCENE-ID variant runs end to end the way its container does.
 
-    The ``libera-utils-scene-id`` image's entrypoint is ``libera-utils scene-id <manifest>``, with the processing step
-    setting ``LIBERA_SCENE_ID_VARIANT`` and ``PROCESSING_PATH``. Each case writes the variant's FMATCH product, lists it
-    on an input manifest, runs the CLI with that environment, and checks the dropbox holds exactly the SCENE-ID product
-    and an output manifest registering it.
+    The ``libera-utils-scene-id`` image's entrypoint is ``libera-utils scene-id <manifest>``, with the input manifest's
+    ``configuration["processing_step_id"]`` naming the variant and the processing step setting ``PROCESSING_PATH``.
+    Each case writes the variant's FMATCH product, lists it on an input manifest naming the step, runs the CLI, and
+    checks the dropbox holds exactly the SCENE-ID product and an output manifest registering it.
     """
 
-    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
-    def test_cli_writes_product_and_output_manifest(self, fmatch_product_file_factory, tmp_path, monkeypatch, variant):
-        runner_config = RUNNER_CONFIGS[variant]
+    @pytest.mark.parametrize("step", list(RUNNER_CONFIGS))
+    def test_cli_writes_product_and_output_manifest(self, fmatch_product_file_factory, tmp_path, monkeypatch, step):
+        runner_config = RUNNER_CONFIGS[step]
         input_dir = tmp_path / "inputs"
         input_dir.mkdir()
         dropbox = tmp_path / "dropbox"
@@ -662,11 +667,12 @@ class TestSceneIdContainerRun:
         fmatch_mode = OperationalMode(runner_config.input_product_id.value)
         fmatch_path = fmatch_product_file_factory(fmatch_mode, n_footprints=4, directory=input_dir)
         assert LiberaDataProductFilename.from_file_path(fmatch_path).data_product_id is runner_config.input_product_id
-        input_manifest = Manifest(manifest_type=ManifestType.INPUT)
+        input_manifest = Manifest(
+            manifest_type=ManifestType.INPUT, configuration={PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step)}
+        )
         input_manifest.add_files(fmatch_path)
         input_manifest_path = input_manifest.write(input_dir)
 
-        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, variant)
         monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
         cli.main(["scene-id", str(input_manifest_path)])
 

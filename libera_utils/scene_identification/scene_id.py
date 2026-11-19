@@ -907,7 +907,6 @@ class FootprintData:
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             expected_product=DataProductIdentifier.aux_fmatch_cam,
-            variant="cam",
         )
         _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
@@ -948,7 +947,6 @@ class FootprintData:
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
             expected_product=DataProductIdentifier.aux_fmatch_cam_camtime,
-            variant="cam-camtime",
         )
         _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
@@ -985,7 +983,6 @@ class FootprintData:
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             expected_product=DataProductIdentifier.aux_fmatch_imager,
-            variant="imager",
         )
         return cls(extracted_data)
 
@@ -1032,7 +1029,6 @@ class FootprintData:
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
             expected_product=DataProductIdentifier.aux_fmatch_imager_camtime,
-            variant="imager-camtime",
         )
         return cls(extracted_data)
 
@@ -1043,7 +1039,6 @@ class FootprintData:
         time_variable: str,
         column_map: dict[FootprintVariables, "_FmatchColumn"],
         expected_product: DataProductIdentifier,
-        variant: str,
         passthrough_variables: tuple[str, ...] = (),
     ) -> xr.Dataset:
         """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
@@ -1077,8 +1072,6 @@ class FootprintData:
             transform).
         expected_product : DataProductIdentifier
             The FMATCH product this reader reads, named in the missing-variable error.
-        variant : str
-            The ``LIBERA_SCENE_ID_VARIANT`` that selects this reader, named in the missing-variable error.
         passthrough_variables : tuple of str, optional
             Names of FMATCH variables to copy verbatim onto the output under the same name (e.g. the camera-timescale
             identifier variables). Empty for the radiometer-timescale products.
@@ -1115,7 +1108,7 @@ class FootprintData:
         if missing:
             raise ValueError(
                 f"{fmatch_path} is missing required variable(s) {missing}; check that the manifest's input is a "
-                f"{expected_product.value} file for LIBERA_SCENE_ID_VARIANT={variant}"
+                f"{expected_product.value} file"
             )
 
         data_variables: dict[str, tuple[list[str], NDArray]] = {}

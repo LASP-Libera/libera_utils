@@ -1,7 +1,7 @@
 """Unit tests for SCENE-ID runner helper logic in ``libera_utils.scene_identification.scene_id_algorithm``.
 
 These are pure-logic tests that need no real data or product write — e.g. the manifest input-selection rules in
-:func:`collect_input_files` and the ``LIBERA_SCENE_ID_VARIANT`` dispatch in :func:`resolve_runner_config_from_env`.
+:func:`collect_input_files` and the ``processing_step_id`` dispatch in :func:`resolve_runner_config`.
 The full manifest-in / product-out behavior is covered by the integration tests in ``tests/integration/test_scene_id.py``.
 """
 
@@ -11,17 +11,24 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.constants import DataProductIdentifier
+from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import (
+    PROCESSING_STEP_ID_CONFIGURATION_KEY,
+    Manifest,
+    ManifestType,
+    ProcessingStepIdMismatchError,
+)
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
-    SCENE_ID_VARIANT_ENV,
     _fill_missing_integer_values,
     collect_input_files,
-    resolve_runner_config_from_env,
+    resolve_runner_config,
 )
+
+CAM = ProcessingStepIdentifier.aux_scene_id_cam
+IMAGER = ProcessingStepIdentifier.aux_scene_id_imager
 
 # A CERES SSF filename: not a Libera product name, so it is skipped.
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
@@ -77,33 +84,40 @@ class TestCollectInputFiles:
         assert selected == [f"{self._INPUT_DIR}/{SSF_INPUT_NAME}"]
 
 
-class TestRunnerDispatch:
-    """LIBERA_SCENE_ID_VARIANT selects the SCENE-ID runner config that the CLI handler runs."""
+def _manifest_naming(step: str | None) -> Manifest:
+    """An input manifest whose configuration names ``step``, or names no step when ``step`` is ``None``."""
+    configuration = {} if step is None else {PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step)}
+    return Manifest(manifest_type=ManifestType.INPUT, configuration=configuration)
 
-    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
-    def test_variant_selects_its_config(self, monkeypatch, variant):
-        """Each registry key in the environment variable selects that registry entry."""
-        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, variant)
 
-        assert resolve_runner_config_from_env() is RUNNER_CONFIGS[variant]
+class TestResolveRunnerConfig:
+    """The input manifest's configuration, or the command line, names the processing step whose config runs."""
 
-    @pytest.mark.parametrize("value", [None, "", "  "])
-    def test_unset_variant_raises(self, monkeypatch, value):
-        """A missing or blank variable is an error rather than a silent default variant."""
-        if value is None:
-            monkeypatch.delenv(SCENE_ID_VARIANT_ENV, raising=False)
-        else:
-            monkeypatch.setenv(SCENE_ID_VARIANT_ENV, value)
+    @pytest.mark.parametrize("step", list(RUNNER_CONFIGS))
+    def test_manifest_step_selects_its_config(self, step):
+        assert resolve_runner_config(_manifest_naming(step)) is RUNNER_CONFIGS[step]
 
-        with pytest.raises(ValueError, match="is not set"):
-            resolve_runner_config_from_env()
+    @pytest.mark.parametrize("step", [IMAGER, str(IMAGER)])
+    def test_command_line_step_selects_its_config(self, step):
+        assert resolve_runner_config(_manifest_naming(None), step) is RUNNER_CONFIGS[IMAGER]
 
-    def test_unknown_variant_raises(self, monkeypatch):
-        """A value naming no registry entry is rejected, listing the valid variants."""
-        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, "not-a-variant")
+    def test_matching_steps_select_the_config(self):
+        assert resolve_runner_config(_manifest_naming(CAM), str(CAM)) is RUNNER_CONFIGS[CAM]
 
-        with pytest.raises(ValueError, match="'not-a-variant' is not a SCENE-ID variant"):
-            resolve_runner_config_from_env()
+    def test_different_steps_raise(self):
+        with pytest.raises(ProcessingStepIdMismatchError, match="aux-scene-id-cam.*aux-scene-id-imager"):
+            resolve_runner_config(_manifest_naming(CAM), IMAGER)
+
+    def test_no_step_raises(self):
+        """A manifest naming no step is an error rather than a silent default variant."""
+        with pytest.raises(ValueError, match="No SCENE-ID processing step was given"):
+            resolve_runner_config(_manifest_naming(None))
+
+    @pytest.mark.parametrize("value", [str(ProcessingStepIdentifier.aux_fmatch_cam), "cam"])
+    def test_step_that_is_not_scene_id_raises(self, value):
+        """A step naming no registry entry, including an old variant name, is rejected."""
+        with pytest.raises(ValueError, match="is not a SCENE-ID processing step"):
+            resolve_runner_config(_manifest_naming(value))
 
 
 class TestFillMissingIntegerValues:
@@ -112,7 +126,7 @@ class TestFillMissingIntegerValues:
     @staticmethod
     def _definition(surface_type_dtype: str) -> LiberaDataProductDefinition:
         """The shipped SCENE-ID-IMAGER definition, with Surface_Type declared as ``surface_type_dtype``."""
-        definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS["imager"].product_definition_path)
+        definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS[IMAGER].product_definition_path)
         surface_type = definition.variables["Surface_Type"].model_copy(update={"dtype": surface_type_dtype})
         return definition.model_copy(update={"variables": {"Surface_Type": surface_type}})
 

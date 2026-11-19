@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (`LIBERA_SCENE_ID_VARIANT=imager` / `imager-camtime`), with product definitions and `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. Both run the TRMM classification as well as ERBE and unfiltering.
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (processing steps `aux-scene-id-imager` / `aux-scene-id-imager-camtime`), with product definitions and `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. Both run the TRMM classification as well as ERBE and unfiltering.
+- `libera_utils.io.manifest.resolve_processing_step_id`, which FMATCH and SCENE-ID both use to take a run's processing step from the input manifest's `configuration["processing_step_id"]` or `--processing_step_id`.
 
 ### Changed
 
+- **BREAKING:** SCENE-ID selects its variant as FMATCH does: from the input manifest's `configuration["processing_step_id"]`, one of the four `aux-scene-id-*` `ProcessingStepIdentifier` values, or the new `libera-utils scene-id --processing_step_id` option, so one step definition serves all four products. `LIBERA_SCENE_ID_VARIANT`, `SCENE_ID_VARIANT_ENV` and `resolve_runner_config_from_env` are removed; `RUNNER_CONFIGS` is keyed by `ProcessingStepIdentifier`, `resolve_runner_config(manifest, processing_step_id)` selects the entry, and `run_algorithm` takes the processing step in place of a config. The run raises `ProcessingStepIdMismatchError` when the manifest and the option disagree, and `ValueError` when neither names a SCENE-ID step. A SCENE-ID processing step sets `processing_step_id` in its input manifest's configuration instead of the environment variable.
+- **BREAKING:** `ProcessingStepIdMismatchError` and `PROCESSING_STEP_ID_CONFIGURATION_KEY` move from `libera_utils.footprint_matching.footprint_match_algorithm` to `libera_utils.io.manifest`.
 - **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of CERES SSF files, so its processing step must declare FMATCH-CAM as its input product. `SceneIdRunnerConfig.input_product_id` and `collect_input_files`'s `input_product_id` no longer accept `None`.
 - The SCENE-ID FMATCH readers read FMATCH variables by their product names, through `smart_open` for local or S3 paths. A footprint with a missing `IGBP_Surface_Type` is left unmatched (scene ID 0) instead of failing the granule.
 - SCENE-ID integer columns (`Surface_Type`, `IGBP_Surface_Type` and the `Scene_Bin_*_Surface_Type_Min`/`_Max` bounds) are `int8` with -1 for a missing value (`SCENE_ID_INTEGER_FILL_VALUE`), and the SCENE-ID product definitions declare no `_FillValue`.
