@@ -340,6 +340,12 @@ batch are split at the same limit.
 Each path must be a properly named L0, ground CCSDS, daily or version-partitioned Libera data product, or external
 ancillary product file (manifests and other filename types are rejected).
 
+% TODO[LIBSDC-859]: once the Data Ingester ingests external products, remove the paragraph below and the note in
+% the put help.
+
+External ancillary product files are staged, but the SDC Data Ingester does not ingest them yet, so `--verify` times
+out on the daily ones.
+
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
 record and (for Libera and daily external ancillary data products) a Data Availability record. A non-daily
@@ -360,13 +366,17 @@ usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [
 
 positional arguments:
   file_path          Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data
-                     product or external ancillary product file.
+                     product or external ancillary product file. Files are staged to the SDC Ingest Dropbox and the
+                     SDC Data Ingester handles archiving and metadata. External ancillary product files are staged,
+                     but the SDC Data Ingester does not ingest them yet, so --verify times out on the daily ones.
 
 options:
   -h, --help         show this help message and exit
-  --verify           After triggering ingest, block until each file is confirmed fully ingested, then report the result.
-                     Version-partitioned data product files are staged but not yet verified, and the command then
-                     exits with an error naming them.
+  --verify           After triggering ingest, block until each file is confirmed fully ingested (archived with
+                     metadata and, for dated data products, data availability records), then report the result. A non-
+                     daily file (a version-partitioned data product, or the version archive of IGBP or the land/ocean
+                     mask) is staged but cannot be verified yet, and the command then exits with an error naming it.
+                     Requires only read permissions.
   --timeout TIMEOUT  Seconds to wait for ingestion verification when --verify is set. Default is 300 (5 minutes).
 ```
 

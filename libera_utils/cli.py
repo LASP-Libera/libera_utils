@@ -362,6 +362,8 @@ def parse_cli_args(cli_args: list):
         help="Stage data product files for full SDC ingest (archiving + metadata + data availability)",
     )
     s3_put_parser.set_defaults(func=s3_utilities.s3_put_cli_handler)
+    # TODO[LIBSDC-859]: drop the ancillary note from this help and from usage.md once the Data Ingester ingests
+    # external products.
     s3_put_parser.add_argument(
         "file_paths",
         type=str,
@@ -369,7 +371,9 @@ def parse_cli_args(cli_args: list):
         metavar="file_path",
         help="Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data product "
         "or external ancillary product file. "
-        "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata.",
+        "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata. "
+        "External ancillary product files are staged, but the SDC Data Ingester does not ingest them yet, so "
+        "--verify times out on the daily ones.",
     )
     # TODO[LIBSDC-880]: verify version-partitioned data product files in --verify, then drop the note from the help
     # text.
