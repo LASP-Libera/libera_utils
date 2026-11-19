@@ -67,8 +67,8 @@ ManualIngestFilename = (
 
 # The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata and Data Availability
 # records are keyed on its applicable date, and an L0 or ground CCSDS file has its own record rules. A non-daily
-# file (a version-partitioned data product, the land/ocean mask, IGBP) has no applicable date, so ``put --verify``
-# stages it but cannot verify it.
+# file (a version-partitioned data product, or the version archive of IGBP or the land/ocean mask) has no
+# applicable date, so ``put --verify`` stages it but cannot verify it.
 # TODO[LIBSDC-880]: verify non-daily products once the ingester defines their records
 VerifiableIngestFilename = (
     L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | DailyAncillaryDataProductFilename
@@ -128,8 +128,8 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     ingest that happens for files produced by SDC processing steps.
 
     With ``--verify``, every file is staged and the ingestion of each L0, ground CCSDS, daily Libera data product and
-    daily ancillary file is verified. A non-daily file (a version-partitioned data product, the land/ocean mask,
-    IGBP) is staged but not verified, and the handler then raises naming it.
+    daily ancillary file is verified. A non-daily file (a version-partitioned data product, or the version archive
+    of IGBP or the land/ocean mask) is staged but not verified, and the handler then raises naming it.
 
     Raises
     ------
@@ -366,9 +366,9 @@ def verify_ingestion(
     3. A File Metadata record exists for the file basename.
 
     A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
-    its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary product
-    (the land/ocean mask, IGBP) has no applicable date and no checks here, so it is rejected before any lookup;
-    ``s3_put_cli_handler`` keeps such files out of the list it verifies.
+    its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary file
+    (the version archive of IGBP or the land/ocean mask) has no applicable date and no checks here, so it is
+    rejected before any lookup; ``s3_put_cli_handler`` keeps such files out of the list it verifies.
 
     A ground CCSDS capture passes on its base File Metadata row alone, so a successful
     verification does not mean its packet time span was indexed into a searchable row.

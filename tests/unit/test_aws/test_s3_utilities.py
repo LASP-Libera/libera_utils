@@ -88,7 +88,8 @@ class TestManualIngestPut:
             (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
             # Version-partitioned data product
             (["LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"], 1),
-            # External ancillary products, under their upstream names (ERA5 under the SDC's scheme)
+            # External ancillary products, under their upstream names (ERA5 under the SDC's scheme), and the
+            # version archives of IGBP and the land/ocean mask
             (
                 [
                     "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc",
@@ -99,8 +100,8 @@ class TestManualIngestPut:
                     "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
                     "ICDBG_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
                     "NISE_AMSR2_20260610.HDFEOS",
-                    "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin",
-                    "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+                    "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip",
+                    "MODIS-IGBP_2025_R20261020T120000000000.zip",
                     "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
                     "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
                 ],
@@ -360,8 +361,8 @@ class TestManualIngestPut:
     ):
         """With --verify, non-daily ancillary files are staged, the rest verified, then the handler raises."""
         daily = filenaming.ModisViirsDailyFilename("AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc")
-        mask = filenaming.NsidcLandOceanMaskFilename("EASE2_M36km.LOCImask_land50_coast0km.964x406.bin")
-        igbp = filenaming.ModisIgbpFilename("MCD12Q1.A2024001.h21v07.061.2025205222320.hdf")
+        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip")
+        igbp = filenaming.AncillaryVersionArchiveFilename("MODIS-IGBP_2025_R20261020T120000000000.zip")
         mock_manual_ingest.return_value = [mask, daily, igbp]
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
@@ -386,7 +387,7 @@ class TestManualIngestPut:
         self, mock_get_session, mock_manual_ingest, mock_verify
     ):
         """With --verify and only non-daily files, nothing is verified and the handler raises after staging."""
-        mask = filenaming.NsidcLandOceanMaskFilename("EASE2_M36km.LOCImask_land50_coast0km.964x406.bin")
+        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip")
         mock_manual_ingest.return_value = [mask]
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
@@ -410,7 +411,7 @@ class TestVerifyIngestion:
     L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
     GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_13_53_06"
     ANCILLARY_DAILY_FILE = "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc"
-    ANCILLARY_NON_DAILY_FILE = "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin"
+    ANCILLARY_NON_DAILY_FILE = "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip"
 
     @staticmethod
     def _seed_archive_object(session, libera_filename):
@@ -581,7 +582,9 @@ class TestVerifyIngestion:
     @pytest.mark.parametrize(
         "filename",
         [
-            pytest.param(filenaming.NsidcLandOceanMaskFilename(ANCILLARY_NON_DAILY_FILE), id="non-daily-ancillary"),
+            pytest.param(
+                filenaming.AncillaryVersionArchiveFilename(ANCILLARY_NON_DAILY_FILE), id="non-daily-ancillary"
+            ),
             pytest.param(
                 filenaming.ManifestFilename("LIBERA_INPUT_MANIFEST_0123456789ABCDEFGHJKMNPQRS.json"), id="manifest"
             ),

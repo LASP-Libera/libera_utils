@@ -343,9 +343,9 @@ ancillary product file (manifests and other filename types are rejected).
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
 record and (for Libera and daily external ancillary data products) a Data Availability record. A non-daily
-ancillary product (the land/ocean mask, IGBP) has no applicable date and cannot be verified yet: it is staged with
-the other files, which are verified, and the command then exits with an error naming it. Verification needs only
-read permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully
+ancillary file (the version archive of IGBP or the land/ocean mask) has no applicable date and cannot be verified yet:
+it is staged with the other files, which are verified, and the command then exits with an error naming it.
+Verification needs only read permissions. Use `--timeout` to control how long to wait (default 300 seconds); if any file is not fully
 ingested by then the command logs a per-file summary and exits with an error.
 
 % TODO[LIBSDC-880]: once --verify verifies version-partitioned data product files, remove the paragraph below and the

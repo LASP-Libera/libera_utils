@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ModisIgbpFilename`, `ViirsSdrFilename`, `NsidcNiseFilename`, `NsidcLandOceanMaskFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and covered UTC range. Daily products archive under `<ProductID>/YYYY/MM/DD`, the land/ocean mask under `<ProductID>/<version>` and IGBP under `<ProductID>/<collection>`. (#107)
-- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the land/ocean mask and IGBP files it staged but cannot verify. (#107)
+- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and covered UTC range, and archives under `<ProductID>/YYYY/MM/DD`. (#107)
+- `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<revision>.zip`, archived under `<ProductID>/<version>`. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), and gives `None` for any other file. (#107)
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the version archives it staged but cannot verify. (#107)
 
 ### Changed
 
