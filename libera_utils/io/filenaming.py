@@ -650,10 +650,18 @@ def _parse_doy_datetime(year: int, doy: int, hour: int = 0, minute: int = 0, sec
     return _ensure_utc_timezone(instant)
 
 
-def _utc_day_span(day: date) -> tuple[datetime, datetime]:
-    """The UTC range a daily file covers: midnight starting ``day`` to midnight starting the next day."""
-    utc_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
-    return utc_start, utc_start + timedelta(days=1)
+def _parse_sdr_time_of_day(hhmmss_tenths: str) -> timedelta:
+    """Convert a JPSS IDPS ``HHMMSSs`` time field (tenths of a second) to an offset from midnight.
+
+    Raises
+    ------
+    ValueError
+        If the hour, minute or second is out of range.
+    """
+    clock = datetime.strptime(hhmmss_tenths[:6], "%H%M%S")
+    return timedelta(
+        hours=clock.hour, minutes=clock.minute, seconds=clock.second, milliseconds=100 * int(hhmmss_tenths[6])
+    )
 
 
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
@@ -1636,7 +1644,10 @@ class ModisViirsDailyFilename(DailyAncillaryDataProductFilename):
                 f"{parts.short_name} is a yearly product with no applicable date, named by ModisIgbpFilename"
             )
         parts.applicable_date = parts.acquisition_date
-        parts.utc_start, parts.utc_end = _utc_day_span(parts.applicable_date)
+        parts.utc_start = datetime(
+            parts.applicable_date.year, parts.applicable_date.month, parts.applicable_date.day, tzinfo=UTC
+        )
+        parts.utc_end = parts.utc_start + timedelta(days=1)
         return parts
 
 
@@ -1792,8 +1803,9 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
         ValueError
             If the date is not a real date.
         """
-        applicable_date = datetime.strptime(d["date"], "%Y%m%d").date()
-        utc_start, utc_end = _utc_day_span(applicable_date)
+        utc_start = datetime.strptime(d["date"], "%Y%m%d").replace(tzinfo=UTC)
+        applicable_date = utc_start.date()
+        utc_end = utc_start + timedelta(days=1)
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
             # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
@@ -2046,20 +2058,6 @@ class Era5Filename(DailyAncillaryDataProductFilename):
         parts.data_product_id = DataProductIdentifier(parts.product_name)
         parts.applicable_date = parts.utc_start.date()
         return parts
-
-
-def _parse_sdr_time_of_day(hhmmss_tenths: str) -> timedelta:
-    """Convert a JPSS IDPS ``HHMMSSs`` time field (tenths of a second) to an offset from midnight.
-
-    Raises
-    ------
-    ValueError
-        If the hour, minute or second is out of range.
-    """
-    clock = datetime.strptime(hhmmss_tenths[:6], "%H%M%S")
-    return timedelta(
-        hours=clock.hour, minutes=clock.minute, seconds=clock.second, milliseconds=100 * int(hhmmss_tenths[6])
-    )
 
 
 def check_version_number_format(version: str) -> bool:
