@@ -200,18 +200,17 @@ class TestERA5PressureLevelReaderErrors:
 
 
 class TestERA5PressureLevelReaderRealSubset:
-    """A real 37-level ERA5 pressure-level download cut to 50N..40N, 110W..100W at 2025-01-01T00.
+    """A real 37-level ERA5 pressure-level download cut to 50N..40N, 110W..100W at 2026-06-11T00.
 
-    Unlike the single-level download, this one already stores longitude -180..180, so
-    the window is served without a longitude shift. Pinned values are the source
-    granule's own at 45N, 105W, 500 hPa.
+    The download stores longitude 0..359.75, so serving it runs the normalization to
+    -180..180. Pinned values are the source granule's own at 45N, 105W, 500 hPa.
     """
 
-    _TIME = np.datetime64("2025-01-01T00:00:00", "ns")
+    _TIME = np.datetime64("2026-06-11T00:00:00", "ns")
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5PressureLevelReader([fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc"])
+        return ERA5PressureLevelReader([fmatch_real_data_path / "era5_pressure_levels_20260611T00_subset.nc"])
 
     def test_every_level_of_the_window_is_served(self, reader):
         """``ERA5PressureLevelReader._load_step`` serves every configured level of a real 37-level download.
@@ -219,7 +218,7 @@ class TestERA5PressureLevelReaderRealSubset:
         The reader must accept a CDS download as distributed and produce a plane for each (variable, level) pair, with
         no gaps.
 
-        Loads the one step of a real 41 x 41 subset already on -180..180 longitudes and asserts the axes span 40 to 50 N
+        Loads the one step of a real 41 x 41 subset stored on 250..260 degrees east and asserts the axes span 40 to 50 N
         and -110 to -100, one plane per spec, and every value finite.
         """
         grid = reader._load_step(0)
@@ -240,16 +239,16 @@ class TestERA5PressureLevelReaderRealSubset:
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
         names = [v.name for v in ERA5PressureLevelReader.VARIABLES]
         values = sample_at(samples, 45.0, -105.0)
-        assert values[names.index("Temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
-        assert values[names.index("Geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)
+        assert values[names.index("Temperature_500hPa")] == pytest.approx(253.9694, abs=1e-3)
+        assert values[names.index("Geopotential_500hPa")] == pytest.approx(54930.94, abs=0.1)
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``ERA5PressureLevelReader.granule_span`` dates the real granule from its first and last time step: the one step ``20250101T00`` in its name.
+        """``ERA5PressureLevelReader.granule_span`` dates the real granule from its first and last time step: the one step ``20260611T00`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = ERA5PressureLevelReader.granule_span(fmatch_real_ancillary_granules["ERA5_Pressure"])
-        assert start == np.datetime64("2025-01-01T00:00:00", "ns")
-        assert end == np.datetime64("2025-01-01T00:00:00", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T00:00:00", "ns")

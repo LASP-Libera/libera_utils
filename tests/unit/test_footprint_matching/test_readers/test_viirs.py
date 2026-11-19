@@ -170,7 +170,7 @@ class TestVIIRSCldpropD3ReaderTranspose:
 
 
 class TestVIIRSCldpropD3ReaderRealSubset:
-    """The full 1 degree grid of a real CLDPROP_D3_VIIRS_NOAA20 granule (2026-05-27).
+    """The full 1 degree grid of a real CLDPROP_D3_VIIRS_NOAA20 granule (2026-06-11).
 
     Only the coordinates and the two Mean fields the reader reads are kept, stored as
     in the product with dimensions (longitude, latitude). Pinned values are the source
@@ -180,7 +180,7 @@ class TestVIIRSCldpropD3ReaderRealSubset:
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
         return VIIRSCldpropD3Reader(
-            [fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc"]
+            [fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026162.011.2026166000752_subset.nc"]
         )
 
     def test_grid_is_transposed_to_latitude_by_longitude(self, reader):
@@ -203,13 +203,13 @@ class TestVIIRSCldpropD3ReaderRealSubset:
         Cells with no retrieval carry -9999 in the product; any left as numbers would be averaged into footprints as
         cloud values.
 
-        Loads the real subset granule and asserts the NaN counts equal the granule's fill counts: 16035 for optical
-        thickness and 885 for top pressure.
+        Loads the real subset granule and asserts the NaN counts equal the granule's fill counts: 16415 for optical
+        thickness and 784 for top pressure.
         """
         cot, ctp = reader._load_native().data
-        # -9999 fill: 16 035 of the 64 800 cells have no optical thickness, 885 no top pressure.
-        assert np.isnan(cot).sum() == 16035
-        assert np.isnan(ctp).sum() == 885
+        # -9999 fill: 16 415 of the 64 800 cells have no optical thickness, 784 no top pressure.
+        assert np.isnan(cot).sum() == 16415
+        assert np.isnan(ctp).sum() == 784
 
     def test_values_at_cells_are_the_granules(self, reader):
         """``VIIRSCldpropD3Reader.samples_in`` serves a real granule's values at the cell they belong to.
@@ -217,39 +217,31 @@ class TestVIIRSCldpropD3ReaderRealSubset:
         A misplaced or rescaled value would attach another location's cloud properties to a footprint.
 
         Queries two 1 degree boxes and asserts the cell at (-29.5, 120.5) holds the granule's optical thickness and top
-        pressure, and the cell at (30.5, 20.5) has NaN optical thickness and the granule's top pressure.
+        pressure, and the cell at (31.5, 20.5) has NaN optical thickness and the granule's top pressure.
         """
         samples = reader.samples_in(BoundingBox(-30.0, -29.0, 120.0, 121.0), _T)
         cot, ctp = sample_at(samples, -29.5, 120.5)
-        assert cot == pytest.approx(9.74419, abs=1e-4)
-        assert ctp == pytest.approx(332.3532, abs=1e-3)
-        samples = reader.samples_in(BoundingBox(30.0, 31.0, 20.0, 21.0), _T)
-        cot, ctp = sample_at(samples, 30.5, 20.5)
+        assert cot == pytest.approx(18.62109, abs=1e-4)
+        assert ctp == pytest.approx(250.3701, abs=1e-3)
+        samples = reader.samples_in(BoundingBox(31.0, 32.0, 20.0, 21.0), _T)
+        cot, ctp = sample_at(samples, 31.5, 20.5)
         assert np.isnan(cot)
-        assert ctp == pytest.approx(849.7842, abs=1e-3)
+        assert ctp == pytest.approx(959.4000, abs=1e-3)
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``VIIRSCldpropD3Reader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the day ``A2026147`` in its name.
+        """``VIIRSCldpropD3Reader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the day ``A2026162`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = VIIRSCldpropD3Reader.granule_span(fmatch_real_ancillary_granules["VIIRS_CLDPROP_D3"])
-        assert start == np.datetime64("2026-05-27T00:00:00", "ns")
-        assert end == np.datetime64("2026-05-27T23:59:59", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T23:59:59", "ns")
 
 
 class TestVIIRSCldpropD3GranuleSpan:
     """``VIIRSCldpropD3Reader.granule_span`` dates a granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes."""
-
-    def test_span_is_the_coverage_date(self, viirs_cldprop_d3_file_factory):
-        path = viirs_cldprop_d3_file_factory(coverage_date="2026-06-11")
-
-        start, end = VIIRSCldpropD3Reader.granule_span(path)
-
-        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-11T23:59:59", "ns")
 
     def test_granule_without_a_date_raises(self, viirs_cldprop_d3_file_factory):
         """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""

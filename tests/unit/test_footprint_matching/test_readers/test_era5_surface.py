@@ -284,17 +284,17 @@ class TestERA5ReaderTimeSteps:
 
 
 class TestERA5ReaderRealSubset:
-    """A real ERA5 single-level download cut to 50N..40N, 110W..100W at 2025-01-01T00.
+    """A real ERA5 single-level download cut to 50N..40N, 110W..100W at 2026-06-11T00.
 
     The download stores longitude 0..359.75, so serving it runs the normalization to
     -180..180. Pinned values are the source granule's own at 45N, 105W.
     """
 
-    _TIME = np.datetime64("2025-01-01T00:00:00", "ns")
+    _TIME = np.datetime64("2026-06-11T00:00:00", "ns")
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5SurfaceReader([fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc"])
+        return ERA5SurfaceReader([fmatch_real_data_path / "era5_single_levels_20260611T00_subset.nc"])
 
     def test_window_is_served_on_normalized_longitudes(self, reader):
         """``ERA5SurfaceReader._load_step`` serves a real 0..360 CDS download on -180..180 longitudes.
@@ -320,20 +320,20 @@ class TestERA5ReaderRealSubset:
         """
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
         values = dict(zip([v.name for v in ERA5SurfaceReader.VARIABLES], sample_at(samples, 45.0, -105.0), strict=True))
-        assert values["Temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
-        assert values["Surface_Pressure"] == pytest.approx(88917.95, abs=0.1)
-        assert values["Wind_U10"] == pytest.approx(1.84288, abs=1e-4)
+        assert values["Temperature_2m"] == pytest.approx(290.7137, abs=1e-3)
+        assert values["Surface_Pressure"] == pytest.approx(87598.71, abs=0.1)
+        assert values["Wind_U10"] == pytest.approx(6.15288, abs=1e-4)
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``ERA5SurfaceReader.granule_span`` dates the real granule from its first and last time step: the one step ``20250101T00`` in its name.
+        """``ERA5SurfaceReader.granule_span`` dates the real granule from its first and last time step: the one step ``20260611T00`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = ERA5SurfaceReader.granule_span(fmatch_real_ancillary_granules["ERA5_Surface"])
-        assert start == np.datetime64("2025-01-01T00:00:00", "ns")
-        assert end == np.datetime64("2025-01-01T00:00:00", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T00:00:00", "ns")
 
     @pytest.mark.parametrize(
         "times",

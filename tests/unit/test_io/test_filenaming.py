@@ -1278,39 +1278,39 @@ ANCILLARY_SAMPLES = [
         id="cldpix",
     ),
     pytest.param(
-        "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_subset.nc",
+        "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_103103.2026061100_subset.nc",
         filenaming.CeresFilename,
         DataProductIdentifier.anc_ceres_noaa20_ssf,
         "Edition1C",
-        dt.date(2023, 1, 1),
-        "CERES-NOAA20-SSF/2023/01/01",
+        dt.date(2026, 6, 11),
+        "CERES-NOAA20-SSF/2026/06/11",
         id="ssf",
     ),
     pytest.param(
-        "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
+        "AERDB_D3_VIIRS_NOAA20.A2026162.021.2026166001045_subset.nc",
         filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_aod,
         "021",
-        dt.date(2026, 9, 27),
-        "VIIRS-NOAA20-AOD/2026/09/27",
+        dt.date(2026, 6, 11),
+        "VIIRS-NOAA20-AOD/2026/06/11",
         id="aod",
     ),
     pytest.param(
-        "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc",
+        "CLDPROP_D3_VIIRS_NOAA20.A2026162.011.2026166000752_subset.nc",
         filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_cloud_properties,
         "011",
-        dt.date(2026, 5, 27),
-        "VIIRS-NOAA20-CLOUD-PROPERTIES/2026/05/27",
+        dt.date(2026, 6, 11),
+        "VIIRS-NOAA20-CLOUD-PROPERTIES/2026/06/11",
         id="cloud-properties",
     ),
     pytest.param(
-        "VJ143C1.A2026153.002.2026161161054_subset.h5",
+        "VJ143C1.A2026162.002.2026175014229_subset.h5",
         filenaming.ModisViirsDailyFilename,
         DataProductIdentifier.anc_viirs_noaa20_brdf,
         "002",
-        dt.date(2026, 6, 2),
-        "VIIRS-NOAA20-BRDF/2026/06/02",
+        dt.date(2026, 6, 11),
+        "VIIRS-NOAA20-BRDF/2026/06/11",
         id="brdf",
     ),
     pytest.param(
@@ -1332,12 +1332,12 @@ ANCILLARY_SAMPLES = [
         id="sdr-geolocation",
     ),
     pytest.param(
-        "NISE_AMSR2_20260610_subset.HDFEOS",
+        "NISE_AMSR2_20260611_subset.HDFEOS",
         filenaming.NsidcNiseFilename,
         DataProductIdentifier.anc_nsidc_ice_snow,
         "1",
-        dt.date(2026, 6, 10),
-        "NSIDC-ICE-SNOW/2026/06/10",
+        dt.date(2026, 6, 11),
+        "NSIDC-ICE-SNOW/2026/06/11",
         id="nise",
     ),
 ]
@@ -1395,8 +1395,8 @@ def test_ancillary_sample_upstream_names_parse(
 @pytest.mark.parametrize(
     ("sample", "product"),
     [
-        ("era5_single_levels_20250101T00_subset.nc", DataProductIdentifier.anc_era5_single_level),
-        ("era5_pressure_levels_20250101T00_subset.nc", DataProductIdentifier.anc_era5_pressure_level),
+        ("era5_single_levels_20260611T00_subset.nc", DataProductIdentifier.anc_era5_single_level),
+        ("era5_pressure_levels_20260611T00_subset.nc", DataProductIdentifier.anc_era5_pressure_level),
     ],
 )
 def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, product):
@@ -1413,15 +1413,15 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
         product_name=product, version="ERA5", utc_start=utc_start, utc_end=utc_end, revision=revision
     )
 
-    assert fn.path.name == f"ECMWF_{product}_ERA5_20250101T000000_20250101T000000_R20260812T161100000000.nc"
+    assert fn.path.name == f"ECMWF_{product}_ERA5_20260611T000000_20260611T000000_R20260812T161100000000.nc"
     assert _accepting_classes(fn.path.name) == [filenaming.Era5Filename]
     parsed = filenaming.AbstractValidFilename.from_file_path(fn.path.name)
     assert parsed.data_product_id is product
     assert parsed.filename_parts.version == "ERA5"
     assert parsed.filename_parts.utc_start == utc_start.replace(tzinfo=dt.UTC)
     assert parsed.filename_parts.revision == revision
-    assert parsed.applicable_date == dt.date(2025, 1, 1)
-    assert parsed.archive_prefix == f"{product}/2025/01/01"
+    assert parsed.applicable_date == dt.date(2026, 6, 11)
+    assert parsed.archive_prefix == f"{product}/2026/06/11"
 
 
 @pytest.mark.parametrize(
@@ -1727,8 +1727,8 @@ def test_version_archive_covers_every_version_partitioned_ancillary_product():
 # product and version.
 ARCHIVE_MEMBER_SAMPLES = [
     pytest.param(
-        "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
-        "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
+        "MCD12Q1.A2025001.h21v07.061.2026293135651_subset.hdf",
+        "MODIS-IGBP_061_20261020_R20261020T120000000000.zip",
         filenaming.ModisIgbpFilename,
         DataProductIdentifier.anc_modis_igbp,
         "061",

@@ -594,8 +594,8 @@ _WINDOWED_READERS = [
 class TestCheckAncillaryGranuleDates:
     """A granule dated more than its reader's window from the input's footprint times is rejected before aggregation.
 
-    The real NISE granule covers 2026-06-10 (00:00 to 00:00 the next day), so footprints on 2026-06-11 see it as the
-    previous day's granule and footprints on 2026-06-12 as two days old.
+    The real NISE granule covers 2026-06-11 (00:00 to 00:00 the next day), so footprints on 2026-06-12 see it as the
+    previous day's granule and footprints on 2026-06-13 as two days old.
     """
 
     @pytest.fixture
@@ -613,18 +613,18 @@ class TestCheckAncillaryGranuleDates:
         start, end = ReaderRegistry.get(reader_key).granule_span(path)
         check_ancillary_granule_dates({reader_key: [path]}, np.array([start + (end - start) // 2]))
 
-    @pytest.mark.parametrize("date", ["2026-06-09", "2026-06-10", "2026-06-11"])
+    @pytest.mark.parametrize("date", ["2026-06-10", "2026-06-11", "2026-06-12"])
     def test_same_and_adjacent_day_granules_pass(self, nise, date):
-        """The NISE granule of 2026-06-10 is accepted for footprints on the day before, the day itself and the day
+        """The NISE granule of 2026-06-11 is accepted for footprints on the day before, the day itself and the day
         after, which the one-day window accepts."""
         check_ancillary_granule_dates(nise, self._day(date))
 
-    @pytest.mark.parametrize("date", ["2026-06-08", "2026-06-12"])
+    @pytest.mark.parametrize("date", ["2026-06-09", "2026-06-13"])
     def test_granule_two_days_away_raises(self, nise, fmatch_real_ancillary_granules, date):
         with pytest.raises(FmatchInputError, match="outside their reader's window") as excinfo:
             check_ancillary_granule_dates(nise, self._day(date))
         message = str(excinfo.value)
-        assert f"NISE: {fmatch_real_ancillary_granules['NISE'].name} covers 2026-06-10T00:00:00Z" in message
+        assert f"NISE: {fmatch_real_ancillary_granules['NISE'].name} covers 2026-06-11T00:00:00Z" in message
         assert f"footprint times, {date}T03:00:00Z to {date}T21:00:00Z" in message
 
     @pytest.mark.parametrize("reader_key", _WINDOWED_READERS)
@@ -655,20 +655,21 @@ class TestCheckAncillaryGranuleDates:
         check_ancillary_granule_dates({reader_key: [path]}, np.array([edge + _hours(offset_hours)]))
 
     def test_message_names_every_granule_outside_its_window(self, fmatch_real_ancillary_granules):
-        granules = {key: [fmatch_real_ancillary_granules[key]] for key in ("NISE", "VIIRS_BRDF", "VIIRS_AOD")}
+        granules = {key: [fmatch_real_ancillary_granules[key]] for key in ("NISE", "CERES_SSF", "ERA5_Surface")}
 
-        # The NISE granule (2026-06-10) is within a day; VIIRS_BRDF (2026-06-02) and VIIRS_AOD (2026-09-27) are not.
+        # For footprints from 03:00 to 21:00 on 2026-06-12, the NISE granule (to 2026-06-12T00:00) is within a day;
+        # CERES_SSF (2026-06-11, 00 UTC hour) and ERA5_Surface (2026-06-11T00:00) are not.
         with pytest.raises(FmatchInputError, match="^2 ancillary granule") as excinfo:
-            check_ancillary_granule_dates(granules, self._day("2026-06-11"))
+            check_ancillary_granule_dates(granules, self._day("2026-06-12"))
         message = str(excinfo.value)
-        assert f"VIIRS_BRDF: {fmatch_real_ancillary_granules['VIIRS_BRDF'].name}" in message
-        assert f"VIIRS_AOD: {fmatch_real_ancillary_granules['VIIRS_AOD'].name}" in message
+        assert f"CERES_SSF: {fmatch_real_ancillary_granules['CERES_SSF'].name}" in message
+        assert f"ERA5_Surface: {fmatch_real_ancillary_granules['ERA5_Surface'].name}" in message
         assert "NISE:" not in message
         assert "List in the input manifest's files granules" in message
 
     @pytest.mark.parametrize("date", ["2010-01-01", "2026-06-11", "2040-12-31"])
     def test_igbp_granule_of_any_year_passes(self, fmatch_real_ancillary_granules, date):
-        """IGBP's annual map (here 2024) is applied to later dates, so its date is never checked."""
+        """IGBP's annual map (here 2025) is applied to later dates, so its date is never checked."""
         check_ancillary_granule_dates({"IGBP": [fmatch_real_ancillary_granules["IGBP"]]}, self._day(date))
 
     def test_reader_without_a_window_is_not_read(self, tmp_path):
@@ -691,14 +692,14 @@ class TestCheckAncillaryGranuleDates:
         """
         check_ancillary_granule_dates(nise, footprint_time)
         with pytest.raises(FmatchInputError, match="outside their reader's window"):
-            check_ancillary_granule_dates(nise, np.concatenate([footprint_time, self._day("2026-06-12")]))
+            check_ancillary_granule_dates(nise, np.concatenate([footprint_time, self._day("2026-06-13")]))
 
     def test_nat_footprint_times_are_ignored(self, nise):
         times = np.concatenate([self._day("2026-06-11"), np.array(["NaT"], dtype="datetime64[ns]")])
         check_ancillary_granule_dates(nise, times)
 
         with pytest.raises(FmatchInputError, match="NISE"):
-            check_ancillary_granule_dates(nise, np.concatenate([self._day("2026-06-12"), times[-1:]]))
+            check_ancillary_granule_dates(nise, np.concatenate([self._day("2026-06-13"), times[-1:]]))
 
     def test_unreadable_granule_metadata_raises(self, tmp_path):
         granule = tmp_path / "AERDB_D3_no_coverage.nc"

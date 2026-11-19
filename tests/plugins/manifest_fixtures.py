@@ -15,27 +15,28 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest
 from libera_utils.io.smart_open import smart_copy_file
+from tests.plugins.footprint_matching_fixtures import L1B_DAY, write_cldpix_on_day
 
 # The name a granule of each FMATCH reader's product is staged under for a run: a name in the product's ingested form,
-# which the runner selects the granule by. The test data's upstream names carry a "_subset" suffix and its ERA5 files are not
-# in the SDC's ERA5 form, so neither parses. IGBP is staged as its version archive, holding the tile under
-# FMATCH_STAGED_IGBP_TILE_NAME.
+# which the runner selects the granule by. The test data's upstream names carry a "_subset" suffix and its ERA5 files are
+# not in the SDC's ERA5 form, so neither parses. CLDPIX is named for L1B_DAY, onto which it is dated, and IGBP is staged
+# as its version archive, holding the tile under FMATCH_STAGED_IGBP_TILE_NAME.
 FMATCH_STAGED_GRANULE_NAMES: dict[DataProductIdentifier, str] = {
-    DataProductIdentifier.anc_ceres_noaa20_cldpix: "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc",
+    DataProductIdentifier.anc_ceres_noaa20_cldpix: "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2026061115.nc",
     DataProductIdentifier.anc_era5_pressure_level: (
-        "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20250101T000000_20250101T000000_R20251028T120000000000.nc"
+        "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20260611T000000_20260611T000000_R20260812T161100000000.nc"
     ),
     DataProductIdentifier.anc_era5_single_level: (
-        "ECMWF_ERA5-SINGLE-LEVEL_ERA5_20250101T000000_20250101T000000_R20251028T120000000000.nc"
+        "ECMWF_ERA5-SINGLE-LEVEL_ERA5_20260611T000000_20260611T000000_R20260812T161100000000.nc"
     ),
-    DataProductIdentifier.anc_ceres_noaa20_ssf: "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc",
-    DataProductIdentifier.anc_modis_igbp: "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
-    DataProductIdentifier.anc_nsidc_ice_snow: "NISE_AMSR2_20260610.HDFEOS",
-    DataProductIdentifier.anc_viirs_noaa20_aod: "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
-    DataProductIdentifier.anc_viirs_noaa20_brdf: "VJ143C1.A2026153.002.2026161161054.h5",
-    DataProductIdentifier.anc_viirs_noaa20_cloud_properties: "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc",
+    DataProductIdentifier.anc_ceres_noaa20_ssf: "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_103103.2026061100.nc",
+    DataProductIdentifier.anc_modis_igbp: "MODIS-IGBP_061_20261020_R20261020T120000000000.zip",
+    DataProductIdentifier.anc_nsidc_ice_snow: "NISE_AMSR2_20260611.HDFEOS",
+    DataProductIdentifier.anc_viirs_noaa20_aod: "AERDB_D3_VIIRS_NOAA20.A2026162.021.2026166001045.nc",
+    DataProductIdentifier.anc_viirs_noaa20_brdf: "VJ143C1.A2026162.002.2026175014229.h5",
+    DataProductIdentifier.anc_viirs_noaa20_cloud_properties: "CLDPROP_D3_VIIRS_NOAA20.A2026162.011.2026166000752.nc",
 }
-FMATCH_STAGED_IGBP_TILE_NAME = "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf"
+FMATCH_STAGED_IGBP_TILE_NAME = "MCD12Q1.A2025001.h21v07.061.2026293135651.hdf"
 
 
 @pytest.fixture
@@ -45,7 +46,9 @@ def stage_fmatch_ancillary_granules(tmp_path_factory, fmatch_real_ancillary_gran
     The returned function takes the directory to stage in (local or S3), the mode, and a keyword-only ``empty``. For
     the product of each active reader it writes one granule, the reader's real sample or an empty file when ``empty``
     is true, under the product's name in ``FMATCH_STAGED_GRANULE_NAMES``; IGBP's is a version archive holding the
-    tile. It returns the staged path by product.
+    tile, and the real CLDPIX sample is dated onto ``L1B_DAY`` with ``write_cldpix_on_day``. Every real granule then
+    covers the synthetic L1B input's day, so a run on it passes the granule date check. It returns the staged path by
+    product.
     """
 
     def _stage(
@@ -59,13 +62,17 @@ def stage_fmatch_ancillary_granules(tmp_path_factory, fmatch_real_ancillary_gran
             product_id = ReaderRegistry.get(reader_key).PRODUCT_ID
             if product_id in staged:
                 continue
-            data = b"" if empty else fmatch_real_ancillary_granules[reader_key].read_bytes()
+            source = None if empty else fmatch_real_ancillary_granules[reader_key]
             built = build_dir / FMATCH_STAGED_GRANULE_NAMES[product_id]
             if product_id is DataProductIdentifier.anc_modis_igbp:
                 with zipfile.ZipFile(built, "w") as archive:
-                    archive.writestr(FMATCH_STAGED_IGBP_TILE_NAME, data)
+                    archive.writestr(FMATCH_STAGED_IGBP_TILE_NAME, b"" if source is None else source.read_bytes())
+            elif source is None:
+                built.touch()
+            elif product_id is DataProductIdentifier.anc_ceres_noaa20_cldpix:
+                write_cldpix_on_day(source, built, L1B_DAY)
             else:
-                built.write_bytes(data)
+                built.write_bytes(source.read_bytes())
             staged[product_id] = smart_copy_file(built, directory / built.name)
         return staged
 

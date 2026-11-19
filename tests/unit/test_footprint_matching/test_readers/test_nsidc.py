@@ -364,7 +364,7 @@ class TestNISEReaderBothHemispheres:
 
 
 class TestNISEReaderRealSubset:
-    """A real NISE_A2 (AMSR-2) granule for 2026-06-10, with both full hemisphere grids.
+    """A real NISE_A2 (AMSR-2) granule for 2026-06-11, with both full hemisphere grids.
 
     The reader fixes the 721 x 721 EASE-Grid geometry, so the grids are not cut; only
     the ``Age`` fields are dropped. Northern ``Extent`` stays the first SDS and Southern
@@ -372,11 +372,11 @@ class TestNISEReaderRealSubset:
     Pinned values are the source granule's own.
     """
 
-    _TIME = np.datetime64("2026-06-10T00:00:00", "ns")
+    _TIME = np.datetime64("2026-06-11T00:00:00", "ns")
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return NISEReader([fmatch_real_data_path / "NISE_AMSR2_20260610_subset.HDFEOS"])
+        return NISEReader([fmatch_real_data_path / "NISE_AMSR2_20260611_subset.HDFEOS"])
 
     def test_reads_both_extent_sds_by_hemisphere(self, reader):
         """On the real granule, ``_read_extent_sds`` returns a different 721 x 721 grid for each hemisphere label.
@@ -427,17 +427,16 @@ class TestNISEReaderRealSubset:
         This ties the code-to-layer split and the reprojection together on real data: a wrong mapping or misplaced grid
         would put the wrong class at a recognizable location.
 
-        Boxes at the South Pole, 85 degrees north on the prime meridian and near Boulder, Colorado must return permanent
-        ice, 0.93 sea ice concentration and snow-free land respectively; the expected values are the source granule's
-        own.
+        Boxes at the South Pole, 85 degrees north on the prime meridian and in central Kansas must return permanent ice,
+        0.96 sea ice concentration and snow-free land respectively; the expected values are the source granule's own.
         """
         layer = {name: _layer_index(name) for name in _EXPECTED_VARIABLES}
         south_pole = reader.samples_in(BoundingBox(-90.0, -89.5, -180.0, 180.0), self._TIME).values
         assert np.all(south_pole[layer["Permanent_Ice"]] == 1.0)
         arctic = reader.samples_in(BoundingBox(84.9, 85.1, -0.3, 0.3), self._TIME).values
-        assert np.allclose(arctic[layer["Sea_Ice_Concentration"]], 0.93)
-        boulder = reader.samples_in(BoundingBox(39.9, 40.1, -105.3, -104.7), self._TIME).values
-        assert np.all(boulder[layer["Snow_Free_Land"]] == 1.0)
+        assert np.allclose(arctic[layer["Sea_Ice_Concentration"]], 0.96)
+        kansas = reader.samples_in(BoundingBox(38.4, 38.6, -98.8, -98.2), self._TIME).values
+        assert np.all(kansas[layer["Snow_Free_Land"]] == 1.0)
 
     def test_suspect_ice_at_the_north_pole_is_missing_in_every_layer(self, reader):
         """On the real granule, the North Pole pixels are served, but as NaN in every layer.
@@ -453,31 +452,19 @@ class TestNISEReaderRealSubset:
         assert np.isnan(north_pole).all()
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``NISEReader.granule_span`` dates the real granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``: the day ``20260610`` in its name.
+        """``NISEReader.granule_span`` dates the real granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``: the day ``20260611`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = NISEReader.granule_span(fmatch_real_ancillary_granules["NISE"])
-        assert start == np.datetime64("2026-06-10T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
 
 
 class TestNISEGranuleSpan:
     """``NISEReader.granule_span`` dates a granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``."""
-
-    def test_span_is_the_coverage_date(self, nise_file_factory):
-        path = nise_file_factory(
-            north=np.full((2, 2), 255, dtype=np.uint8),
-            south=np.full((2, 2), 255, dtype=np.uint8),
-            coverage_date="2026-06-11",
-        )
-
-        start, end = NISEReader.granule_span(path)
-
-        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
 
     def test_granule_without_a_date_raises(self, nise_file_factory):
         """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
