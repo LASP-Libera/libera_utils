@@ -9,23 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (processing steps `aux-scene-id-imager` / `aux-scene-id-imager-camtime`), with product definitions and `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. Both run the TRMM classification as well as ERBE and unfiltering.
-- `libera_utils.io.manifest.resolve_processing_step_id`, which FMATCH and SCENE-ID both use to take a run's processing step from the input manifest's `configuration["processing_step_id"]` or `--processing_step_id`.
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (`aux-scene-id-imager`, `aux-scene-id-imager-camtime`), with their product definitions and the `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. Both run TRMM as well as ERBE and unfiltering, and `Scene_ID_TRMM` is `uint16` for TRMM's IDs up to 650. (#93)
+- `libera_utils.io.manifest.resolve_processing_step_id`, which FMATCH and SCENE-ID share. (#93)
 
 ### Changed
 
-- **BREAKING:** FMATCH-CAM reads the CF-CAM cloud fraction from `cam_cloud_fraction`, the name the Camera Cloud Fraction algorithm writes, instead of `Cloud_Fraction`, and converts it to the percent `Cloud_Fraction_Camera` is written in from the unit the variable's `units` attribute states: a fraction (`1`) or `percent` (`CF_CAM_CLOUD_FRACTION_PERCENT_PER_UNIT`). A CF-CAM file whose `cam_cloud_fraction` states no `units`, or another unit, raises `FmatchInputError`. CF-CAM-CAMTIME is still read from `Cloud_Fraction` in percent (`CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE`).
-- **BREAKING:** SCENE-ID selects its variant as FMATCH does: from the input manifest's `configuration["processing_step_id"]`, one of the four `aux-scene-id-*` `ProcessingStepIdentifier` values, or the new `libera-utils scene-id --processing_step_id` option, so one step definition serves all four products. `LIBERA_SCENE_ID_VARIANT`, `SCENE_ID_VARIANT_ENV` and `resolve_runner_config_from_env` are removed; `RUNNER_CONFIGS` is keyed by `ProcessingStepIdentifier`, `resolve_runner_config(manifest, processing_step_id)` selects the entry, and `run_algorithm` takes the processing step in place of a config. The run raises `ProcessingStepIdMismatchError` when the manifest and the option disagree, and `ValueError` when neither names a SCENE-ID step. A SCENE-ID processing step sets `processing_step_id` in its input manifest's configuration instead of the environment variable.
-- **BREAKING:** `ProcessingStepIdMismatchError` and `PROCESSING_STEP_ID_CONFIGURATION_KEY` move from `libera_utils.footprint_matching.footprint_match_algorithm` to `libera_utils.io.manifest`.
-- **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of CERES SSF files, so its processing step must declare FMATCH-CAM as its input product. `SceneIdRunnerConfig.input_product_id` and `collect_input_files`'s `input_product_id` no longer accept `None`.
-- The SCENE-ID FMATCH readers read FMATCH variables by their product names, through `smart_open` for local or S3 paths. A footprint with a missing `IGBP_Surface_Type` is left unmatched (scene ID 0) instead of failing the granule.
-- SCENE-ID integer columns (`Surface_Type`, `IGBP_Surface_Type` and the `Scene_Bin_*_Surface_Type_Min`/`_Max` bounds) are `int8` with -1 for a missing value (`SCENE_ID_INTEGER_FILL_VALUE`), and the SCENE-ID product definitions declare no `_FillValue`.
-- `calculate_trmm_surface_type` returns float and passes NaN through.
-- **BREAKING:** The TRMM classification variables are renamed `Surface_Wind`, `Cloud_Phase` and `Optical_Depth`, and their `TRMM.csv` bounds and scene bins follow (`Surface_Wind_Min`, `Scene_Bin_TRMM_Surface_Wind_Min` and so on). A custom scene definition that bounds these variables renames its columns the same way.
+- **BREAKING:** FMATCH-CAM reads CF-CAM's `cam_cloud_fraction` instead of `Cloud_Fraction`, converting it to percent from its `units` (`1` or `percent`). (#93)
+- **BREAKING:** SCENE-ID picks its variant from `configuration["processing_step_id"]` or `--processing_step_id`, as FMATCH does. `LIBERA_SCENE_ID_VARIANT`, `SCENE_ID_VARIANT_ENV` and `resolve_runner_config_from_env` are removed, and `RUNNER_CONFIGS` is keyed by `ProcessingStepIdentifier`. (#93)
+- **BREAKING:** `ProcessingStepIdMismatchError` and `PROCESSING_STEP_ID_CONFIGURATION_KEY` move to `libera_utils.io.manifest`. (#93)
+- **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM instead of CERES SSF, so its step declares FMATCH-CAM as input, and `SceneIdRunnerConfig.input_product_id` no longer accepts `None`. (#93)
+- **BREAKING:** The TRMM variables are `Surface_Wind`, `Cloud_Phase` and `Optical_Depth`, and the `TRMM.csv` columns and scene bins follow. (#93)
+- SCENE-ID reads FMATCH variables by their product names, from local or S3 paths, and leaves a footprint with no IGBP code unmatched (scene ID 0) instead of failing the granule. (#93)
+- SCENE-ID integer columns are `int8` with -1 for missing (`SCENE_ID_INTEGER_FILL_VALUE`), and its product definitions declare no `_FillValue`. `calculate_trmm_surface_type` returns float and passes NaN through. (#93)
 
 ### Removed
 
-- **BREAKING:** `FootprintData.from_ceres_ssf`. Read a FMATCH product with one of the `FootprintData.from_fmatch_*` readers instead.
+- **BREAKING:** `FootprintData.from_ceres_ssf`; read a FMATCH product with a `FootprintData.from_fmatch_*` reader. (#93)
 
 ## [6.1.0] - 2026-11-19
 
@@ -237,13 +236,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `notebooks/04_sources_query.ipynb` also demonstrates coverage.
-- SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
-- The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
-- `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
-
-### Fixed
-
-- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.19.0] - 2026-10-30
 
