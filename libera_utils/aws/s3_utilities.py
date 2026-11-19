@@ -108,8 +108,8 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
     """
     try:
         filename = AbstractValidFilename.from_file_path(path)
-    except ValueError:
-        filename = None
+    except ValueError as err:
+        raise ValueError(f"File {path} cannot be manually ingested: {err}") from err
     if not isinstance(filename, ManualIngestFilename):
         raise ValueError(
             f"File {path} is not an L0, ground CCSDS, daily or version-partitioned Libera data product, or external "

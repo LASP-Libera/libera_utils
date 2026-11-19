@@ -100,8 +100,8 @@ class TestManualIngestPut:
                     "IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
                     "ICDBG_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5",
                     "NISE_AMSR2_20260610.HDFEOS",
-                    "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip",
-                    "MODIS-IGBP_2025_R20261020T120000000000.zip",
+                    "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip",
+                    "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
                     "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
                     "ECMWF_ERA5-PRESSURE-LEVEL_ERA5_20250101T000000_20250101T230000_R20251028T120000000000.nc",
                 ],
@@ -263,6 +263,24 @@ class TestManualIngestPut:
         assert not S3Path(f"s3://{make_ingest_dropbox_bucket}/{good_name}").exists()
         assert "entries" not in captured
 
+    def test_loose_archive_member_rejected_naming_its_archive(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """A loose IGBP tile is rejected with a message naming its version archive, and nothing is staged."""
+        tile_name = "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf"
+        Path.touch(tmp_path / tile_name)
+
+        session, captured = make_event_capturing_session()
+        with pytest.raises(
+            ValueError,
+            match="cannot be manually ingested: .* ingested only inside its version archive "
+            r"MODIS-IGBP_<version>_<production YYYYMMDD>_<revision>\.zip",
+        ):
+            s3_utilities.manual_ingest_data_products([tmp_path / tile_name], boto_session=session)
+
+        assert not S3Path(f"s3://{make_ingest_dropbox_bucket}/{tile_name}").exists()
+        assert "entries" not in captured
+
     def test_manifest_filename_rejected(self, mock_s3_context_with_profile):
         """Manifest filenames are not eligible for manual ingest and are rejected during validation."""
         # A valid INPUT manifest filename (26-character Crockford base32 ULID code).
@@ -361,8 +379,8 @@ class TestManualIngestPut:
     ):
         """With --verify, non-daily ancillary files are staged, the rest verified, then the handler raises."""
         daily = filenaming.ModisViirsDailyFilename("AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc")
-        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip")
-        igbp = filenaming.AncillaryVersionArchiveFilename("MODIS-IGBP_2025_R20261020T120000000000.zip")
+        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip")
+        igbp = filenaming.AncillaryVersionArchiveFilename("MODIS-IGBP_061_20250724_R20261020T120000000000.zip")
         mock_manual_ingest.return_value = [mask, daily, igbp]
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
@@ -387,7 +405,7 @@ class TestManualIngestPut:
         self, mock_get_session, mock_manual_ingest, mock_verify
     ):
         """With --verify and only non-daily files, nothing is verified and the handler raises after staging."""
-        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip")
+        mask = filenaming.AncillaryVersionArchiveFilename("NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip")
         mock_manual_ingest.return_value = [mask]
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
@@ -411,7 +429,7 @@ class TestVerifyIngestion:
     L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
     GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_13_53_06"
     ANCILLARY_DAILY_FILE = "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc"
-    ANCILLARY_NON_DAILY_FILE = "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip"
+    ANCILLARY_NON_DAILY_FILE = "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip"
 
     @staticmethod
     def _seed_archive_object(session, libera_filename):

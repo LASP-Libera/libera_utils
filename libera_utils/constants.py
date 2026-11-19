@@ -74,8 +74,9 @@ class PartitionScheme(StrEnum):
       files are dated by the UTC day of their ``utc_start``.
     - VERSION: each file is valid over more than one day (indefinitely until the next version update). Its filename
       carries no time range, and it is archived once under its product ID and version. Named by
-      LiberaVersionPartitionedDataProductFilename, except the external ancillary products with this scheme (the
-      land/ocean mask and IGBP), which keep their providers' names and are parsed by their own filename classes.
+      LiberaVersionPartitionedDataProductFilename, except the external ancillary products with this scheme (IGBP and
+      the land/ocean mask), named by AncillaryVersionArchiveFilename: one SDC-named zip per version, whose files keep
+      their providers' names, each archived under its version and production date.
 
     ``libera_utils.io.filenaming.PARTITION_SCHEME_FILENAME_CLASSES`` gives the filename class the writer uses for each
     scheme. A new scheme needs a member here, a filename class, an entry in that mapping, and the arguments

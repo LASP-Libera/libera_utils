@@ -1451,7 +1451,7 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
             dt.datetime(2026, 6, 11, tzinfo=dt.UTC),
             id="nise-day",
         ),
-        pytest.param("MODIS-IGBP_2025_R20261020T120000000000.zip", None, None, id="version-archive"),
+        pytest.param("MODIS-IGBP_061_20250724_R20261020T120000000000.zip", None, None, id="version-archive"),
         pytest.param(
             "ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc",
             dt.datetime(2025, 1, 1, tzinfo=dt.UTC),
@@ -1461,7 +1461,8 @@ def test_era5_name_built_from_sample_round_trips(fmatch_real_data_path, sample, 
     ],
 )
 def test_ancillary_names_give_their_coverage(name, utc_start, utc_end):
-    """Every ancillary class gives the UTC range its file covers as utc_start and utc_end, or None for all time."""
+    """Every ancillary class gives the UTC period its file is used for as utc_start and utc_end; None means the name
+    gives no coverage."""
     fn = filenaming.AbstractValidFilename.from_file_path(name)
 
     assert fn.filename_parts.utc_start == utc_start
@@ -1514,13 +1515,29 @@ def test_ancillary_names_give_their_coverage(name, utc_start, utc_end):
             {"applicable_date": dt.date(2025, 1, 1)},
             id="era5-crossing-midnight",
         ),
+        pytest.param(
+            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+            filenaming.ModisIgbpFilename,
+            {
+                "tile": "h21v07",
+                "acquisition_date": dt.date(2024, 1, 1),
+                "production_time": dt.datetime(2025, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
+            },
+            id="igbp-tile",
+        ),
+        pytest.param(
+            "EASE2_M03km.LOCImask_land50_coast0km.11568x4872.bin",
+            filenaming.NsidcLandOceanMaskFilename,
+            {"resolution_km": 3.0, "columns": 11568, "rows": 4872},
+            id="mask-3km",
+        ),
     ],
 )
 def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
-    """Real name forms the samples do not show parse to the expected parts."""
-    fn = filenaming.AbstractValidFilename.from_file_path(name)
+    """Real name forms the samples do not show are accepted by their class alone and parse to the expected parts."""
+    assert _accepting_classes(name) == [filename_class]
+    fn = filename_class(name)
 
-    assert type(fn) is filename_class
     for part, value in expected.items():
         assert getattr(fn.filename_parts, part) == value
 
@@ -1607,24 +1624,44 @@ def test_ancillary_names_beyond_the_samples(name, filename_class, expected):
             id="era5-end-before-start",
         ),
         pytest.param(
-            "CERES-NOAA20-SSF_2025_R20261020T120000000000.zip",
+            "CERES-NOAA20-SSF_061_20250724_R20261020T120000000000.zip",
             filenaming.AncillaryVersionArchiveFilename,
             id="archive-daily-product",
         ),
         pytest.param(
-            "MODIS-IGBP_061-2025_R20261020T120000000000.zip",
+            "MODIS-IGBP_061-2025_20250724_R20261020T120000000000.zip",
             filenaming.AncillaryVersionArchiveFilename,
             id="archive-version-punctuation",
         ),
         pytest.param(
-            "MODIS-IGBP_2025_R20261320T120000000000.zip",
+            "MODIS-IGBP_061_20250724_R20261320T120000000000.zip",
             filenaming.AncillaryVersionArchiveFilename,
             id="archive-revision-month-13",
         ),
         pytest.param(
-            "MODIS-IGBP_2025_R20261020T120000000000.tar.gz",
+            "MODIS-IGBP_061_20250724_R20261020T120000000000.tar.gz",
             filenaming.AncillaryVersionArchiveFilename,
             id="archive-extension",
+        ),
+        pytest.param(
+            "MODIS-IGBP_061_R20261020T120000000000.zip",
+            filenaming.AncillaryVersionArchiveFilename,
+            id="archive-no-production-date",
+        ),
+        pytest.param(
+            "NSIDC-LAND-OCEAN-MASK_1_R20261020T120000000000.zip",
+            filenaming.AncillaryVersionArchiveFilename,
+            id="archive-mask-no-production-date",
+        ),
+        pytest.param(
+            "MODIS-IGBP_061_20251324_R20261020T120000000000.zip",
+            filenaming.AncillaryVersionArchiveFilename,
+            id="archive-production-date-month-13",
+        ),
+        pytest.param(
+            "MODIS-IGBP_2025_20250724_R20261020T120000000000.zip",
+            filenaming.AncillaryVersionArchiveFilename,
+            id="archive-igbp-version-not-collection",
         ),
     ],
 )
@@ -1638,31 +1675,40 @@ def test_ancillary_malformed_names_rejected(name, filename_class):
 
 
 @pytest.mark.parametrize(
-    ("name", "product", "version"),
+    ("name", "product", "version", "production_date", "archive_prefix"),
     [
         pytest.param(
-            "MODIS-IGBP_2025_R20261020T120000000000.zip", DataProductIdentifier.anc_modis_igbp, "2025", id="igbp"
+            "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
+            DataProductIdentifier.anc_modis_igbp,
+            "061",
+            dt.date(2025, 7, 24),
+            "MODIS-IGBP/061/20250724",
+            id="igbp",
         ),
         pytest.param(
-            "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip",
+            "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip",
             DataProductIdentifier.anc_nsidc_land_ocean_mask,
-            "2000",
+            "1",
+            dt.date(2000, 1, 1),
+            "NSIDC-LAND-OCEAN-MASK/1/20000101",
             id="land-ocean-mask",
         ),
     ],
 )
-def test_version_archive_name_parses(name, product, version):
-    """A version archive's name gives its product, version, revision and archive prefix, and no coverage."""
+def test_version_archive_name_parses(name, product, version, production_date, archive_prefix):
+    """A version archive's name gives its product, version, production date, revision and archive prefix, and no
+    coverage."""
     fn = filenaming.AbstractValidFilename.from_file_path(name)
 
     assert type(fn) is filenaming.AncillaryVersionArchiveFilename
     assert _accepting_classes(name) == [filenaming.AncillaryVersionArchiveFilename]
     assert fn.data_product_id is product
     assert fn.filename_parts.version == version
+    assert fn.filename_parts.production_date == production_date
     assert fn.filename_parts.revision == dt.datetime(2026, 10, 20, 12, tzinfo=dt.UTC)
     assert fn.filename_parts.utc_start is None
     assert fn.filename_parts.utc_end is None
-    assert fn.archive_prefix == f"{product}/{version}"
+    assert fn.archive_prefix == archive_prefix
     assert not isinstance(fn, filenaming.DailyAncillaryDataProductFilename)
 
 
@@ -1675,15 +1721,14 @@ def test_version_archive_covers_every_version_partitioned_ancillary_product():
     }
 
     assert set(filenaming.ANCILLARY_ARCHIVE_MEMBER_CLASSES) == version_partitioned
-    for product in version_partitioned:
-        archive = filenaming.AncillaryVersionArchiveFilename(f"{product}_1_R20261020T120000000000.zip")
-        assert archive.member_filename_class is filenaming.ANCILLARY_ARCHIVE_MEMBER_CLASSES[product]
 
 
-# Each archive member sample in tests/test_data/footprint_matching, with its member class, product and version.
+# Each archive member sample in tests/test_data/footprint_matching, with the archive that holds it, its member class,
+# product and version.
 ARCHIVE_MEMBER_SAMPLES = [
     pytest.param(
         "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
+        "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
         filenaming.ModisIgbpFilename,
         DataProductIdentifier.anc_modis_igbp,
         "061",
@@ -1691,6 +1736,7 @@ ARCHIVE_MEMBER_SAMPLES = [
     ),
     pytest.param(
         "EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin",
+        "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip",
         filenaming.NsidcLandOceanMaskFilename,
         DataProductIdentifier.anc_nsidc_land_ocean_mask,
         "1",
@@ -1699,15 +1745,15 @@ ARCHIVE_MEMBER_SAMPLES = [
 ]
 
 
-@pytest.mark.parametrize(("sample", "member_class", "product", "version"), ARCHIVE_MEMBER_SAMPLES)
+@pytest.mark.parametrize(("sample", "archive_name", "member_class", "product", "version"), ARCHIVE_MEMBER_SAMPLES)
 def test_archive_member_sample_names_parse_only_inside_their_archive(
-    fmatch_real_data_path, sample, member_class, product, version
+    fmatch_real_data_path, sample, archive_name, member_class, product, version
 ):
     """A member sample's upstream name parses as its product's member, and is not ingestable on its own."""
     sample_path = fmatch_real_data_path / sample
     assert sample_path.exists()
     upstream_name = sample.replace("_subset", "")
-    archive = filenaming.AncillaryVersionArchiveFilename(f"{product}_2025_R20261020T120000000000.zip")
+    archive = filenaming.AncillaryVersionArchiveFilename(archive_name)
 
     member = archive.member_filename(f"some/directory/{upstream_name}")
 
@@ -1719,30 +1765,31 @@ def test_archive_member_sample_names_parse_only_inside_their_archive(
     assert member.filename_parts.utc_end is None
     with pytest.raises(TypeError, match="archived as a whole"):
         _ = member.archive_prefix
-    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+    with pytest.raises(ValueError, match="ingested only inside its version archive") as excinfo:
         filenaming.AbstractValidFilename.from_file_path(upstream_name)
+    assert f"{product}_<version>_<production YYYYMMDD>_<revision>.zip" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
     ("archive_name", "member_name"),
     [
-        pytest.param("MODIS-IGBP_2025_R20261020T120000000000.zip", "00README.txt", id="readme"),
+        pytest.param("MODIS-IGBP_061_20250724_R20261020T120000000000.zip", "00README.txt", id="readme"),
         pytest.param(
-            "MODIS-IGBP_2025_R20261020T120000000000.zip",
+            "MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
             "EASE2_M36km.LOCImask_land50_coast0km.964x406.bin",
             id="other-products-file",
         ),
         pytest.param(
-            "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip",
+            "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip",
             "global/EASE2_M36km.LOCImask_land50_coast0km.964x406.png",
             id="browse-image",
         ),
         pytest.param(
-            "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip",
+            "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip",
             "temperate/EASE2_T6.25km.LOCImask_land50_coast0km.5552x2160.bin",
             id="temperate-grid",
         ),
-        pytest.param("NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip", "global/", id="directory"),
+        pytest.param("NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip", "global/", id="directory"),
     ],
 )
 def test_archive_member_filename_is_none_for_other_files(archive_name, member_name):
@@ -1753,39 +1800,53 @@ def test_archive_member_filename_is_none_for_other_files(archive_name, member_na
 
 
 @pytest.mark.parametrize(
-    ("name", "filename_class", "expected"),
+    ("member_name", "message"),
     [
+        pytest.param("MCD12Q1.A2024400.h21v07.061.2025205222320.hdf", "is not a valid ModisIgbpFilename", id="doy-400"),
         pytest.param(
-            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
-            filenaming.ModisIgbpFilename,
-            {
-                "tile": "h21v07",
-                "acquisition_date": dt.date(2024, 1, 1),
-                "production_time": dt.datetime(2025, 7, 24, 22, 23, 20, tzinfo=dt.UTC),
-            },
-            id="igbp-tile",
-        ),
-        pytest.param(
-            "EASE2_M03km.LOCImask_land50_coast0km.11568x4872.bin",
-            filenaming.NsidcLandOceanMaskFilename,
-            {"resolution_km": 3.0, "columns": 11568, "rows": 4872},
-            id="mask-3km",
+            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
+            "Construct it with ModisViirsDailyFilename",
+            id="daily-product-in-igbp-archive",
         ),
     ],
 )
-def test_archive_member_names_beyond_the_samples(name, filename_class, expected):
-    """Member name forms the samples do not show parse to the expected parts."""
-    fn = filename_class(name)
+def test_archive_member_filename_raises_for_a_damaged_member(member_name, message):
+    """A name in the product's file form whose fields do not parse raises rather than being skipped as None."""
+    archive = filenaming.AncillaryVersionArchiveFilename("MODIS-IGBP_061_20250724_R20261020T120000000000.zip")
 
-    for part, value in expected.items():
-        assert getattr(fn.filename_parts, part) == value
+    with pytest.raises(ValueError, match=message):
+        archive.member_filename(member_name)
+
+
+@pytest.mark.parametrize(
+    ("filename_class", "name", "message"),
+    [
+        pytest.param(
+            filenaming.ModisViirsDailyFilename,
+            "MCD12Q1.A2024001.h21v07.061.2025205222320.hdf",
+            "Parse a tile with ModisIgbpFilename, and ingest the version's tiles in its version archive",
+            id="igbp-tile-as-daily",
+        ),
+        pytest.param(
+            filenaming.ModisIgbpFilename,
+            "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc",
+            "Construct it with ModisViirsDailyFilename",
+            id="daily-product-as-igbp-tile",
+        ),
+    ],
+)
+def test_ancillary_wrong_form_error_gives_its_own_next_action(filename_class, name, message):
+    """A name rejected for its form says what to use instead, without the advice to correct a field."""
+    with pytest.raises(ValueError, match=message) as excinfo:
+        filename_class(name)
+    assert "Correct the field in the name" not in str(excinfo.value)
 
 
 def test_ancillary_impossible_date_reassignment_leaves_path_unchanged():
     """Assigning a name with an impossible date raises and keeps the original path"""
     original = "NISE_AMSR2_20260610.HDFEOS"
     fn = filenaming.NsidcNiseFilename(original)
-    with pytest.raises(ValueError, match="is not a valid NsidcNiseFilename"):
+    with pytest.raises(ValueError, match="is not a valid NsidcNiseFilename.*Correct the field in the name"):
         fn.path = "NISE_AMSR2_20260231.HDFEOS"
     assert fn.path.name == original
     assert fn.applicable_date == dt.date(2026, 6, 10)

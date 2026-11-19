@@ -217,8 +217,10 @@ NSIDC_LAND_OCEAN_MASK_REGEX = re.compile(
 NSIDC_LAND_OCEAN_MASK_VERSION = "1"
 
 # The version-partitioned ancillary products (IGBP and the land/ocean mask) are ingested as one zip archive per
-# version, holding every file of that version, named by the SDC: ``<ProductID>_<version>_<revision>.zip``. The
-# products are the DataProductIdentifier members at DataLevel.ANC partitioned by PartitionScheme.VERSION.
+# version, holding every file of that version, named by the SDC:
+# ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip``, archived under
+# ``<ProductID>/<version>/<production YYYYMMDD>``. The products are the DataProductIdentifier members at
+# DataLevel.ANC partitioned by PartitionScheme.VERSION.
 _ANCILLARY_ARCHIVE_PRODUCTS = tuple(
     product
     for product in DataProductIdentifier
@@ -228,6 +230,7 @@ _ANCILLARY_ARCHIVE_PRODUCTS = tuple(
 ANCILLARY_VERSION_ARCHIVE_REGEX = re.compile(
     rf"^(?P<product_name>{'|'.join(re.escape(str(product)) for product in _ANCILLARY_ARCHIVE_PRODUCTS)})"
     r"_(?P<version>[A-Za-z0-9]+)"
+    r"_(?P<production_date>[0-9]{8})"
     rf"_(?P<revision>{_REVISION_REGEX})"
     r"\.zip$"
 )
@@ -297,7 +300,9 @@ class AbstractValidFilename(ABC):
         Raises
         ------
         ValueError
-            If no filename class accepts the path.
+            If no filename class accepts the path. A loose file of a version-partitioned ancillary product (an
+            MCD12Q1 tile or an NSIDC-0609 grid) is rejected with a message naming the version archive it is
+            ingested in.
         """
         for CandidateClass in (
             L0Filename,
@@ -317,6 +322,16 @@ class AbstractValidFilename(ABC):
                 return filename
             except ValueError:
                 continue
+
+        for product, member_class in ANCILLARY_ARCHIVE_MEMBER_CLASSES.items():
+            try:
+                member = member_class(*args, **kwargs)
+            except ValueError:
+                continue
+            raise ValueError(
+                f"{member.path.name} is a {product} file, ingested only inside its version archive "
+                f"{_version_archive_form(product)}; zip the version's files and ingest the archive."
+            )
 
         raise ValueError(
             f"Unable to create a valid filename from {args}. The name is not an L0, ground CCSDS, Libera data "
@@ -662,6 +677,29 @@ def _parse_sdr_time_of_day(hhmmss_tenths: str) -> timedelta:
     return timedelta(
         hours=clock.hour, minutes=clock.minute, seconds=clock.second, milliseconds=100 * int(hhmmss_tenths[6])
     )
+
+
+class _NamedFormError(ValueError):
+    """A name rejected for its form rather than a field, whose message already states the next action.
+
+    The ancillary path setter adds no "Correct the field in the name." suffix to it.
+    """
+
+
+def _version_archive_form(product: DataProductIdentifier) -> str:
+    """The name form of a version-partitioned ancillary product's version archive, for error messages.
+
+    Parameters
+    ----------
+    product : DataProductIdentifier
+        A version-partitioned ancillary product.
+
+    Returns
+    -------
+    : str
+        ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`` with the product's ID filled in.
+    """
+    return f"{product}_<version>_<production YYYYMMDD>_<revision>.zip"
 
 
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
@@ -1383,9 +1421,11 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     a real date or time is rejected when the object is created.
 
     Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string) and
-    ``utc_start`` / ``utc_end``, the UTC range the file's data cover, so an ingester records every external file's
-    coverage the same way. They are ``None`` for a version-partitioned product (IGBP, the land/ocean mask), whose
-    name gives no coverage.
+    ``utc_start`` / ``utc_end``, the UTC period the file is used for. CERES gives its hour, and VIIRS L3 and NISE
+    their day, each ending at the start of the next hour or day (end exclusive); the VJ143C1 BRDF composite gives
+    its nominal day, although it spans 16 days; a VIIRS SDR granule gives its ``t`` and ``e`` times; ERA5 gives its
+    first and last hourly steps (end inclusive). They are ``None`` for a version archive and the files inside it,
+    whose names give no period.
     """
 
     @AbstractValidFilename.path.setter
@@ -1412,8 +1452,9 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
         try:
             self._parse_match(parts)
         except ValueError as err:
+            next_action = "" if isinstance(err, _NamedFormError) else " Correct the field in the name."
             raise ValueError(
-                f"Proposed path {_new_path} is not a valid {type(self).__name__}: {err}. Correct the field in the name."
+                f"Proposed path {_new_path} is not a valid {type(self).__name__}: {err}.{next_action}"
             ) from err
         self._path = _new_path
 
@@ -1485,8 +1526,8 @@ class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
     """Abstract base for ancillary products whose filename names the UTC day the data apply to.
 
     The file is archived under ``<ProductID>/YYYY/MM/DD`` for that day, keeping its upstream name. ``utc_start`` /
-    ``utc_end`` are the applicable day where the name carries no span (VIIRS L3, NISE), and the span the name
-    carries otherwise (the CERES hour, the VIIRS SDR granule, the ERA5 steps).
+    ``utc_end`` are the period the file is used for: the applicable day where the name carries no span (VIIRS L3,
+    NISE), and the span the name carries otherwise (the CERES hour, the VIIRS SDR granule, the ERA5 steps).
     """
 
     @property
@@ -1640,8 +1681,10 @@ class ModisViirsDailyFilename(DailyAncillaryDataProductFilename):
         """
         parts = _parse_modis_viirs_name(d)
         if parts.data_product_id is DataProductIdentifier.anc_modis_igbp:
-            raise ValueError(
-                f"{parts.short_name} is a yearly product with no applicable date, named by ModisIgbpFilename"
+            raise _NamedFormError(
+                f"{parts.short_name} is the yearly IGBP land cover map, which has no applicable date. Parse a tile "
+                "with ModisIgbpFilename, and ingest the version's tiles in its version archive, "
+                f"{_version_archive_form(parts.data_product_id)} (AncillaryVersionArchiveFilename)"
             )
         parts.applicable_date = parts.acquisition_date
         parts.utc_start = datetime(
@@ -1715,7 +1758,10 @@ class ModisIgbpFilename(AncillaryArchiveMemberFilename):
         """
         parts = _parse_modis_viirs_name(d)
         if parts.data_product_id is not DataProductIdentifier.anc_modis_igbp:
-            raise ValueError(f"{parts.short_name} is a daily product, named by ModisViirsDailyFilename")
+            raise _NamedFormError(
+                f"{parts.short_name} is a daily product. Construct it with ModisViirsDailyFilename, or use "
+                "AbstractValidFilename.from_file_path"
+            )
         parts.utc_start = None
         parts.utc_end = None
         return parts
@@ -1846,6 +1892,8 @@ class NsidcLandOceanMaskFilename(AncillaryArchiveMemberFilename):
         """
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_land_ocean_mask,
+            # TODO[LIBSDC-859]: Confirm the version Data Availability keys the mask on; its archive is keyed on the
+            # version in the zip's name
             version=NSIDC_LAND_OCEAN_MASK_VERSION,
             utc_start=None,
             utc_end=None,
@@ -1859,17 +1907,21 @@ class AncillaryVersionArchiveFilename(AncillaryDataProductFilename):
     """Filename class for the zip archive that holds every file of one version of a version-partitioned product.
 
     IGBP (MCD12Q1 tiles) and the land/ocean mask (NSIDC-0609 grids) have no file per day, and one version is many
-    files, so the SDC ingests each version as one zip and names it:
-    ``<ProductID>_<version>_<revision>.zip``, e.g. ``MODIS-IGBP_2025_R20261020T120000000000.zip``.
+    files, so the SDC ingests each version as one zip and names it
+    ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip``, e.g.
+    ``MODIS-IGBP_061_20250724_R20261020T120000000000.zip``.
 
     - ``data_product_id`` is the product, one of the ``DataLevel.ANC`` products partitioned by
       ``PartitionScheme.VERSION``.
-    - ``version`` is the version the archive holds, letters and digits only, e.g. the map year for IGBP.
+    - ``version`` is the version the archive holds: for IGBP the three-digit MCD12Q1 collection (``061``), for the
+      mask letters and digits.
+    - ``production_date`` is the UTC date the provider produced the version's files: for IGBP, one map year per
+      archive, the oldest tile's production date; for the mask, the date NSIDC produced that version.
     - ``revision`` is the UTC time the SDC built the archive, ``R`` followed by ``YYYYMMDDTHHMMSSffffff``.
-    - ``utc_start`` / ``utc_end`` are ``None``: the name gives no coverage.
+    - ``utc_start`` / ``utc_end`` are ``None``: the name gives no period.
 
-    The archive is stored under ``<ProductID>/<version>``. The files inside it keep their providers' names;
-    :meth:`member_filename` parses one with the product's
+    The archive is stored under ``<ProductID>/<version>/<production YYYYMMDD>``. The files inside it keep their
+    providers' names; :meth:`member_filename` parses one with the product's
     :class:`~libera_utils.io.filenaming.AncillaryArchiveMemberFilename` class.
     """
 
@@ -1877,13 +1929,9 @@ class AncillaryVersionArchiveFilename(AncillaryDataProductFilename):
 
     @property
     def archive_prefix(self) -> str:
-        """Archive prefix ``<ProductID>/<version>``"""
-        return f"{self.data_product_id}/{self.filename_parts.version}"
-
-    @property
-    def member_filename_class(self) -> type[AncillaryArchiveMemberFilename]:
-        """The filename class of the product's files held in the archive"""
-        return ANCILLARY_ARCHIVE_MEMBER_CLASSES[self.data_product_id]
+        """Archive prefix ``<ProductID>/<version>/<production YYYYMMDD>``"""
+        parts = self.filename_parts
+        return f"{self.data_product_id}/{parts.version}/{parts.production_date:%Y%m%d}"
 
     def member_filename(self, name: str) -> AncillaryArchiveMemberFilename | None:
         """Parse the name of a file in the archive as one of the product's files.
@@ -1897,13 +1945,20 @@ class AncillaryVersionArchiveFilename(AncillaryDataProductFilename):
         Returns
         -------
         : AncillaryArchiveMemberFilename | None
-            The parsed name, or ``None`` if it is not the name of one of the product's files (a browse image or
-            a README the provider ships alongside them).
+            The parsed name, or ``None`` if the name is not in the form of the product's files (a browse image, a
+            README the provider ships alongside them, or another product's file).
+
+        Raises
+        ------
+        ValueError
+            If the name is in the form of the product's files but a field does not parse, such as a day of year
+            that does not exist.
         """
-        try:
-            return self.member_filename_class(PurePosixPath(name).name)
-        except ValueError:
+        member_class = ANCILLARY_ARCHIVE_MEMBER_CLASSES[self.data_product_id]
+        member_name = PurePosixPath(name).name
+        if member_class._regex.match(member_name) is None:
             return None
+        return member_class(member_name)
 
     @staticmethod
     def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
@@ -1922,11 +1977,19 @@ class AncillaryVersionArchiveFilename(AncillaryDataProductFilename):
         Raises
         ------
         ValueError
-            If the revision is not a real UTC time.
+            If an IGBP archive's version is not a three-digit MCD12Q1 collection, or the production date or the
+            revision is not a real UTC date or time.
         """
+        data_product_id = DataProductIdentifier(d["product_name"])
+        if data_product_id is DataProductIdentifier.anc_modis_igbp and re.fullmatch(r"[0-9]{3}", d["version"]) is None:
+            raise _NamedFormError(
+                f"an IGBP archive's version is its three-digit MCD12Q1 collection (e.g. 061), not {d['version']}. "
+                f"Name it {_version_archive_form(data_product_id)}"
+            )
         return SimpleNamespace(
-            data_product_id=DataProductIdentifier(d["product_name"]),
+            data_product_id=data_product_id,
             version=d["version"],
+            production_date=datetime.strptime(d["production_date"], "%Y%m%d").date(),
             revision=_parse_revision(d["revision"]),
             utc_start=None,
             utc_end=None,
@@ -1949,7 +2012,8 @@ class Era5Filename(DailyAncillaryDataProductFilename):
 
     - ``product_name`` is ``ERA5-PRESSURE-LEVEL`` or ``ERA5-SINGLE-LEVEL``.
     - ``version`` is the stream: ``ERA5`` (final) or ``ERA5T`` (preliminary).
-    - ``utc_start`` / ``utc_end`` bound the hourly steps in the file, formatted ``YYYYMMDDTHHMMSS``.
+    - ``utc_start`` / ``utc_end`` are the first and last hourly steps in the file (end inclusive), formatted
+      ``YYYYMMDDTHHMMSS``.
     - ``revision`` is the UTC time the SDC named the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff``.
     - ``applicable_date`` is the UTC date of ``utc_start``, also for a file whose steps run into the next day.
     """
