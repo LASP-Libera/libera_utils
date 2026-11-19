@@ -174,16 +174,18 @@ is applied to later dates.
 
 ### Version archives
 
-IGBP is version-partitioned: one version of the MCD12Q1 map is every tile of one year, so it is ingested as one zip,
-named `<ProductID>_<version>_<revision>.zip` (`AncillaryVersionArchiveFilename`; see the File Naming page). A
-manifest lists that one archive for `IGBP`, not its tiles. The runner unpacks the archive once per run into the
-temporary local directory, keeping only the files named as MCD12Q1 tiles, wherever they sit in the zip, and hands
-those tiles to the reader. An S3 archive is copied first and its copy deleted once unpacked. One version of the map is
-about 1.5 GB of tiles, so the task needs that much free local storage, and twice that while an S3 archive is copied.
+IGBP is version-partitioned: every tile of one map year of an MCD12Q1 collection is ingested as one zip, named
+`<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, where the version is the three-digit collection
+(`AncillaryVersionArchiveFilename`; see the File Naming page). A manifest lists that one archive for `IGBP`, not its
+tiles. The runner unpacks the archive once per run into the temporary local directory, keeping only the files named
+as MCD12Q1 tiles, wherever they sit in the zip, and hands those tiles to the reader. An S3 archive is copied first and
+its copy deleted once unpacked. One map year is about 1.5 GB of tiles, so the task needs that much free local
+storage, and twice that while an S3 archive is copied.
 
 The run raises `FmatchInputError` when a reader is given an archive alongside any other granule, or when an archive
-is not a zip, holds no file of its product, holds two files with one name, or holds files of more than one release
-(collection, or map year). A reader can still be given loose files for a local or development run.
+is not a zip, holds no file of its product, holds a file in its product's form whose fields do not parse, holds two
+files with one name, or holds files of more than one release (collection, or map year). A reader can still be given
+loose files for a local or development run.
 
 Every run lists its granules in `ancillary_inputs`; the manifest creator will write that key once it selects the
 ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself.

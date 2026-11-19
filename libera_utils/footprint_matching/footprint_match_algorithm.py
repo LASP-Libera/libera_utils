@@ -46,7 +46,11 @@ from libera_utils.footprint_matching.product import (
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
-from libera_utils.io.filenaming import AncillaryVersionArchiveFilename, LiberaDataProductFilename
+from libera_utils.io.filenaming import (
+    ANCILLARY_ARCHIVE_MEMBER_CLASSES,
+    AncillaryVersionArchiveFilename,
+    LiberaDataProductFilename,
+)
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import is_s3, smart_copy_file, smart_open
 from libera_utils.logutil import configure_task_logging
@@ -784,8 +788,9 @@ def _unpack_version_archive(archive: AncillaryVersionArchiveFilename, out_dir: P
     Raises
     ------
     FmatchInputError
-        If the archive is not a zip, holds none of the product's files, holds two of them with one name, or holds
-        files of more than one release (collection, or map year where the name gives one).
+        If the archive is not a zip, holds none of the product's files, holds a file in the product's form whose
+        fields do not parse, holds two of the product's files with one name, or holds files of more than one release
+        (collection, or map year where the name gives one).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     local_archive = out_dir / archive.path.name
@@ -797,8 +802,17 @@ def _unpack_version_archive(archive: AncillaryVersionArchiveFilename, out_dir: P
         with zipfile.ZipFile(local_archive) as zip_file:
             members = {}
             for info in zip_file.infolist():
-                member = archive.member_filename(info.filename)
-                if info.is_dir() or member is None:
+                if info.is_dir():
+                    continue
+                try:
+                    member = archive.member_filename(info.filename)
+                except ValueError as err:
+                    raise FmatchInputError(
+                        f"Version archive {archive.path.name} holds {info.filename}, named as a "
+                        f"{archive.data_product_id} file but with a field that does not parse ({err}). Rebuild the "
+                        "archive from the provider's files as named upstream."
+                    ) from err
+                if member is None:
                     continue
                 name = member.path.name
                 if name in members:
@@ -810,7 +824,8 @@ def _unpack_version_archive(archive: AncillaryVersionArchiveFilename, out_dir: P
             if not members:
                 raise FmatchInputError(
                     f"Version archive {archive.path.name} holds no {archive.data_product_id} file named as "
-                    f"{archive.member_filename_class.__name__} accepts. Rebuild it from the provider's files."
+                    f"{ANCILLARY_ARCHIVE_MEMBER_CLASSES[archive.data_product_id].__name__} accepts. Rebuild it from "
+                    "the provider's files."
                 )
             releases = {
                 (member.filename_parts.version, getattr(member.filename_parts, "acquisition_date", None))

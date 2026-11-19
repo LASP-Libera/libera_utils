@@ -310,8 +310,8 @@ class TestMaterializeAncillaryInputs:
         assert (local_dir / "IGBP" / "tile.hdf").read_bytes() == b"igbp granule"
 
 
-IGBP_ARCHIVE_NAME = "MODIS-IGBP_2025_R20261020T120000000000.zip"
-MASK_ARCHIVE_NAME = "NSIDC-LAND-OCEAN-MASK_2000_R20261020T120000000000.zip"
+IGBP_ARCHIVE_NAME = "MODIS-IGBP_061_20250724_R20261020T120000000000.zip"
+MASK_ARCHIVE_NAME = "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip"
 MASK_SAMPLE = "EASE2_M36km.LOCImask_land50_coast0km.964x406_subset.bin"
 
 
@@ -427,6 +427,12 @@ class TestUnpackVersionArchives:
         )
 
         with pytest.raises(FmatchInputError, match="more than one release"):
+            _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
+
+    def test_archive_member_in_the_tile_form_that_does_not_parse_raises(self, tmp_path):
+        archive = _write_zip(tmp_path / IGBP_ARCHIVE_NAME, {"MCD12Q1.A2025400.h21v07.061.2026293135651.hdf": b"tile"})
+
+        with pytest.raises(FmatchInputError, match=r"MCD12Q1\.A2025400.*does not parse"):
             _materialize_ancillary_inputs({"IGBP": [archive]}, tmp_path / "local")
 
     def test_archive_that_is_not_a_zip_raises(self, tmp_path):
