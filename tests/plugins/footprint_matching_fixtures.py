@@ -49,6 +49,7 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
     Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
 
+import shutil
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -114,6 +115,44 @@ UNREAD_GRANULE: Path = Path(__file__)
 A reader rejects a staged path that is not an existing file at construction; this is
 not a granule of any source, so a test that reads it fails.
 """
+
+# The day of the synthetic L1B input (``write_l1b_radiometer_file``), which every shortened real granule covers except
+# CLDPIX: no CLDPIX granule of that day is available, so ``stage_fmatch_ancillary_granules`` dates the 2020-04-10 cut
+# onto it with ``write_cldpix_on_day``.
+L1B_DAY = np.datetime64("2026-06-11", "D")
+
+
+def write_cldpix_on_day(source: Path, destination: Path, day: np.datetime64) -> Path:
+    """Copy a CLDPIX granule to ``destination``, dated onto ``day`` and otherwise unchanged.
+
+    CLDPIX dates its fractional-hour ``Observation_Time`` from the ``time_coverage_start`` global attribute, so moving
+    the date in ``time_coverage_start``, ``time_coverage_end``, ``Year`` and ``JDay`` moves every pixel to the same
+    time of day on ``day``. Every other attribute and every value is copied unchanged.
+
+    Parameters
+    ----------
+    source : pathlib.Path
+        The CLDPIX granule to copy.
+    destination : pathlib.Path
+        Path of the copy.
+    day : numpy.datetime64
+        The UTC day to date the copy on.
+
+    Returns
+    -------
+    pathlib.Path
+        ``destination``.
+    """
+    shutil.copyfile(source, destination)
+    new_day = np.datetime64(day, "D")
+    with netCDF4.Dataset(destination, "r+") as ds:
+        for name in ("time_coverage_start", "time_coverage_end"):
+            _, time_of_day = ds.getncattr(name).split("T", 1)
+            ds.setncattr(name, f"{new_day}T{time_of_day}")
+        ds.Year = np.int32(new_day.astype(object).year)
+        ds.JDay = np.int32((new_day - new_day.astype("datetime64[Y]")).astype(int) + 1)
+    return destination
+
 
 ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 """The single hourly step the default ERA5 fixtures carry; query them at this time."""
@@ -429,10 +468,6 @@ def nise_file_factory(tmp_path: Path) -> Callable[..., Path]:
         The ``Projection`` both grids name.
     struct_metadata : bool, optional
         Whether to write ``StructMetadata.0`` at all.
-    coverage_date : str, optional
-        A ``YYYY-MM-DD`` day written as the ``RANGEDATETIME`` group of ``coremetadata.0``,
-        00:00 to 00:00 the next day, as the real granule dates itself. ``None`` (the
-        default) writes no ``coremetadata.0``.
 
     filename : str, optional
         Keyword-only. Name of the file written under the test's ``tmp_path``. Defaults to ``"NISE.HDFEOS"``.
@@ -448,7 +483,6 @@ def nise_file_factory(tmp_path: Path) -> Callable[..., Path]:
         lower_right_m: tuple[float, float] = (9_036_842.7625, -9_036_842.7625),
         projection: str = "GCTP_LAMAZ",
         struct_metadata: bool = True,
-        coverage_date: str | None = None,
     ) -> Path:
         path = tmp_path / filename
         lines = ["GROUP=SwathStructure", "END_GROUP=SwathStructure", "GROUP=GridStructure"]
@@ -481,25 +515,6 @@ def nise_file_factory(tmp_path: Path) -> Callable[..., Path]:
                     sds.endaccess()
             if struct_metadata:
                 hdf.attr("StructMetadata.0").set(sd.SDC.CHAR8, "\n".join(lines) + "\n")
-            if coverage_date is not None:
-                next_day = str(np.datetime64(coverage_date, "D") + np.timedelta64(1, "D"))
-                core = ["GROUP                  = RANGEDATETIME"]
-                for name, value in (
-                    ("RANGEBEGINNINGTIME", "00:00:00.00Z"),
-                    ("RANGEENDINGTIME", "00:00:00.00Z"),
-                    ("RANGEBEGINNINGDATE", coverage_date),
-                    ("RANGEENDINGDATE", next_day),
-                ):
-                    core.extend(
-                        [
-                            f"  OBJECT                 = {name}",
-                            "    NUM_VAL              = 1",
-                            f'    VALUE                = "{value}"',
-                            f"  END_OBJECT             = {name}",
-                        ]
-                    )
-                core.extend(["END_GROUP              = RANGEDATETIME", "END"])
-                hdf.attr("coremetadata.0").set(sd.SDC.CHAR8, "\n".join(core) + "\n")
         finally:
             hdf.end()
         return path
@@ -541,11 +556,6 @@ def viirs_brdf_file_factory(tmp_path: Path) -> Callable[..., Path]:
     metadata_corners : tuple[float, float, float, float], optional
         ``(ul_lon, ul_lat, lr_lon, lr_lat)`` written to StructMetadata in place of the
         region's own corners.
-    coverage_date : str, optional
-        A ``YYYY-MM-DD`` day written as the root ``RangeBeginningDate`` /
-        ``RangeBeginningTime`` / ``RangeEndingDate`` / ``RangeEndingTime`` attributes,
-        00:00 to 00:00 the next day, as the real granule dates itself. ``None`` (the
-        default) writes none.
 
     and returns the path of the written file.
     """
@@ -571,7 +581,6 @@ def viirs_brdf_file_factory(tmp_path: Path) -> Callable[..., Path]:
         omit_attributes: tuple[str, ...] = (),
         projection: str = "HE5_GCTP_GEO",
         metadata_corners: tuple[float, float, float, float] | None = None,
-        coverage_date: str | None = None,
     ) -> Path:
         out_path = tmp_path / "vj143c1_fixture.h5"
         lat_cell = (lat_max - lat_min) / n_lat
@@ -617,13 +626,6 @@ def viirs_brdf_file_factory(tmp_path: Path) -> Callable[..., Path]:
         }
 
         with h5py.File(str(out_path), "w") as f:
-            if coverage_date is not None:
-                # The real granule dates its day as 00:00 to 00:00 the next day, as fixed-length strings.
-                next_day = str(np.datetime64(coverage_date, "D") + np.timedelta64(1, "D"))
-                f.attrs["RangeBeginningDate"] = np.bytes_(coverage_date)
-                f.attrs["RangeBeginningTime"] = np.bytes_("00:00:00.000000")
-                f.attrs["RangeEndingDate"] = np.bytes_(next_day)
-                f.attrs["RangeEndingTime"] = np.bytes_("00:00:00.000000")
             f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.bytes_(struct_metadata))
             grp = f.require_group("HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields")
             grp.create_dataset("lat", data=lat_edges.astype(np.float64)).attrs["units"] = "degrees_north"
@@ -684,10 +686,6 @@ def aod_noaa20_file_factory(tmp_path: Path) -> Callable[..., Path]:
     aod_fill_value, aerosol_type_fill_value : float, int or None
         The ``_FillValue`` attribute written on each field; ``None`` writes none.
         Default −999, as in the real product.
-    coverage_date : str, optional
-        A ``YYYY-MM-DD`` day written as the ``time_coverage_start`` (00:00:00) and
-        ``time_coverage_end`` (23:59:59) global attributes, as the real daily product
-        dates itself. ``None`` (the default) writes neither.
 
     and returns the path of the written file.
     """
@@ -707,7 +705,6 @@ def aod_noaa20_file_factory(tmp_path: Path) -> Callable[..., Path]:
         aerosol_type_valid_range: tuple[int, int] | None = (0, 7),
         aod_fill_value: float | None = -999.0,
         aerosol_type_fill_value: int | None = -999,
-        coverage_date: str | None = None,
     ) -> Path:
         n_types = 8
         out_path = tmp_path / "aerdb_d3_viirs_noaa20_fixture.nc"
@@ -715,9 +712,6 @@ def aod_noaa20_file_factory(tmp_path: Path) -> Callable[..., Path]:
         lons = np.linspace(lon_min, lon_max, n_lon)
 
         with netCDF4.Dataset(str(out_path), "w") as ds:
-            if coverage_date is not None:
-                ds.time_coverage_start = f"{coverage_date}T00:00:00.000000"
-                ds.time_coverage_end = f"{coverage_date}T23:59:59.000000"
             # Note the ``_1D`` coordinate names — they differ from the merged product.
             ds.createDimension("Latitude_1D", n_lat)
             ds.createDimension("Longitude_1D", n_lon)
@@ -812,10 +806,6 @@ def viirs_cldprop_d3_file_factory(tmp_path: Path) -> Callable[..., Path]:
     mean_fill_value : float or None
         ``_FillValue`` declared on each ``Mean``. ``None`` writes none, to test a file
         without one.
-    coverage_date : str, optional
-        A ``YYYY-MM-DD`` day written as the ``time_coverage_start`` (00:00:00) and
-        ``time_coverage_end`` (23:59:59) global attributes, as the real daily product
-        dates itself. ``None`` (the default) writes neither.
 
     and returns the path of the written file.
     """
@@ -831,16 +821,12 @@ def viirs_cldprop_d3_file_factory(tmp_path: Path) -> Callable[..., Path]:
         cot_fill: float = 4.0,
         ctp_fill: float = 700.0,
         mean_fill_value: float | None = -9999.0,
-        coverage_date: str | None = None,
     ) -> Path:
         out_path = tmp_path / "cldprop_d3_fixture.nc"
         lats = np.linspace(lat_min, lat_max, n_lat)  # ascending
         lons = np.linspace(lon_min, lon_max, n_lon)
 
         with netCDF4.Dataset(str(out_path), "w") as ds:
-            if coverage_date is not None:
-                ds.time_coverage_start = f"{coverage_date}T00:00:00.000000"
-                ds.time_coverage_end = f"{coverage_date}T23:59:59.000000"
             # Root-level dimensions and coordinate variables.
             ds.createDimension("latitude", n_lat)
             ds.createDimension("longitude", n_lon)
@@ -1503,6 +1489,28 @@ def fake_sources(tmp_path: Path, set_mode_readers) -> dict[str, AncillaryReader]
     }
 
 
+@pytest.fixture
+def fake_aggregation(monkeypatch: pytest.MonkeyPatch, fake_sources: dict[str, AncillaryReader]) -> None:
+    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
+
+    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
+    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column. The
+    staged granules are empty files with no date to read, so the granule date check is skipped
+    (``TestCheckAncillaryGranuleDates`` tests it on real granules).
+    """
+    import functools  # noqa: PLC0415
+
+    from libera_utils.footprint_matching import footprint_match_algorithm, product  # noqa: PLC0415
+
+    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
+    monkeypatch.setattr(footprint_match_algorithm, "check_ancillary_granule_dates", lambda *args: None)
+    monkeypatch.setattr(
+        footprint_match_algorithm,
+        "write_fmatch_product",
+        functools.partial(product.write_fmatch_product, allow_placeholders=True),
+    )
+
+
 @pytest.fixture(autouse=True)
 def fmatch_single_worker(monkeypatch):
     """Run FMATCH aggregation in the calling process unless a test sets ``FMATCH_WORKERS`` itself.
@@ -1513,11 +1521,10 @@ def fmatch_single_worker(monkeypatch):
     monkeypatch.setenv("FMATCH_WORKERS", "1")
 
 
-@pytest.fixture
-def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
-    """Factory writing synthetic L1B RAD-4CH NetCDF files (input to the radiometer-timescale FMATCH runners).
+def write_l1b_radiometer_file(directory: Path, n_footprints: int = 8, *, n_invalid: int = 0) -> Path:
+    """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
 
-    Each file contains exactly the variables that
+    The file contains exactly the variables that
     :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
     through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that
@@ -1527,78 +1534,92 @@ def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
     The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
     by product with :func:`libera_utils.footprint_matching.footprint_match_algorithm.manifest_files_by_product_id`.
 
-    The returned writer takes:
-
+    Parameters
+    ----------
+    directory : pathlib.Path
+        Directory to write the file into.
     n_footprints : int, optional
         Total number of footprints written. Defaults to 8.
     n_invalid : int, optional
-        Keyword-only. How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth
-        samples. Those rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should
-        survive. Defaults to 0.
-    directory : pathlib.Path, optional
-        Keyword-only. Directory to write the file into. Defaults to the test's ``tmp_path``.
+        How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth samples. Those
+        rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should survive.
+        Defaults to 0.
 
-    and returns the path of the written file.
+    Returns
+    -------
+    pathlib.Path
+        Path of the written file.
+    """
+    base_time = L1B_DAY.astype("datetime64[ns]")
+    cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
+    times = base_time + np.arange(n_footprints, dtype="int64") * cadence
+
+    # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The
+    # angles stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The
+    # subsatellite point sits a few degrees off the footprint boresight so the ray-traced box has a real scan
+    # azimuth to orient by.
+    ranges = {
+        "Latitude": (-60.0, 60.0),
+        "Longitude": (-170.0, 170.0),
+        # Surface height of the boresight point above the WGS84 ellipsoid, meters.
+        "Altitude": (0.0, 4000.0),
+        "Solar_Zenith_Surface": (10.0, 80.0),
+        "Viewing_Zenith_Surface": (0.0, 45.0),
+        "Relative_Azimuth_Surface": (0.0, 350.0),
+        "Subsatellite_Latitude": (-58.0, 62.0),
+        "Subsatellite_Longitude": (-168.0, 172.0),
+        # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
+        "Radius_of_Satellite_from_Center_of_Earth": (7205.0, 7215.0),
+    }
+    data_vars = {}
+    # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
+    for name in L1B_PASSTHROUGH_VARIABLES:
+        low, high = ranges[name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float32)
+        if n_invalid:
+            # NaN is how the real L1B marks samples whose boresight misses the Earth.
+            values[:n_invalid] = np.nan
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
+    for name in L1B_SCAN_REFERENCE_VARIABLES:
+        low, high = ranges[name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float64)
+        if n_invalid:
+            values[:n_invalid] = np.nan
+        data_vars[name] = ((L1B_TIME_VARIABLE,), values)
+    # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
+    cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
+    data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
+
+    dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
+    # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
+    dataset[L1B_TIME_VARIABLE].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l1b_rad,
+        version="V1-0-0",
+        utc_start=dt64_to_utc_datetime(times[0]),
+        utc_end=dt64_to_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+@pytest.fixture
+def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
+    """Factory writing synthetic L1B RAD-4CH NetCDF files with :func:`write_l1b_radiometer_file`.
+
+    The returned writer takes ``n_footprints`` and the keyword-only ``n_invalid`` as
+    :func:`write_l1b_radiometer_file` does, and a keyword-only ``directory`` that defaults to the test's
+    ``tmp_path``; it returns the path of the written file.
     """
 
     def _write(n_footprints: int = 8, *, n_invalid: int = 0, directory: Path | None = None) -> Path:
-        base_time = np.datetime64("2026-06-11T00:00:00", "ns")
-        cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
-        times = base_time + np.arange(n_footprints, dtype="int64") * cadence
-
-        # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The
-        # angles stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The
-        # subsatellite point sits a few degrees off the footprint boresight so the ray-traced box has a real scan
-        # azimuth to orient by.
-        ranges = {
-            "Latitude": (-60.0, 60.0),
-            "Longitude": (-170.0, 170.0),
-            # Surface height of the boresight point above the WGS84 ellipsoid, meters.
-            "Altitude": (0.0, 4000.0),
-            "Solar_Zenith_Surface": (10.0, 80.0),
-            "Viewing_Zenith_Surface": (0.0, 45.0),
-            "Relative_Azimuth_Surface": (0.0, 350.0),
-            "Subsatellite_Latitude": (-58.0, 62.0),
-            "Subsatellite_Longitude": (-168.0, 172.0),
-            # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
-            "Radius_of_Satellite_from_Center_of_Earth": (7205.0, 7215.0),
-        }
-        data_vars = {}
-        # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
-        for name in L1B_PASSTHROUGH_VARIABLES:
-            low, high = ranges[name]
-            values = np.linspace(low, high, n_footprints, dtype=np.float32)
-            if n_invalid:
-                # NaN is how the real L1B marks samples whose boresight misses the Earth.
-                values[:n_invalid] = np.nan
-            data_vars[name] = ((L1B_TIME_VARIABLE,), values)
-        for name in L1B_SCAN_REFERENCE_VARIABLES:
-            low, high = ranges[name]
-            values = np.linspace(low, high, n_footprints, dtype=np.float64)
-            if n_invalid:
-                values[:n_invalid] = np.nan
-            data_vars[name] = ((L1B_TIME_VARIABLE,), values)
-        # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
-        cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
-        data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
-
-        dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
-        # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
-        dataset[L1B_TIME_VARIABLE].encoding = {
-            "units": "nanoseconds since 1958-01-01",
-            "calendar": "standard",
-            "dtype": "int64",
-        }
-
-        filename = LiberaDataProductFilename.from_filename_parts(
-            product_name=DataProductIdentifier.l1b_rad,
-            version="V1-0-0",
-            utc_start=dt64_to_utc_datetime(times[0]),
-            utc_end=dt64_to_utc_datetime(times[-1]),
-        ).path.name
-        out_path = Path(directory or tmp_path) / filename
-        dataset.to_netcdf(out_path)
-        return out_path
+        return write_l1b_radiometer_file(Path(directory or tmp_path), n_footprints, n_invalid=n_invalid)
 
     return _write
 
@@ -1608,19 +1629,22 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
     """Factory writing synthetic CF-CAM NetCDF files (the Camera Cloud Fraction input to FMATCH-CAM).
 
     Each file carries the two variables FMATCH-CAM reads: the CF-encoded ``radiometer_time`` coordinate, which CF-CAM
-    passes through from L1B RAD-4CH, and ``Cloud_Fraction`` in percent with a ``-999`` ``_FillValue``. The file is
-    written under a proper Libera ``CF-CAM`` filename so the runner selects it from a manifest.
+    passes through from L1B RAD-4CH, and ``cam_cloud_fraction`` with a ``-999`` ``_FillValue`` and a ``units``
+    attribute. The file is written under a proper Libera ``CF-CAM`` filename so the runner selects it from a manifest.
 
     The returned writer takes:
 
     radiometer_time : numpy.ndarray
         ``datetime64[ns]`` radiometer times of the CF-CAM rows, usually a subset of an L1B file's times.
     cloud_fraction : numpy.ndarray, optional
-        Cloud fraction in percent, one per row; ``NaN`` is written as fill. Defaults to evenly spaced values in
+        Cloud fraction in ``units``, one per row; ``NaN`` is written as fill. Defaults to evenly spaced values in
         ``[0, 100]``.
     cloud_fraction_variable : str, optional
         Keyword-only. Name the cloud fraction is written under, so a test can write a file that lacks
-        ``Cloud_Fraction``. Defaults to ``"Cloud_Fraction"``.
+        ``cam_cloud_fraction``. Defaults to ``"cam_cloud_fraction"``.
+    units : str or None, optional
+        Keyword-only. The variable's ``units`` attribute; ``None`` writes none. Defaults to ``"percent"``, so the
+        values FMATCH reads are the values given, where the real product writes a fraction (``"1"``).
     directory : pathlib.Path, optional
         Keyword-only. Directory to write the file into. Defaults to the test's ``tmp_path``.
 
@@ -1631,7 +1655,8 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
         radiometer_time: np.ndarray,
         cloud_fraction: np.ndarray | None = None,
         *,
-        cloud_fraction_variable: str = "Cloud_Fraction",
+        cloud_fraction_variable: str = "cam_cloud_fraction",
+        units: str | None = "percent",
         directory: Path | None = None,
     ) -> Path:
         radiometer_time = np.asarray(radiometer_time, dtype="datetime64[ns]")
@@ -1642,6 +1667,8 @@ def cf_cam_file_factory(tmp_path: Path) -> Callable[..., Path]:
             coords={"radiometer_time": (("RADIOMETER_TIME",), radiometer_time)},
         )
         dataset[cloud_fraction_variable].encoding = {"_FillValue": np.float32(-999.0)}
+        if units is not None:
+            dataset[cloud_fraction_variable].attrs["units"] = units
         dataset["radiometer_time"].encoding = {
             "units": "nanoseconds since 1958-01-01",
             "calendar": "standard",
@@ -1781,5 +1808,119 @@ def cf_cam_camtime_file_factory(
         out_path = Path(directory or tmp_path) / filename
         dataset.to_netcdf(out_path)
         return out_path
+
+    return _write
+
+
+def write_fmatch_product_file(upstream_file: Path, mode: OperationalMode, directory: Path) -> Path:
+    """Write a conformant FMATCH product NetCDF file (input to the SCENE-ID runners) through FMATCH's own code.
+
+    Reads ``upstream_file`` with the mode's FMATCH runner config, assembles the product with
+    :func:`~libera_utils.footprint_matching.product.assemble_fmatch_dataset` (``allow_placeholders=True``, so no
+    ancillary data is needed), sets the classification inputs SCENE-ID reads to valid values, and writes it with
+    :func:`~libera_utils.io.netcdf.write_libera_data_product` under the product definition, so the file has FMATCH's
+    exact layout and product variable names:
+
+    * ``IGBP_Surface_Type`` cycles through the IGBP codes 1..17;
+    * for the IMAGER modes, ``CERES_SSF_Clear_Coverage`` spans 0..100 percent, ``CLDPIX_Cloud_Particle_Phase``
+      alternates liquid (1) and ice (2), ``ERA5_Surface_Wind_U10`` is 3.0, ``ERA5_Surface_Wind_V10`` is 4.0 and
+      ``CLDPIX_Cloud_Optical_Depth`` is 7.0;
+    * for ``CAM``, ``Cloud_Fraction_Camera`` spans 0..100 percent (the camera-timescale CAM mode takes the
+      CF-CAM-CAMTIME file's own cloud fraction).
+
+    Parameters
+    ----------
+    upstream_file : pathlib.Path
+        The mode's FMATCH input: an L1B RAD-4CH file for a radiometer-timescale mode, a CF-CAM-CAMTIME file for a
+        camera-timescale mode.
+    mode : OperationalMode
+        The FMATCH operational mode to write.
+    directory : pathlib.Path
+        Directory to write the product into.
+
+    Returns
+    -------
+    pathlib.Path
+        Path of the written FMATCH product.
+    """
+    from libera_utils.footprint_matching.footprint_match_algorithm import (  # noqa: PLC0415
+        RUNNER_CONFIGS,
+        run_footprint_matching,
+    )
+    from libera_utils.footprint_matching.product import (  # noqa: PLC0415
+        assemble_fmatch_dataset,
+        fmatch_time_variable,
+        load_fmatch_definition,
+    )
+    from libera_utils.io.netcdf import write_libera_data_product  # noqa: PLC0415
+
+    runner_config = next(config for config in RUNNER_CONFIGS.values() if config.mode is mode)
+    inputs, cloud_fraction_camera = run_footprint_matching(upstream_file, runner_config)
+    definition = load_fmatch_definition(mode)
+    dataset = assemble_fmatch_dataset(
+        mode,
+        inputs,
+        definition=definition,
+        algorithm_version="1.0.0",
+        input_files=upstream_file.name,
+        cloud_fraction_camera=cloud_fraction_camera,
+        allow_placeholders=True,
+    )
+
+    def _set(name: str, values: np.ndarray) -> None:
+        column = dataset[name]
+        column.values[...] = np.reshape(values, column.shape)
+
+    n_cells = dataset["IGBP_Surface_Type"].size
+    _set("IGBP_Surface_Type", np.arange(n_cells) % 17 + 1)
+    if mode is OperationalMode.CAM:
+        _set("Cloud_Fraction_Camera", np.linspace(0.0, 100.0, n_cells))
+    if mode in (OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME):
+        _set("CERES_SSF_Clear_Coverage", np.linspace(0.0, 100.0, n_cells))
+        _set("CLDPIX_Cloud_Particle_Phase", np.arange(n_cells) % 2 + 1)
+        # A distinct constant per source, so a reader that reads the wrong source variable is caught.
+        _set("ERA5_Surface_Wind_U10", np.full(n_cells, 3.0))
+        _set("ERA5_Surface_Wind_V10", np.full(n_cells, 4.0))
+        _set("CLDPIX_Cloud_Optical_Depth", np.full(n_cells, 7.0))
+
+    written = write_libera_data_product(
+        data_product_definition=definition,
+        data=dataset,
+        output_path=Path(directory),
+        time_variable=fmatch_time_variable(mode),
+        strict=True,
+    )
+    return Path(str(written.path))
+
+
+@pytest.fixture
+def fmatch_product_file_factory(
+    tmp_path: Path,
+    l1b_radiometer_file_factory: Callable[..., Path],
+    cf_cam_camtime_file_factory: Callable[..., Path],
+) -> Callable[..., Path]:
+    """Factory writing a FMATCH product, and the upstream input it is read from, with :func:`write_fmatch_product_file`.
+
+    The returned writer takes the FMATCH ``mode`` (an ``OperationalMode``, default ``CAM``), ``n_footprints`` (the
+    radiometer-timescale footprint count, or the camera-timescale image count, each image segmented into two
+    pseudo-footprints so no grid cell is padded; default 8) and a keyword-only ``directory`` (defaults to the test's
+    ``tmp_path``). It writes the mode's upstream input (an L1B RAD-4CH file, or a CF-CAM-CAMTIME file for the
+    camera-timescale modes) under ``directory / "upstream"`` and the product in ``directory``, and returns the path of
+    the written product.
+    """
+
+    def _write(
+        mode: OperationalMode = OperationalMode.CAM, n_footprints: int = 8, *, directory: Path | None = None
+    ) -> Path:
+        directory = Path(directory or tmp_path)
+        upstream = directory / "upstream"
+        upstream.mkdir(parents=True, exist_ok=True)
+        if mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME):
+            upstream_file = cf_cam_camtime_file_factory(
+                directory=upstream, n_images=n_footprints, n_pixels_x=2, n_pixels_y=1
+            )
+        else:
+            upstream_file = l1b_radiometer_file_factory(n_footprints, directory=upstream)
+        return write_fmatch_product_file(upstream_file, mode, directory)
 
     return _write

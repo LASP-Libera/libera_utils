@@ -11,9 +11,15 @@ from cloudpathlib import S3Path
 from pydantic import ValidationError
 from ulid import ULID
 
-from libera_utils.constants import ManifestType
+from libera_utils.constants import ManifestType, ProcessingStepIdentifier
 from libera_utils.io.filenaming import ManifestFilename
-from libera_utils.io.manifest import Manifest, ManifestError
+from libera_utils.io.manifest import (
+    PROCESSING_STEP_ID_CONFIGURATION_KEY,
+    Manifest,
+    ManifestError,
+    ProcessingStepIdMismatchError,
+    resolve_processing_step_id,
+)
 
 VALID_ULID = "01GDHWG4R0W8KXWY0KRDD6BZTT"
 OTHER_ULID = "01MBAK5DC06HX46P3PG0M6HJR0"
@@ -610,3 +616,44 @@ class TestOutputManifestFromInputManifest:
         output_path = output_manifest.write(tmp_path / "out")
 
         assert Manifest.from_file(output_path).ulid_code == Manifest.from_file(input_path).ulid_code
+
+
+class TestResolveProcessingStepId:
+    """resolve_processing_step_id takes a run's step from its manifest or the command line, within a runner's steps."""
+
+    STEPS = (ProcessingStepIdentifier.aux_scene_id_cam, ProcessingStepIdentifier.aux_scene_id_imager)
+
+    @staticmethod
+    def _manifest(step=None):
+        configuration = {} if step is None else {PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step)}
+        return Manifest(manifest_type=ManifestType.INPUT, configuration=configuration)
+
+    @pytest.mark.parametrize(
+        ("manifest_step", "argument"),
+        [
+            pytest.param(ProcessingStepIdentifier.aux_scene_id_imager, None, id="manifest"),
+            pytest.param(None, "aux-scene-id-imager", id="argument-value"),
+            pytest.param(None, ProcessingStepIdentifier.aux_scene_id_imager, id="argument-member"),
+            pytest.param(ProcessingStepIdentifier.aux_scene_id_imager, "aux-scene-id-imager", id="both-agree"),
+        ],
+    )
+    def test_returns_the_named_member(self, manifest_step, argument):
+        step = resolve_processing_step_id(self._manifest(manifest_step), argument, self.STEPS, "SCENE-ID")
+
+        assert step is ProcessingStepIdentifier.aux_scene_id_imager
+
+    def test_disagreeing_steps_raise(self):
+        with pytest.raises(ProcessingStepIdMismatchError, match="'aux-scene-id-cam'.*'aux-scene-id-imager'"):
+            resolve_processing_step_id(
+                self._manifest(ProcessingStepIdentifier.aux_scene_id_cam), "aux-scene-id-imager", self.STEPS, "SCENE-ID"
+            )
+
+    def test_no_step_raises(self):
+        with pytest.raises(ValueError, match="No SCENE-ID processing step was given"):
+            resolve_processing_step_id(self._manifest(), None, self.STEPS, "SCENE-ID")
+
+    def test_step_outside_the_runner_raises(self):
+        with pytest.raises(ValueError, match="'aux-fmatch-cam' is not a SCENE-ID processing step"):
+            resolve_processing_step_id(
+                self._manifest(ProcessingStepIdentifier.aux_fmatch_cam), None, self.STEPS, "SCENE-ID"
+            )

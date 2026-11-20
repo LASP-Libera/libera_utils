@@ -20,17 +20,29 @@ from pydantic import (
 )
 from ulid import ULID
 
-from libera_utils.constants import ManifestType
+from libera_utils.constants import ManifestType, ProcessingStepIdentifier
 from libera_utils.io.filenaming import ManifestFilename
 from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
 
 
+# Input manifest configuration key naming the processing step a run is for, and so the product it writes.
+PROCESSING_STEP_ID_CONFIGURATION_KEY: str = "processing_step_id"
+
+
 class ManifestError(Exception):
     """Generic exception related to manifest file handling"""
 
     pass
+
+
+class ProcessingStepIdMismatchError(ValueError):
+    """The input manifest and the command line name different processing steps.
+
+    Raised when the manifest's ``configuration["processing_step_id"]`` and the ``processing_step_id`` given to the
+    run are both set and disagree, so it is not clear which product the run is meant to write.
+    """
 
 
 _MANIFEST_NAME_HELP = (
@@ -531,3 +543,63 @@ class Manifest(BaseModel):
             ),
             configuration=configuration,
         )
+
+
+def resolve_processing_step_id(
+    manifest: Manifest,
+    processing_step_id: str | ProcessingStepIdentifier | None,
+    steps: Iterable[ProcessingStepIdentifier],
+    algorithm: str,
+) -> ProcessingStepIdentifier:
+    """Select the processing step a run is for, from its input manifest or the command line.
+
+    A runner that writes one of several products from one container image takes the product's processing step from
+    the input manifest's ``configuration["processing_step_id"]``, from ``processing_step_id`` (its
+    ``--processing_step_id`` command-line option), or from both when they agree.
+
+    Parameters
+    ----------
+    manifest : Manifest
+        The run's input manifest.
+    processing_step_id : str | ProcessingStepIdentifier | None
+        The processing step given outside the manifest, as a ``ProcessingStepIdentifier`` or its value (e.g.
+        ``"aux-fmatch-cam"``), or ``None`` when none was given.
+    steps : collections.abc.Iterable[ProcessingStepIdentifier]
+        The processing steps the runner writes.
+    algorithm : str
+        The runner's name for error messages, e.g. ``"FMATCH"``.
+
+    Returns
+    -------
+    ProcessingStepIdentifier
+        The step named, one of ``steps``.
+
+    Raises
+    ------
+    ProcessingStepIdMismatchError
+        If the manifest and ``processing_step_id`` both name a step and the two differ.
+    ValueError
+        If neither names a step, or the step named is not one of ``steps``.
+    """
+    from_manifest = manifest.configuration.get(PROCESSING_STEP_ID_CONFIGURATION_KEY)
+    from_argument = None if processing_step_id is None else str(processing_step_id)
+    if from_manifest is not None and from_argument is not None and str(from_manifest) != from_argument:
+        raise ProcessingStepIdMismatchError(
+            f"The input manifest's configuration names processing step {str(from_manifest)!r}, but the "
+            f"processing_step_id argument (--processing_step_id) names {from_argument!r}. Give one, or make the two "
+            "match."
+        )
+    steps_by_name = {str(step): step for step in steps}
+    step_name = str(from_manifest) if from_manifest is not None else from_argument
+    if step_name is None:
+        raise ValueError(
+            f"No {algorithm} processing step was given. Set the input manifest's "
+            f'configuration["{PROCESSING_STEP_ID_CONFIGURATION_KEY}"] or pass --processing_step_id, '
+            f"to one of {sorted(steps_by_name)}."
+        )
+    if step_name not in steps_by_name:
+        raise ValueError(
+            f"Processing step {step_name!r} is not a {algorithm} processing step; expected one of "
+            f"{sorted(steps_by_name)}."
+        )
+    return steps_by_name[step_name]

@@ -26,10 +26,11 @@ variables:
   # Input scene properties
   ########################
   IGBP_Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   # Viewing geometry at the footprint surface (boresight), passed through unchanged from L1B RAD via FMATCH-CAM;
   # long_names are the L1B ones. Relative azimuth is referenced to the Sun: 0 degrees means the viewing azimuth is
   # aligned with the Sun's azimuth.
@@ -56,9 +57,10 @@ variables:
   # Derived scene properties
   ##########################
   Surface_Type:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
       # Surface-type category used as a scene-classification input, collapsed from the finer IGBP land-cover code.
       # The category values follow the TRMM 6-category scheme, though it is used in all scene classification types.
       long_name: >-
@@ -103,14 +105,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched ERBE scene
       units: percent
   Scene_Bin_ERBE_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Solar_Zenith_Surface_Min:
     dtype: float32
@@ -165,14 +169,16 @@ variables:
       long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched unfiltering scene
       units: percent
   Scene_Bin_Unfiltering_Surface_Type_Min:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Surface_Type_Max:
-    dtype: uint8
+    dtype: int8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
+      comment: "-1 for an unmatched footprint (scene ID 0)."
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched unfiltering scene
   Scene_Bin_Unfiltering_Solar_Zenith_Surface_Min:
     dtype: float32

@@ -372,7 +372,7 @@ class TestVIIRSBRDFFileErrors:
 
 
 class TestVIIRSBRDFReaderRealSubset:
-    """A real VJ143C1 granule (2026-06-02) cut to 37N..35N, 123W..121W, the Monterey Bay coast.
+    """A real VJ143C1 granule (2026-06-11) cut to 37N..35N, 123W..121W, the Monterey Bay coast.
 
     The cut keeps the nine fields the reader reads and rewrites the grid's
     ``StructMetadata.0`` corners and dimensions to the window, so the reader's grid
@@ -382,7 +382,7 @@ class TestVIIRSBRDFReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return VIIRSBRDFReader([fmatch_real_data_path / "VJ143C1.A2026153.002.2026161161054_subset.h5"])
+        return VIIRSBRDFReader([fmatch_real_data_path / "VJ143C1.A2026162.002.2026175014229_subset.h5"])
 
     def test_axes_are_the_window_cell_centers(self, reader):
         """A real VJ143C1 cut loads as a 40 x 40 grid of nine variables with the window's cell centers as axes.
@@ -422,38 +422,30 @@ class TestVIIRSBRDFReaderRealSubset:
         Pinned values from the source granule catch a mis-scaled field, a misplaced row or column, or a swapped variable
         order that the synthetic fixtures, with one value everywhere, cannot.
 
-        Queries a small box over a land cell and asserts its shortwave and visible ``fiso`` equal 0.069 and 0.062, then
+        Queries a small box over a land cell and asserts its shortwave and visible ``fiso`` equal 0.073 and 0.067, then
         queries an ocean cell and asserts all nine values are NaN.
         """
         land = reader.samples_in(BoundingBox(36.4, 36.45, -121.95, -121.9), _T)
         values = sample_at(land, 36.425, -121.925)
-        assert values[0] == pytest.approx(0.069)  # shortwave_fiso
-        assert values[3] == pytest.approx(0.062)  # vis_fiso
+        assert values[0] == pytest.approx(0.073)  # shortwave_fiso
+        assert values[3] == pytest.approx(0.067)  # vis_fiso
         ocean = reader.samples_in(BoundingBox(36.95, 37.0, -123.0, -122.95), _T)
         assert np.isnan(sample_at(ocean, 36.975, -122.975)).all()
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``VIIRSBRDFReader.granule_span`` dates the real granule from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes: the day ``A2026153`` in its name.
+        """``VIIRSBRDFReader.granule_span`` dates the real granule from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes: the day ``A2026162`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = VIIRSBRDFReader.granule_span(fmatch_real_ancillary_granules["VIIRS_BRDF"])
-        assert start == np.datetime64("2026-06-02T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-03T00:00:00", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
 
 
 class TestVIIRSBRDFGranuleSpan:
     """``VIIRSBRDFReader.granule_span`` dates a granule from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes."""
-
-    def test_span_is_the_coverage_date(self, viirs_brdf_file_factory):
-        path = viirs_brdf_file_factory(coverage_date="2026-06-11")
-
-        start, end = VIIRSBRDFReader.granule_span(path)
-
-        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
 
     def test_granule_without_a_date_raises(self, viirs_brdf_file_factory):
         """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""

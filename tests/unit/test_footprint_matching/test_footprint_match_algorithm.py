@@ -2,7 +2,6 @@
 camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
-import functools
 import logging
 import re
 import shutil
@@ -16,13 +15,11 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
-from libera_utils.footprint_matching import footprint_match_algorithm, product
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     CAM_CAMTIME_CONFIG,
-    PROCESSING_STEP_ID_CONFIGURATION_KEY,
     RUNNER_CONFIGS,
     CloudFractionTimeMismatchError,
-    ProcessingStepIdMismatchError,
     RadiometerCloudFraction,
     _ancillary_source_file_paths,
     _load_cam_camtime_footprints,
@@ -42,7 +39,12 @@ from libera_utils.footprint_matching.product import FmatchInputError
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import (
+    PROCESSING_STEP_ID_CONFIGURATION_KEY,
+    Manifest,
+    ManifestType,
+    ProcessingStepIdMismatchError,
+)
 from tests.plugins.manifest_fixtures import FMATCH_STAGED_GRANULE_NAMES, FMATCH_STAGED_IGBP_TILE_NAME
 
 # The shortened real CF-CAM granule under tests/test_data/footprint_matching; its README says what was kept.
@@ -63,24 +65,6 @@ def ancillary_manifest(tmp_path, generate_input_manifest_local, stage_fmatch_anc
         return generate_input_manifest_local(*input_files, *granules.values(), configuration=_step_configuration(step))
 
     return _write
-
-
-@pytest.fixture
-def fake_aggregation(monkeypatch, fake_sources):
-    """Aggregate from the fake readers whatever granules are staged, so a run needs no real ancillary files.
-
-    The fake readers produce only their own columns, so the runner's product write is made to fill the columns of
-    the mode's real readers; the real-granule run in ``tests/integration/test_fmatch.py`` writes every column. The
-    staged granules are empty files with no date to read, so the granule date check is skipped
-    (``TestCheckAncillaryGranuleDates`` tests it on real granules).
-    """
-    monkeypatch.setattr(product, "build_sources", lambda mode, source_file_paths: fake_sources)
-    monkeypatch.setattr(footprint_match_algorithm, "check_ancillary_granule_dates", lambda *args: None)
-    monkeypatch.setattr(
-        footprint_match_algorithm,
-        "write_fmatch_product",
-        functools.partial(product.write_fmatch_product, allow_placeholders=True),
-    )
 
 
 def _step_configuration(step: ProcessingStepIdentifier) -> dict:
@@ -118,7 +102,7 @@ class TestResolveRunnerConfig:
         manifest = Manifest(
             manifest_type=ManifestType.INPUT, configuration={PROCESSING_STEP_ID_CONFIGURATION_KEY: value}
         )
-        with pytest.raises(ValueError, match="not an FMATCH processing step"):
+        with pytest.raises(ValueError, match="not a FMATCH processing step"):
             resolve_runner_config(manifest)
 
 
@@ -610,8 +594,8 @@ _WINDOWED_READERS = [
 class TestCheckAncillaryGranuleDates:
     """A granule dated more than its reader's window from the input's footprint times is rejected before aggregation.
 
-    The real NISE granule covers 2026-06-10 (00:00 to 00:00 the next day), so footprints on 2026-06-11 see it as the
-    previous day's granule and footprints on 2026-06-12 as two days old.
+    The real NISE granule covers 2026-06-11 (00:00 to 00:00 the next day), so footprints on 2026-06-12 see it as the
+    previous day's granule and footprints on 2026-06-13 as two days old.
     """
 
     @pytest.fixture
@@ -629,18 +613,18 @@ class TestCheckAncillaryGranuleDates:
         start, end = ReaderRegistry.get(reader_key).granule_span(path)
         check_ancillary_granule_dates({reader_key: [path]}, np.array([start + (end - start) // 2]))
 
-    @pytest.mark.parametrize("date", ["2026-06-09", "2026-06-10", "2026-06-11"])
+    @pytest.mark.parametrize("date", ["2026-06-10", "2026-06-11", "2026-06-12"])
     def test_same_and_adjacent_day_granules_pass(self, nise, date):
-        """The NISE granule of 2026-06-10 is accepted for footprints on the day before, the day itself and the day
+        """The NISE granule of 2026-06-11 is accepted for footprints on the day before, the day itself and the day
         after, which the one-day window accepts."""
         check_ancillary_granule_dates(nise, self._day(date))
 
-    @pytest.mark.parametrize("date", ["2026-06-08", "2026-06-12"])
+    @pytest.mark.parametrize("date", ["2026-06-09", "2026-06-13"])
     def test_granule_two_days_away_raises(self, nise, fmatch_real_ancillary_granules, date):
         with pytest.raises(FmatchInputError, match="outside their reader's window") as excinfo:
             check_ancillary_granule_dates(nise, self._day(date))
         message = str(excinfo.value)
-        assert f"NISE: {fmatch_real_ancillary_granules['NISE'].name} covers 2026-06-10T00:00:00Z" in message
+        assert f"NISE: {fmatch_real_ancillary_granules['NISE'].name} covers 2026-06-11T00:00:00Z" in message
         assert f"footprint times, {date}T03:00:00Z to {date}T21:00:00Z" in message
 
     @pytest.mark.parametrize("reader_key", _WINDOWED_READERS)
@@ -671,20 +655,21 @@ class TestCheckAncillaryGranuleDates:
         check_ancillary_granule_dates({reader_key: [path]}, np.array([edge + _hours(offset_hours)]))
 
     def test_message_names_every_granule_outside_its_window(self, fmatch_real_ancillary_granules):
-        granules = {key: [fmatch_real_ancillary_granules[key]] for key in ("NISE", "VIIRS_BRDF", "VIIRS_AOD")}
+        granules = {key: [fmatch_real_ancillary_granules[key]] for key in ("NISE", "CERES_SSF", "ERA5_Surface")}
 
-        # The NISE granule (2026-06-10) is within a day; VIIRS_BRDF (2026-06-02) and VIIRS_AOD (2026-09-27) are not.
+        # For footprints from 03:00 to 21:00 on 2026-06-12, the NISE granule (to 2026-06-12T00:00) is within a day;
+        # CERES_SSF (2026-06-11, 00 UTC hour) and ERA5_Surface (2026-06-11T00:00) are not.
         with pytest.raises(FmatchInputError, match="^2 ancillary granule") as excinfo:
-            check_ancillary_granule_dates(granules, self._day("2026-06-11"))
+            check_ancillary_granule_dates(granules, self._day("2026-06-12"))
         message = str(excinfo.value)
-        assert f"VIIRS_BRDF: {fmatch_real_ancillary_granules['VIIRS_BRDF'].name}" in message
-        assert f"VIIRS_AOD: {fmatch_real_ancillary_granules['VIIRS_AOD'].name}" in message
+        assert f"CERES_SSF: {fmatch_real_ancillary_granules['CERES_SSF'].name}" in message
+        assert f"ERA5_Surface: {fmatch_real_ancillary_granules['ERA5_Surface'].name}" in message
         assert "NISE:" not in message
         assert "List in the input manifest's files granules" in message
 
     @pytest.mark.parametrize("date", ["2010-01-01", "2026-06-11", "2040-12-31"])
     def test_igbp_granule_of_any_year_passes(self, fmatch_real_ancillary_granules, date):
-        """IGBP's annual map (here 2024) is applied to later dates, so its date is never checked."""
+        """IGBP's annual map (here 2025) is applied to later dates, so its date is never checked."""
         check_ancillary_granule_dates({"IGBP": [fmatch_real_ancillary_granules["IGBP"]]}, self._day(date))
 
     def test_reader_without_a_window_is_not_read(self, tmp_path):
@@ -707,14 +692,14 @@ class TestCheckAncillaryGranuleDates:
         """
         check_ancillary_granule_dates(nise, footprint_time)
         with pytest.raises(FmatchInputError, match="outside their reader's window"):
-            check_ancillary_granule_dates(nise, np.concatenate([footprint_time, self._day("2026-06-12")]))
+            check_ancillary_granule_dates(nise, np.concatenate([footprint_time, self._day("2026-06-13")]))
 
     def test_nat_footprint_times_are_ignored(self, nise):
         times = np.concatenate([self._day("2026-06-11"), np.array(["NaT"], dtype="datetime64[ns]")])
         check_ancillary_granule_dates(nise, times)
 
         with pytest.raises(FmatchInputError, match="NISE"):
-            check_ancillary_granule_dates(nise, np.concatenate([self._day("2026-06-12"), times[-1:]]))
+            check_ancillary_granule_dates(nise, np.concatenate([self._day("2026-06-13"), times[-1:]]))
 
     def test_unreadable_granule_metadata_raises(self, tmp_path):
         granule = tmp_path / "AERDB_D3_no_coverage.nc"
@@ -793,7 +778,7 @@ class TestLiberaInputsFromS3:
 
 
 class TestLoadCfCamCloudFraction:
-    """CF-CAM is read once per run, sorted by radiometer time, and must carry Cloud_Fraction."""
+    """CF-CAM is read once per run, sorted by radiometer time, and must carry cam_cloud_fraction with its units."""
 
     TIMES = np.datetime64("2026-06-11T00:00:00", "ns") + np.arange(6) * np.timedelta64(10, "ms")
 
@@ -802,9 +787,25 @@ class TestLoadCfCamCloudFraction:
             load_cf_cam_cloud_fraction([])
 
     def test_file_without_cloud_fraction_raises(self, cf_cam_file_factory):
-        cf_cam_file = cf_cam_file_factory(self.TIMES, cloud_fraction_variable="cam_cloud_fraction")
+        cf_cam_file = cf_cam_file_factory(self.TIMES, cloud_fraction_variable="Cloud_Fraction")
 
-        with pytest.raises(FmatchInputError, match="no Cloud_Fraction variable"):
+        with pytest.raises(FmatchInputError, match="no cam_cloud_fraction variable"):
+            load_cf_cam_cloud_fraction([cf_cam_file])
+
+    def test_fraction_is_converted_to_percent(self, cf_cam_file_factory):
+        fraction = np.array([0.0, 0.25, 0.5, 0.75, 1.0, np.nan], dtype=np.float32)
+        cf_cam_file = cf_cam_file_factory(self.TIMES, fraction, units="1")
+
+        values = load_cf_cam_cloud_fraction([cf_cam_file]).cloud_fraction
+
+        np.testing.assert_array_equal(values, np.array([0.0, 25.0, 50.0, 75.0, 100.0, np.nan], dtype=np.float32))
+        assert values.dtype == np.float32
+
+    @pytest.mark.parametrize("units", [None, "fraction", "%"])
+    def test_missing_or_unknown_units_raise(self, cf_cam_file_factory, units):
+        cf_cam_file = cf_cam_file_factory(self.TIMES, units=units)
+
+        with pytest.raises(FmatchInputError, match=rf"states units {units!r} for cam_cloud_fraction"):
             load_cf_cam_cloud_fraction([cf_cam_file])
 
     def test_files_are_combined_in_time_order_with_fill_as_nan(self, tmp_path, cf_cam_file_factory):
@@ -904,12 +905,9 @@ class TestRealCfCamFile:
         return fmatch_real_data_path / REAL_CF_CAM_FILE
 
     @pytest.fixture
-    def renamed_cf_cam(self, real_cf_cam, tmp_path) -> Path:
-        """A copy of the real granule with ``cam_cloud_fraction`` renamed ``Cloud_Fraction`` and nothing else changed."""
-        copy = Path(shutil.copy(real_cf_cam, tmp_path / real_cf_cam.name))
-        with netCDF4.Dataset(copy, "a") as dataset:
-            dataset.renameVariable("cam_cloud_fraction", "Cloud_Fraction")
-        return copy
+    def writable_cf_cam(self, real_cf_cam, tmp_path) -> Path:
+        """A copy of the real granule a test can change."""
+        return Path(shutil.copy(real_cf_cam, tmp_path / real_cf_cam.name))
 
     @staticmethod
     def _raw(path: Path, name: str) -> np.ndarray:
@@ -918,33 +916,33 @@ class TestRealCfCamFile:
             dataset.set_auto_maskandscale(False)
             return dataset[name][:]
 
-    def test_granule_naming_its_cloud_fraction_cam_cloud_fraction_is_rejected(self, real_cf_cam):
-        with pytest.raises(FmatchInputError, match="no Cloud_Fraction variable"):
-            load_cf_cam_cloud_fraction([real_cf_cam])
+    def test_times_decode_and_the_fraction_reads_as_percent(self, real_cf_cam):
+        stored = self._raw(real_cf_cam, "radiometer_time")
 
-    def test_times_decode_from_nanoseconds_since_the_ccsds_epoch(self, renamed_cf_cam):
-        stored = self._raw(renamed_cf_cam, "radiometer_time")
-
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
 
         expected = np.datetime64("1958-01-01T00:00:00", "ns") + stored.astype("timedelta64[ns]")
         np.testing.assert_array_equal(cloud_fraction.radiometer_time, expected)
-        np.testing.assert_array_equal(cloud_fraction.cloud_fraction, self._raw(renamed_cf_cam, "Cloud_Fraction"))
+        # The granule states units "1", a fraction.
+        np.testing.assert_array_equal(
+            cloud_fraction.cloud_fraction, self._raw(real_cf_cam, "cam_cloud_fraction") * np.float32(100.0)
+        )
         assert cloud_fraction.cloud_fraction.dtype == np.float32
 
-    def test_fill_value_reads_as_nan(self, renamed_cf_cam):
+    def test_fill_value_reads_as_nan(self, writable_cf_cam):
         fill = np.float32(-999.0)
-        with netCDF4.Dataset(renamed_cf_cam, "a") as dataset:
-            assert dataset["Cloud_Fraction"].getncattr("_FillValue") == fill
-            dataset["Cloud_Fraction"][2] = fill
+        with netCDF4.Dataset(writable_cf_cam, "a") as dataset:
+            dataset.set_auto_maskandscale(False)
+            assert dataset["cam_cloud_fraction"].getncattr("_FillValue") == fill
+            dataset["cam_cloud_fraction"][2] = fill
 
-        values = load_cf_cam_cloud_fraction([renamed_cf_cam]).cloud_fraction
+        values = load_cf_cam_cloud_fraction([writable_cf_cam]).cloud_fraction
 
         assert np.isnan(values[2])
         assert np.isfinite(np.delete(values, 2)).all()
 
-    def test_rows_match_footprints_by_exact_time(self, renamed_cf_cam):
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+    def test_rows_match_footprints_by_exact_time(self, real_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
         cf_times = cloud_fraction.radiometer_time
         # L1B footprints at every CF-CAM time plus one 5 ms later, which CF-CAM does not cover.
         footprint_time = np.sort(np.concatenate([cf_times, cf_times + np.timedelta64(5, "ms")]))
@@ -955,8 +953,8 @@ class TestRealCfCamFile:
         np.testing.assert_array_equal(values[covered], cloud_fraction.cloud_fraction)
         assert np.isnan(values[~covered]).all()
 
-    def test_row_with_no_footprint_at_its_time_raises(self, renamed_cf_cam):
-        cloud_fraction = load_cf_cam_cloud_fraction([renamed_cf_cam])
+    def test_row_with_no_footprint_at_its_time_raises(self, real_cf_cam):
+        cloud_fraction = load_cf_cam_cloud_fraction([real_cf_cam])
 
         granule_time = np.delete(cloud_fraction.radiometer_time, 6)
 

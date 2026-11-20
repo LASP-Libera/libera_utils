@@ -76,10 +76,18 @@ def parse_cli_args(cli_args: list):
     # ========
     scene_id_parser = subparsers.add_parser(
         "scene-id",
-        help="run the Libera SCENE-ID algorithm variant named by LIBERA_SCENE_ID_VARIANT from a manifest file",
+        help="run the Libera SCENE-ID algorithm from a manifest file, writing the product of the processing step the "
+        "manifest's configuration or --processing_step_id names",
     )
     scene_id_parser.set_defaults(func=scene_id_algorithm.scene_id_cli_handler)
     scene_id_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+    scene_id_parser.add_argument(
+        "--processing_step_id",
+        choices=[str(step) for step in scene_id_algorithm.RUNNER_CONFIGS],
+        default=None,
+        help="the SCENE-ID processing step to run; must match the input manifest's configuration processing_step_id "
+        "when both are given",
+    )
 
     # =========================
     # FOOTPRINT MATCHING (FMATCH)

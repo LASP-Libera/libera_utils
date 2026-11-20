@@ -60,6 +60,7 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
             argparse.Namespace(
                 func=scene_id_algorithm.scene_id_cli_handler,
                 manifest="file.manifest",
+                processing_step_id=None,
             ),
         ),
     ],
@@ -465,22 +466,33 @@ def test_wrong_libera_ids(cli_args):
         cli.parse_cli_args(cli_args)
 
 
-@pytest.mark.parametrize("variant", ["cam", "cam-camtime"])
-def test_scene_id_cli_dispatch(variant, monkeypatch):
-    """``scene-id`` runs the variant named by LIBERA_SCENE_ID_VARIANT, passing ``run_algorithm`` the manifest path."""
+@pytest.mark.parametrize("flag", [None, *[str(step) for step in scene_id_algorithm.RUNNER_CONFIGS]])
+def test_scene_id_cli_dispatch(flag, monkeypatch):
+    """``scene-id`` passes ``run_algorithm`` the manifest path and the ``--processing_step_id`` value, if any."""
     called_with = {}
     monkeypatch.setattr(
         scene_id_algorithm,
         "run_algorithm",
-        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
+        lambda manifest_path, processing_step_id: called_with.update(
+            manifest_path=manifest_path, processing_step_id=processing_step_id
+        ),
     )
-    monkeypatch.setenv(scene_id_algorithm.SCENE_ID_VARIANT_ENV, variant)
+    argv = ["scene-id", "file.manifest"] + ([] if flag is None else ["--processing_step_id", flag])
 
-    args = cli.parse_cli_args(["scene-id", "file.manifest"])
+    args = cli.parse_cli_args(argv)
     args.func(args)
 
-    assert called_with["manifest_path"] == Path("file.manifest")
-    assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]
+    assert called_with == {"manifest_path": Path("file.manifest"), "processing_step_id": flag}
+
+
+def test_scene_id_cli_rejects_a_step_that_is_not_scene_id(capsys):
+    """``--processing_step_id`` accepts only the SCENE-ID processing steps."""
+    with pytest.raises(SystemExit):
+        cli.parse_cli_args(["scene-id", "file.manifest", "--processing_step_id", "aux-fmatch-cam"])
+
+    stderr = capsys.readouterr().err
+    assert "invalid choice: 'aux-fmatch-cam'" in stderr
+    assert "aux-scene-id-cam" in stderr
 
 
 @pytest.mark.parametrize("flag", [None, *[str(step) for step in footprint_match_algorithm.RUNNER_CONFIGS]])

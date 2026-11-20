@@ -5,7 +5,7 @@ clusters five footprints near lat ≈ 10–11°, lon ≈ −10° (stored as 350�
 0..360 convention) plus one far-away footprint, so tests can verify longitude
 normalization, fill handling, layer selection, and time matching.
 
-The real-granule tests read a cut of ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc``.
+The real-granule tests read a cut of ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_103103.2026061100.nc``.
 """
 
 import numpy as np
@@ -272,7 +272,7 @@ class TestCeresSsfReaderLayoutChecks:
 
 
 class TestCeresSsfReaderRealSubset:
-    """A real CER_SSF_NOAA20-FM6-VIIRS Edition1C granule (2023-01-01 00 UTC), cut to three blocks of footprints.
+    """A real CER_SSF_NOAA20-FM6-VIIRS Edition1C granule (2026-06-11 00 UTC), cut to three blocks of footprints.
 
     The blocks are spread across the hour (start, middle, end) with their values unchanged; see
     tests/test_data/footprint_matching/README.md. The tests pin the file conventions the reader relies on: the time
@@ -282,7 +282,7 @@ class TestCeresSsfReaderRealSubset:
 
     @pytest.fixture
     def ssf_path(self, fmatch_real_data_path):
-        return fmatch_real_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_subset.nc"
+        return fmatch_real_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_103103.2026061100_subset.nc"
 
     def test_every_footprint_has_a_time_and_the_times_span_one_hour(self, ssf_path):
         """``CeresSsfReader._load_granule`` decodes a time for every footprint of a real SSF granule, spanning the hour.
@@ -346,12 +346,12 @@ class TestCeresSsfReaderRealSubset:
         assert reader.samples_in(box, points.times[i] + np.timedelta64(4, "h")).n_samples == 0
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``CeresSsfReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the hour ``2023010100`` in its name.
+        """``CeresSsfReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the hour ``2026061100`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = CeresSsfReader.granule_span(fmatch_real_ancillary_granules["CERES_SSF"])
-        assert start == np.datetime64("2023-01-01T00:00:00", "ns")
-        assert end == np.datetime64("2023-01-01T00:59:59.999999", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T00:59:59.999999", "ns")

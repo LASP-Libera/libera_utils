@@ -425,7 +425,7 @@ class TestIGBPTileHolder:
 
 
 class TestIGBPReaderRealSubset:
-    """A real MCD12Q1 h21v07 tile (2024) cut to 120 x 120 pixels in the Ethiopian highlands, near 12N, 38E.
+    """A real MCD12Q1 h21v07 tile (2025) cut to 120 x 120 pixels in the Ethiopian highlands, near 12N, 38E.
 
     The cut keeps ``LC_Type1`` and rewrites the tile's ``StructMetadata.0`` corners and
     dimensions to the window, so the sinusoidal geolocation runs on it unchanged. The
@@ -434,7 +434,7 @@ class TestIGBPReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return IGBPReader([fmatch_real_data_path / "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf"])
+        return IGBPReader([fmatch_real_data_path / "MCD12Q1.A2025001.h21v07.061.2026293135651_subset.hdf"])
 
     def test_window_codes_are_the_granules(self, reader):
         """``IGBPReader`` holds the real MCD12Q1 subset's ``LC_Type1`` codes exactly as stored.
@@ -447,14 +447,14 @@ class TestIGBPReaderRealSubset:
         codes, counts = np.unique(reader._native.data, return_counts=True)
         assert dict(zip(codes.tolist(), counts.tolist(), strict=True)) == {
             1: 2,
-            2: 8,
+            2: 7,
             5: 1,
-            9: 26,
-            10: 1292,
-            11: 27,
-            12: 13022,
+            9: 27,
+            10: 1362,
+            11: 21,
+            12: 12959,
             13: 12,
-            14: 3,
+            14: 2,
             16: 1,
             17: 6,
         }
@@ -481,7 +481,7 @@ class TestIGBPReaderRealSubset:
         """``IGBPReader`` sets no ``GRANULE_DATE_WINDOW`` and reports no granule span.
 
         MCD12Q1 is an annual map whose newest year is applied to later dates, so the runner must never reject the real
-        2024 granule for its date; ``granule_span`` raises rather than dating it.
+        2025 granule for its date; ``granule_span`` raises rather than dating it.
         """
         assert IGBPReader.GRANULE_DATE_WINDOW is None
         with pytest.raises(NotImplementedError, match="GRANULE_DATE_WINDOW is None"):

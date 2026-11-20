@@ -188,7 +188,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
 
 
 class TestVIIRSAODReaderRealSubset:
-    """The full 1 degree grid of a real AERDB_D3_VIIRS_NOAA20 granule (2026-09-27).
+    """The full 1 degree grid of a real AERDB_D3_VIIRS_NOAA20 granule (2026-06-11).
 
     Only the coordinates and the two fields the reader reads are kept. Pinned values
     are the source granule's own.
@@ -196,7 +196,7 @@ class TestVIIRSAODReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return VIIRSAODReader([fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc"])
+        return VIIRSAODReader([fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026162.021.2026166001045_subset.nc"])
 
     def test_axes_are_the_global_one_degree_cell_centers(self, reader):
         """On a real granule, ``VIIRSAODReader`` loads the global 180 x 360 grid of 1 degree cell centers.
@@ -218,12 +218,12 @@ class TestVIIRSAODReaderRealSubset:
         This checks the masking against the provider's own attributes rather than the synthetic fixture's: an unmasked
         -999 fill would show up as a negative AOD or an unknown aerosol code.
 
-        Asserts the native AOD plane has exactly 26960 finite cells (the source granule's count inside the valid
+        Asserts the native AOD plane has exactly 25191 finite cells (the source granule's count inside the valid
         range), no AOD below 0, and only aerosol-type codes 0 to 7.
         """
         aod, aerosol_type = reader._native.data[_AOD_AXIS], reader._native.data[_TYPE_AXIS]
-        # 26 960 of the 64 800 cells hold an AOD inside valid_range 0..10; the rest are -999 fill.
-        assert np.isfinite(aod).sum() == 26960
+        # 25 191 of the 64 800 cells hold an AOD inside valid_range 0..10; the rest are -999 fill.
+        assert np.isfinite(aod).sum() == 25191
         assert np.nanmin(aod) >= 0.0
         assert set(np.unique(aerosol_type[np.isfinite(aerosol_type)])) <= set(range(8))
 
@@ -233,35 +233,27 @@ class TestVIIRSAODReaderRealSubset:
         This checks the whole read path, from the file's arrays through the box query to one served sample, against
         values pinned from the source granule, so a misaligned axis or swapped field would serve another cell's values.
 
-        Queries a 1 degree box around 15.5 S, 21.5 E and asserts the sample there has AOD 0.69888 and aerosol type 4.
+        Queries a 1 degree box around 15.5 S, 21.5 E and asserts the sample there has AOD 0.05647 and aerosol type 6.
         """
         samples = reader.samples_in(BoundingBox(-16.0, -15.0, 21.0, 22.0), _T)
         aod, aerosol_type = sample_at(samples, -15.5, 21.5)
-        assert aod == pytest.approx(0.69888, abs=1e-5)
-        assert aerosol_type == 4
+        assert aod == pytest.approx(0.05647, abs=1e-5)
+        assert aerosol_type == 6
 
     def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
-        """``VIIRSAODReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the day ``A2026270`` in its name.
+        """``VIIRSAODReader.granule_span`` dates the real granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes: the day ``A2026162`` in its name.
 
         The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
         misread span would reject the right granule or accept one from the wrong day. Read without constructing the
         reader, as the runner reads it.
         """
         start, end = VIIRSAODReader.granule_span(fmatch_real_ancillary_granules["VIIRS_AOD"])
-        assert start == np.datetime64("2026-09-27T00:00:00", "ns")
-        assert end == np.datetime64("2026-09-27T23:59:59", "ns")
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T23:59:59", "ns")
 
 
 class TestVIIRSAODGranuleSpan:
     """``VIIRSAODReader.granule_span`` dates a granule from its ``time_coverage_start`` / ``time_coverage_end`` attributes."""
-
-    def test_span_is_the_coverage_date(self, aod_noaa20_file_factory):
-        path = aod_noaa20_file_factory(coverage_date="2026-06-11")
-
-        start, end = VIIRSAODReader.granule_span(path)
-
-        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
-        assert end == np.datetime64("2026-06-11T23:59:59", "ns")
 
     def test_granule_without_a_date_raises(self, aod_noaa20_file_factory):
         """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""

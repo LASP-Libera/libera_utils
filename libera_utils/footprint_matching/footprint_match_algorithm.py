@@ -53,7 +53,7 @@ from libera_utils.io.filenaming import (
     AncillaryVersionArchiveFilename,
     LiberaDataProductFilename,
 )
-from libera_utils.io.manifest import Manifest
+from libera_utils.io.manifest import Manifest, resolve_processing_step_id
 from libera_utils.io.smart_open import is_s3, smart_copy_file, smart_open
 from libera_utils.logutil import configure_task_logging
 from libera_utils.version import version
@@ -69,8 +69,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Input manifest configuration key naming the processing step, and so the FMATCH product, a run writes.
-PROCESSING_STEP_ID_CONFIGURATION_KEY: str = "processing_step_id"
 
 # Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
 # its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
@@ -85,9 +83,16 @@ FMATCH_RADIOMETER_TIME_COORDINATE: str = "RADIOMETER_TIME"
 # included. It is not a product variable and is not aligned with the footprints; the CF-CAM match reads it.
 L1B_GRANULE_TIME_KEY: str = "granule_radiometer_time"
 
-# Name of the per-footprint cloud fraction, in percent, in both Camera Cloud Fraction products: CF-CAM (one value
-# per radiometer footprint) and CF-CAM-CAMTIME (one value per camera pseudo-footprint).
-CF_CAM_CLOUD_FRACTION_VARIABLE: str = "Cloud_Fraction"
+# Name of the per-footprint cloud fraction in CF-CAM (one value per radiometer footprint), as the Camera Cloud
+# Fraction algorithm writes it.
+CF_CAM_CLOUD_FRACTION_VARIABLE: str = "cam_cloud_fraction"
+
+# Percent per unit of the CF-CAM cloud fraction, keyed by the ``units`` attribute the variable states. FMATCH-CAM
+# writes Cloud_Fraction_Camera in percent; the Camera Cloud Fraction algorithm writes a fraction, units "1".
+CF_CAM_CLOUD_FRACTION_PERCENT_PER_UNIT: dict[str, float] = {"1": 100.0, "percent": 1.0}
+
+# Name of the per-pseudo-footprint cloud fraction, in percent, in CF-CAM-CAMTIME.
+CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE: str = "Cloud_Fraction"
 
 # CF-CAM carries the L1B RAD-4CH time coordinate under its L1B name, and its rows are matched to the L1B footprints
 # by exact equality on it.
@@ -99,14 +104,6 @@ class CloudFractionTimeMismatchError(ValueError):
 
     Raised when two CF-CAM rows share a radiometer time, when a CF-CAM cloud fraction falls inside an L1B granule's
     time span without matching one of its footprints, or when no footprint of the granule matches any CF-CAM row.
-    """
-
-
-class ProcessingStepIdMismatchError(ValueError):
-    """The input manifest and the command line name different FMATCH processing steps.
-
-    Raised when the manifest's ``configuration["processing_step_id"]`` and the ``processing_step_id`` given to the
-    run are both set and disagree, so it is not clear which product the run is meant to write.
     """
 
 
@@ -269,15 +266,17 @@ def _load_cam_camtime_footprints(input_path: str | Path | S3Path) -> tuple[list[
     with smart_open(input_path) as handle, xr.open_dataset(handle, engine="h5netcdf") as cf_dataset:
         cf_dataset = cf_dataset.load()
     footprints = pseudofootprints_from_camtime_dataset(cf_dataset)
-    if CF_CAM_CLOUD_FRACTION_VARIABLE not in cf_dataset:
+    if CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE not in cf_dataset:
         raise FmatchInputError(
-            f"CF-CAM-CAMTIME input {AnyPath(input_path).name} has no {CF_CAM_CLOUD_FRACTION_VARIABLE} variable, which "
+            f"CF-CAM-CAMTIME input {AnyPath(input_path).name} has no {CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE} variable, which "
             "FMATCH-CAM-CAMTIME writes as cloud_fraction_camera. Regenerate the input with the Camera Cloud Fraction "
-            f"algorithm so it carries {CF_CAM_CLOUD_FRACTION_VARIABLE}."
+            f"algorithm so it carries {CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE}."
         )
     # Boolean-mask indexing returns row-major order, matching the reconstruction order.
     mask = camtime_real_cell_mask(cf_dataset)
-    cloud_fraction_camera = np.asarray(cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32)[mask]
+    cloud_fraction_camera = np.asarray(cf_dataset[CF_CAM_CAMTIME_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32)[
+        mask
+    ]
     return footprints, cloud_fraction_camera
 
 
@@ -395,27 +394,7 @@ def resolve_runner_config(
     ValueError
         If neither names a step, or the step named is not one of the FMATCH processing steps.
     """
-    from_manifest = manifest.configuration.get(PROCESSING_STEP_ID_CONFIGURATION_KEY)
-    from_argument = None if processing_step_id is None else str(processing_step_id)
-    if from_manifest is not None and from_argument is not None and str(from_manifest) != from_argument:
-        raise ProcessingStepIdMismatchError(
-            f"The input manifest's configuration names processing step {str(from_manifest)!r}, but the "
-            f"processing_step_id argument (--processing_step_id) names {from_argument!r}. Give one, or make the two "
-            "match."
-        )
-    configs_by_step = {str(step): config for step, config in RUNNER_CONFIGS.items()}
-    step_name = str(from_manifest) if from_manifest is not None else from_argument
-    if step_name is None:
-        raise ValueError(
-            "No FMATCH processing step was given. Set the input manifest's "
-            f'configuration["{PROCESSING_STEP_ID_CONFIGURATION_KEY}"] or pass --processing_step_id, '
-            f"to one of {sorted(configs_by_step)}."
-        )
-    if step_name not in configs_by_step:
-        raise ValueError(
-            f"Processing step {step_name!r} is not an FMATCH processing step; expected one of {sorted(configs_by_step)}."
-        )
-    return configs_by_step[step_name]
+    return RUNNER_CONFIGS[resolve_processing_step_id(manifest, processing_step_id, RUNNER_CONFIGS, "FMATCH")]
 
 
 def fmatch_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
@@ -561,8 +540,9 @@ def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> Rad
     """Read the cloud fraction of every CF-CAM file of a run, keyed by radiometer time.
 
     The files are read once and their rows combined, so a run with several L1B inputs matches each against the same
-    values (see :meth:`RadiometerCloudFraction.values_for`). The ``_FillValue`` of ``Cloud_Fraction`` reads as
-    ``NaN``.
+    values (see :meth:`RadiometerCloudFraction.values_for`). The cloud fraction is read from ``cam_cloud_fraction``
+    and converted to percent from the unit its ``units`` attribute states, a fraction (``"1"``) or ``"percent"``; its
+    ``_FillValue`` reads as ``NaN``.
 
     Parameters
     ----------
@@ -578,7 +558,8 @@ def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> Rad
     ------
     FmatchInputError
         If ``cf_cam_file_paths`` is empty, since FMATCH-CAM writes the CF-CAM cloud fraction and cannot run without
-        it, or if a file lacks ``Cloud_Fraction`` or ``radiometer_time``.
+        it, if a file lacks ``cam_cloud_fraction`` or ``radiometer_time``, or if its ``cam_cloud_fraction`` states
+        no ``units`` or one that is neither ``"1"`` nor ``"percent"``.
     CloudFractionTimeMismatchError
         If two CF-CAM rows share a radiometer time, which leaves the footprint's cloud fraction ambiguous.
     """
@@ -600,8 +581,19 @@ def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> Rad
                     "Cloud_Fraction_Camera from. Regenerate the input with the Camera Cloud Fraction algorithm so it "
                     f"carries {CF_CAM_TIME_VARIABLE} and {CF_CAM_CLOUD_FRACTION_VARIABLE}."
                 )
+            units = cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].attrs.get("units")
+            if units not in CF_CAM_CLOUD_FRACTION_PERCENT_PER_UNIT:
+                raise FmatchInputError(
+                    f"CF-CAM input {AnyPath(path).name} states units {units!r} for {CF_CAM_CLOUD_FRACTION_VARIABLE}, "
+                    "so FMATCH-CAM cannot convert it to the percent Cloud_Fraction_Camera is written in. Regenerate "
+                    "the input with the Camera Cloud Fraction algorithm so the variable's units attribute is one of "
+                    f"{sorted(CF_CAM_CLOUD_FRACTION_PERCENT_PER_UNIT)}."
+                )
+            percent_per_unit = np.float32(CF_CAM_CLOUD_FRACTION_PERCENT_PER_UNIT[units])
             times.append(np.asarray(cf_dataset[CF_CAM_TIME_VARIABLE].values, dtype="datetime64[ns]"))
-            values.append(np.asarray(cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32))
+            values.append(
+                np.asarray(cf_dataset[CF_CAM_CLOUD_FRACTION_VARIABLE].values, dtype=np.float32) * percent_per_unit
+            )
 
     all_times = np.concatenate(times)
     order = np.argsort(all_times, kind="stable")
