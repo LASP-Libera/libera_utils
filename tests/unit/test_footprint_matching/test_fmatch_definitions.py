@@ -1,7 +1,7 @@
 """Unit tests for the FMATCH product definitions and their loaders.
 
 There is one SSF-style product definition per FMATCH operational mode. The
-radiometer-timescale FMATCH-IMAGER carries the RBSP CLDPIX/FLASHFlux cloud fields
+radiometer-timescale FMATCH-IMAGER carries the CLDPIX and CERES SSF cloud fields
 alongside the full ERA5 single-level and pressure-level fields and the VIIRS
 imager fields. These tests confirm, for every shipped definition, that:
 - The product ID is registered as an auxiliary (AUX) DataProductIdentifier and
@@ -48,7 +48,7 @@ PRODUCTION_READER_KEYS = frozenset(
         "NISE",
         "VIIRS_BRDF",
         "VIIRS_CLDPROP_D3",
-        "FLASHFlux",
+        "CERES_SSF",
         "CLDPIX",
         "VIIRS_AOD",
     }
@@ -83,7 +83,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, tuple[str, 
     PRESSURE_LEVEL). The reader's instrument is not part of the
     name -- it is recorded in the variable's ``long_name`` instead (see
     ``test_reader_instrument_is_recorded_in_long_name``). A spec is carried when ``mode`` is in
-    its ``modes`` (e.g. the extended FLASHFlux cloud/aerosol/albedo fields appear in
+    its ``modes`` (e.g. the extended CERES SSF cloud/aerosol/albedo fields appear in
     FMATCH-IMAGER only).
     """
     expected: dict[str, tuple[str, str | None]] = {}
@@ -131,7 +131,7 @@ class TestImagerContent:
     def test_imager_has_rbsp_variables(self, definitions):
         definition = definitions[OperationalMode.IMAGER]
         assert any(name.startswith("CLDPIX_") for name in definition.variables)
-        assert any(name.startswith("FLASHFlux_") for name in definition.variables)
+        assert any(name.startswith("CERES_SSF_") for name in definition.variables)
 
     def test_imager_keeps_full_era5_field_set(self, definitions):
         definition = definitions[OperationalMode.IMAGER]
@@ -145,27 +145,28 @@ class TestImagerContent:
         assert "ERA5_Pressure_Temperature" in definition.variables
         assert "ERA5_Pressure_Relative_Humidity_Standard_Deviation" in definition.variables
 
-    def test_extended_flashflux_fields_are_imager_only(self, definitions):
-        # The extended FLASHFlux cloud-layer / aerosol / albedo fields are carried by
+    def test_extended_ceres_ssf_fields_are_imager_only(self, definitions):
+        # The extended CERES SSF cloud-layer / imager-aerosol / surface-albedo / TOA-insolation fields are carried by
         # FMATCH-IMAGER alone (their modes) and must NOT leak into FMATCH-IMAGER-CAMTIME, the
-        # other product that activates the FLASHFlux reader. Spot-check one field per secondary
-        # axis (layer, aerosol type, albedo band) plus a std companion.
+        # other product that activates the CERES SSF reader. Spot-check one field per secondary
+        # axis (sky condition, layer, multilayer condition), a 1-D field and a std companion.
         extended = (
-            "FLASHFlux_Layer_Coverage_Upper",
-            "FLASHFlux_Cloud_Optical_Depth_Upper",
-            "FLASHFlux_Cloud_Top_Pressure_Lower_Standard_Deviation",
-            "FLASHFlux_Match_AOT",
-            "FLASHFlux_Aerosol_Type_Percentage_Type6",
-            "FLASHFlux_Surface_Albedo",
+            "CERES_SSF_Layer_Coverage_Upper",
+            "CERES_SSF_Cloud_Optical_Depth_Upper",
+            "CERES_SSF_Cloud_Top_Pressure_Lower_Standard_Deviation",
+            "CERES_SSF_Cloud_Coverage_Multilayer_Upper",
+            "CERES_SSF_Imager_Deep_Blue_Ocean_055um_Aerosol_Optical_Depth",
+            "CERES_SSF_Surface_Albedo",
+            "CERES_SSF_TOA_Incoming_Solar_Radiation",
         )
         imager = definitions[OperationalMode.IMAGER]
         for name in extended:
             assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
         camtime = definitions[OperationalMode.IMAGER_CAMTIME]
         leaked = [name for name in extended if name in camtime.variables]
-        assert leaked == [], f"FMATCH-IMAGER-CAMTIME must not declare IMAGER-only FLASHFlux fields, found {leaked}"
-        # The base FLASHFlux fields, by contrast, still appear in IMAGER-CAMTIME.
-        assert "FLASHFlux_Cloud_Optical_Depth_Lower" in camtime.variables
+        assert leaked == [], f"FMATCH-IMAGER-CAMTIME must not declare IMAGER-only CERES SSF fields, found {leaked}"
+        # The base CERES SSF fields, by contrast, still appear in IMAGER-CAMTIME.
+        assert "CERES_SSF_Cloud_Optical_Depth_Lower" in camtime.variables
 
 
 class TestFmatchDefinitions:
@@ -278,11 +279,11 @@ class TestDerivedProductVariables:
         assert "Wind_V10_Standard_Deviation" in names
 
     def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
-        # FLASHFlux's encoded scene-type codes have n_categories=None but are
+        # CERES SSF's encoded scene-type codes have n_categories=None but are
         # weighted_mode, so a within-footprint standard deviation is meaningless
         # and must NOT be generated. This guards the mean-only rule.
-        flashflux = ReaderRegistry.get("FLASHFlux")
-        names = {spec.name for spec in flashflux.product_variable_specs()}
+        ceres_ssf = ReaderRegistry.get("CERES_SSF")
+        names = {spec.name for spec in ceres_ssf.product_variable_specs()}
         for encoded in ("Cloud_Classification", "Shortwave_ADM_Type", "Longwave_ADM_Type"):
             assert encoded in names
             assert f"{encoded}_Standard_Deviation" not in names

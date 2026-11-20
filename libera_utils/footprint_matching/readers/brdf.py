@@ -56,10 +56,17 @@ File naming:
     VJ143C1.A{YYYYDDD}.{version}.{YYYYDDDHHMMSS}.h5
 """
 
+from pathlib import Path
+
 import h5py
 import numpy as np
 
-from libera_utils.footprint_matching.readers._hdf5_io import _parse_he5_grid_metadata, read_he5_struct_metadata
+from libera_utils.constants import DataProductIdentifier
+from libera_utils.footprint_matching.readers._hdf5_io import (
+    _parse_he5_grid_metadata,
+    read_he5_granule_span,
+    read_he5_struct_metadata,
+)
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
@@ -145,6 +152,7 @@ class VIIRSBRDFReader(StaticReader):
     """
 
     READER_KEY: str = "VIIRS_BRDF"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_viirs_noaa20_brdf
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
     # second reader.
@@ -161,6 +169,29 @@ class VIIRSBRDFReader(StaticReader):
         )
         for name, _ in _BRDF_FIELDS
     )
+
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the day the granule is issued for, from its root ``RangeBeginning*`` / ``RangeEnding*`` attributes.
+
+        Parameters
+        ----------
+        path : Path
+            One staged VJ143C1 granule.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)`` as UTC ``datetime64[ns]``.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be opened.
+        ValueError
+            If a range attribute is missing or the attributes do not form a valid span.
+        """
+        return read_he5_granule_span(path)
 
     def _load_native(self) -> GridSamples:
         """Read all nine BRDF fields from the HDF5 file once.

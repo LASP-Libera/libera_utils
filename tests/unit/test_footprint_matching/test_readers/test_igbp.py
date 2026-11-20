@@ -11,6 +11,8 @@ Real MCD12Q1 files can be downloaded from:
 """
 
 import tracemalloc
+from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,7 +24,6 @@ from libera_utils.footprint_matching.types import BoundingBox, SampleSet
 from tests.plugins.footprint_matching_fixtures import (
     MODIS_SPHERE_RADIUS_M,
     MODIS_TILE_SIZE_M,
-    make_modis_sinusoidal_hdf4_fixture,
     modis_tile_corners,
 )
 
@@ -38,13 +39,20 @@ def _codes(seed: int, n: int = _N) -> np.ndarray:
     return rng.choice(np.array([0, 1, 5, 9, 12, 17, 18, 255], dtype=np.uint8), size=(n, n))
 
 
-def _tile(tmp_path, h: int, v: int, codes: np.ndarray | None = None, **kwargs):
-    ul, lr = modis_tile_corners(h, v)
-    data = _codes(h * 100 + v) if codes is None else codes
-    path = make_modis_sinusoidal_hdf4_fixture(
-        tmp_path / f"MCD12Q1.h{h:02d}v{v:02d}.hdf", data, ul_m=ul, lr_m=lr, **kwargs
-    )
-    return path, data
+@pytest.fixture
+def igbp_tile_factory(modis_sinusoidal_file_factory) -> Callable[..., tuple[Path, np.ndarray]]:
+    """Factory writing MODIS tile ``h``, ``v`` and returning ``(path, codes)``.
+
+    The codes default to ``_codes`` seeded by the tile; other keywords pass to the file writer.
+    """
+
+    def _write(h: int, v: int, codes: np.ndarray | None = None, **kwargs) -> tuple[Path, np.ndarray]:
+        ul, lr = modis_tile_corners(h, v)
+        data = _codes(h * 100 + v) if codes is None else codes
+        path = modis_sinusoidal_file_factory(data, filename=f"MCD12Q1.h{h:02d}v{v:02d}.hdf", ul_m=ul, lr_m=lr, **kwargs)
+        return path, data
+
+    return _write
 
 
 def _brute_force(tiles, bbox: BoundingBox) -> np.ndarray:
@@ -85,7 +93,7 @@ def _assert_matches(reader: IGBPReader, tiles, bbox: BoundingBox) -> None:
 
 
 class TestReadModisSinusoidal:
-    def test_geometry_is_parsed_from_struct_metadata(self, tmp_path):
+    def test_geometry_is_parsed_from_struct_metadata(self, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` returns the stored codes and the tile geometry from ``StructMetadata.0``.
 
         MODIS tiles store no latitude or longitude arrays; every pixel position is derived from the corners, pixel
@@ -95,7 +103,7 @@ class TestReadModisSinusoidal:
         matches the tile's corner, the pixel sizes are the tile size over the pixel count (``dy`` negative), and the
         radius is the MODIS sphere radius.
         """
-        path, data = _tile(tmp_path, 18, 4)
+        path, data = igbp_tile_factory(18, 4)
         codes, geometry = read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
         np.testing.assert_array_equal(codes, data)
         assert codes.dtype == np.uint8
@@ -110,7 +118,7 @@ class TestReadModisSinusoidal:
     @pytest.mark.parametrize(
         "field", ["XDim", "YDim", "UpperLeftPointMtrs", "LowerRightMtrs", "Projection", "ProjParams"]
     )
-    def test_missing_field_raises(self, tmp_path, field):
+    def test_missing_field_raises(self, field, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` naming a geometry field not in ``StructMetadata.0``.
 
         Without any one of these fields the pixels cannot be located (``ProjParams`` carries the sphere radius that
@@ -120,11 +128,11 @@ class TestReadModisSinusoidal:
         Parametrized over ``XDim``, ``YDim``, ``UpperLeftPointMtrs``, ``LowerRightMtrs``, ``Projection`` and
         ``ProjParams``: each run writes a tile without that field and asserts the error says it has no such field.
         """
-        path, _ = _tile(tmp_path, 18, 4, omit=(field,))
+        path, _ = igbp_tile_factory(18, 4, omit=(field,))
         with pytest.raises(ValueError, match=f"has no {field} field"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
 
-    def test_non_sinusoidal_projection_raises(self, tmp_path):
+    def test_non_sinusoidal_projection_raises(self, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` for a projection other than ``GCTP_SNSOID``.
 
         The reader geolocates pixels only with the sinusoidal formulas, so a tile in another projection would be
@@ -132,12 +140,12 @@ class TestReadModisSinusoidal:
 
         Writes a tile declaring ``GCTP_GEO`` and asserts the error names that projection and the expected one.
         """
-        path, _ = _tile(tmp_path, 18, 4, projection="GCTP_GEO")
+        path, _ = igbp_tile_factory(18, 4, projection="GCTP_GEO")
         with pytest.raises(ValueError, match="Projection=GCTP_GEO, not the sinusoidal GCTP_SNSOID"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
 
     @pytest.mark.parametrize("radius", ["0", "-6371007.181"])
-    def test_non_positive_radius_raises(self, tmp_path, radius):
+    def test_non_positive_radius_raises(self, radius, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` when the ``ProjParams`` sphere radius is not positive.
 
         Latitude is ``y / R``, so a zero radius divides by zero and a negative one flips the hemispheres; neither
@@ -146,11 +154,11 @@ class TestReadModisSinusoidal:
         Parametrized over a zero and a negative radius: each run writes a tile with that radius and asserts the
         error says it is not a positive length.
         """
-        path, _ = _tile(tmp_path, 18, 4, proj_params=f"{radius},0,0,0,0,0,0,0,0,0,0,0,0")
+        path, _ = igbp_tile_factory(18, 4, proj_params=f"{radius},0,0,0,0,0,0,0,0,0,0,0,0")
         with pytest.raises(ValueError, match="not a positive length"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
 
-    def test_dimension_mismatch_raises(self, tmp_path):
+    def test_dimension_mismatch_raises(self, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` when ``XDim`` disagrees with the SDS shape.
 
         The pixel size is the corner span divided by ``XDim``/``YDim``, so a mismatch would give every pixel a wrong
@@ -158,18 +166,18 @@ class TestReadModisSinusoidal:
 
         Writes a tile whose ``XDim`` is one more than the column count and asserts the error quotes both values.
         """
-        path, _ = _tile(tmp_path, 18, 4, xdim=_N + 1)
+        path, _ = igbp_tile_factory(18, 4, xdim=_N + 1)
         with pytest.raises(ValueError, match=f"XDim={_N + 1} but the LC_Type1 SDS has shape"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
 
-    def test_missing_sds_raises_hdf4_error(self, tmp_path):
+    def test_missing_sds_raises_hdf4_error(self, igbp_tile_factory):
         """``read_modis_sinusoidal_hdf4`` raises ``HDF4Error`` when the requested SDS is not in the file.
 
         Asking for the wrong dataset must fail rather than return other data.
 
         Writes a tile holding ``LC_Type1``, requests ``LC_Type2`` and asserts ``HDF4Error`` is raised.
         """
-        path, _ = _tile(tmp_path, 18, 4)
+        path, _ = igbp_tile_factory(18, 4)
         with pytest.raises(HDF4Error):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type2")
 
@@ -185,18 +193,23 @@ class TestReadModisSinusoidal:
 
 
 class TestIGBPTiles:
-    @staticmethod
-    def _reader(tmp_path, tile_ids):
-        tiles = {}
-        paths = []
-        for h, v in tile_ids:
-            path, data = _tile(tmp_path, h, v)
-            tiles[(h, v)] = data
-            paths.append(path)
-        return IGBPReader(paths), tiles
+    @pytest.fixture
+    def igbp_reader_factory(self, igbp_tile_factory) -> Callable[..., tuple[IGBPReader, dict]]:
+        """Factory returning an ``IGBPReader`` over the given ``(h, v)`` tiles and each tile's codes."""
+
+        def _make(tile_ids) -> tuple[IGBPReader, dict]:
+            tiles = {}
+            paths = []
+            for h, v in tile_ids:
+                path, data = igbp_tile_factory(h, v)
+                tiles[(h, v)] = data
+                paths.append(path)
+            return IGBPReader(paths), tiles
+
+        return _make
 
     @pytest.mark.parametrize("seed", [1, 2, 3])
-    def test_random_boxes_match_every_pixel_center(self, tmp_path, seed):
+    def test_random_boxes_match_every_pixel_center(self, seed, igbp_reader_factory):
         """The tile holder's ``query_box`` serves exactly the pixel centers inside a box, across tiles.
 
         The holder prunes tiles, rows and columns before geolocating; an over-tight prune drops land-cover pixels
@@ -206,7 +219,7 @@ class TestIGBPTiles:
         asserts the served positions and codes equal a brute-force computation over every pixel center of every
         tile.
         """
-        reader, tiles = self._reader(tmp_path, [(17, 3), (18, 3), (19, 3), (17, 4), (18, 4), (19, 4)])
+        reader, tiles = igbp_reader_factory([(17, 3), (18, 3), (19, 3), (17, 4), (18, 4), (19, 4)])
         rng = np.random.default_rng(seed)
         for _ in range(20):
             lat0 = rng.uniform(31.0, 58.0)
@@ -236,7 +249,7 @@ class TestIGBPTiles:
             pytest.param([(6, 3), (29, 3)], BoundingBox(50.0, 60.0, -180.0, 180.0), id="off-globe-edge"),
         ],
     )
-    def test_query_box_matches_every_pixel_center(self, tmp_path, tile_ids, bbox):
+    def test_query_box_matches_every_pixel_center(self, tile_ids, bbox, igbp_reader_factory):
         """``query_box`` serves exactly the pixel centers inside a box where the sinusoidal geometry is hardest.
 
         At high latitude a box's sinusoidal x-range depends on which latitude edge is used (lowest at the pole-most row
@@ -249,11 +262,11 @@ class TestIGBPTiles:
         north pole, and over the globe's edge at 50-60 degrees; each stages the tiles around its box and asserts the
         served pixels equal a non-empty brute-force set over every pixel center of every tile.
         """
-        reader, tiles = self._reader(tmp_path, tile_ids)
+        reader, tiles = igbp_reader_factory(tile_ids)
         assert _brute_force(tiles, bbox).shape[0] > 0
         _assert_matches(reader, tiles, bbox)
 
-    def test_dateline_box_serves_h35_and_h00(self, tmp_path):
+    def test_dateline_box_serves_h35_and_h00(self, igbp_reader_factory):
         """``samples_in`` serves a box wrapping the antimeridian from the tiles on both sides of it.
 
         A footprint crossing 180 degrees is split into two halves; if either half were dropped, the footprint would
@@ -262,14 +275,14 @@ class TestIGBPTiles:
         Stages tiles h00v08 and h35v08, queries a wrapping box from 179 to 181 degrees and asserts longitudes past
         179 and below -179 are both served, then asserts each half box matches the brute-force set.
         """
-        reader, tiles = self._reader(tmp_path, [(0, 8), (35, 8)])
+        reader, tiles = igbp_reader_factory([(0, 8), (35, 8)])
         samples = reader.samples_in(BoundingBox(4.0, 6.0, 179.0, 181.0, wraps_dateline=True), _T)
         assert samples.lons.max() > 179.0
         assert samples.lons.min() < -179.0
         for half in (BoundingBox(4.0, 6.0, 179.0, 180.0), BoundingBox(4.0, 6.0, -180.0, -179.0)):
             _assert_matches(reader, tiles, half)
 
-    def test_tile_outside_the_box_contributes_nothing(self, tmp_path):
+    def test_tile_outside_the_box_contributes_nothing(self, igbp_reader_factory):
         """A staged tile far from the query box serves no samples.
 
         A footprint must get land cover only from pixels inside its box; a tile elsewhere on the globe must not leak
@@ -278,11 +291,11 @@ class TestIGBPTiles:
         Stages h18v04 (Europe), queries a box in the southern Indian Ocean, and asserts ``query_box`` returns no
         pixels and ``samples_in`` returns values of shape ``(1, 0)``.
         """
-        reader, tiles = self._reader(tmp_path, [(18, 4)])
+        reader, tiles = igbp_reader_factory([(18, 4)])
         assert reader._native.query_box(BoundingBox(-10.0, -8.0, 100.0, 102.0))[0].size == 0
         assert reader.samples_in(BoundingBox(-10.0, -8.0, 100.0, 102.0), _T).values.shape == (1, 0)
 
-    def test_samples_in_serves_the_padded_box(self, tmp_path):
+    def test_samples_in_serves_the_padded_box(self, igbp_reader_factory):
         """``IGBPReader.samples_in`` widens the box by half a 0.463 km pixel and describes what it serves.
 
         A pixel whose center lies just outside a footprint's box still covers part of it, so the box is padded by
@@ -294,7 +307,7 @@ class TestIGBPTiles:
         then that the result is a ``SampleSet`` with source ``"IGBP"``, float32 values of shape ``(1, n_samples)``
         and ``resolution_km`` 0.463.
         """
-        reader, tiles = self._reader(tmp_path, [(18, 4)])
+        reader, tiles = igbp_reader_factory([(18, 4)])
         row_lats = np.unique(_brute_force(tiles, BoundingBox(44.0, 46.0, 5.0, 6.0))[:, 0])
         mid = len(row_lats) // 2
         inside_pad_lat, beyond_pad_lat = row_lats[mid], row_lats[mid - 3]
@@ -310,7 +323,7 @@ class TestIGBPTiles:
 
 
 class TestIGBPCodes:
-    def test_codes_outside_the_igbp_domain_are_nan(self, tmp_path):
+    def test_codes_outside_the_igbp_domain_are_nan(self, igbp_tile_factory):
         """``IGBPReader`` serves codes outside 1..17 as NaN and passes 1..17 through unchanged.
 
         MCD12Q1 ``LC_Type1`` classes 1..17 map one to one onto ``IGBPSurfaceType``; 0, 18 and the 255 fill are not
@@ -323,7 +336,7 @@ class TestIGBPCodes:
         # the low IGBPSurfaceType members; 0, 18 and the 255 fill are masked to NaN.
         rows = np.array([0, 17, 18, 5, 255, 1], dtype=np.uint8)
         codes = np.repeat(rows, _N // rows.size)[:, np.newaxis].repeat(_N, axis=1)
-        path, _ = _tile(tmp_path, 18, 4, codes=codes)
+        path, _ = igbp_tile_factory(18, 4, codes=codes)
         samples = IGBPReader([path]).samples_in(BoundingBox(40.0, 50.0, 0.0, 14.0), _T)
         finite = samples.values[np.isfinite(samples.values)]
         assert set(np.unique(finite).tolist()) == {1.0, 5.0, 17.0}
@@ -331,7 +344,7 @@ class TestIGBPCodes:
 
 
 class TestIGBPTileHolder:
-    def test_holds_codes_as_uint8_and_one_dimensional_geometry(self, tmp_path):
+    def test_holds_codes_as_uint8_and_one_dimensional_geometry(self, igbp_tile_factory):
         """``IGBPReader`` holds the staged tiles as uint8 codes plus one geometry value per tile.
 
         Holding the codes at one byte each and geolocating per query keeps memory small; a per-pixel geometry would
@@ -340,7 +353,7 @@ class TestIGBPTileHolder:
         Stages three tiles and asserts the held data is uint8 of shape ``(3, n, n)``, each of ``x_ul``, ``y_ul``,
         ``dx`` and ``dy`` has shape ``(3,)``, and ``radius_m`` is a single float.
         """
-        paths = [_tile(tmp_path, h, 4)[0] for h in (17, 18, 19)]
+        paths = [igbp_tile_factory(h, 4)[0] for h in (17, 18, 19)]
         native = IGBPReader(paths)._native
         assert native.data.dtype == np.uint8
         assert native.data.shape == (3, _N, _N)
@@ -348,7 +361,7 @@ class TestIGBPTileHolder:
             assert getattr(native, name).shape == (3,)
         assert isinstance(native.radius_m, float)
 
-    def test_load_memory_is_about_one_byte_per_pixel(self, tmp_path):
+    def test_load_memory_is_about_one_byte_per_pixel(self, igbp_tile_factory):
         """Loading the staged tiles peaks below 3 bytes per pixel.
 
         A float64 latitude and longitude for every pixel would take about 20 bytes per pixel, which is untenable for
@@ -358,7 +371,7 @@ class TestIGBPTileHolder:
         times the pixel count.
         """
         n = 480
-        paths = [_tile(tmp_path, h, 4, codes=np.ones((n, n), dtype=np.uint8))[0] for h in (17, 18)]
+        paths = [igbp_tile_factory(h, 4, codes=np.ones((n, n), dtype=np.uint8))[0] for h in (17, 18)]
         reader = IGBPReader(paths)
         tracemalloc.start()
         try:
@@ -371,7 +384,7 @@ class TestIGBPTileHolder:
         # would be about 20 bytes per pixel.
         assert peak < 3 * n_pixels
 
-    def test_tiles_with_different_radii_raise(self, tmp_path):
+    def test_tiles_with_different_radii_raise(self, igbp_tile_factory):
         """``IGBPReader`` raises ``ValueError`` when the staged tiles use different sphere radii.
 
         The holder geolocates every tile with one shared radius, so a tile on another sphere would be served at
@@ -380,12 +393,12 @@ class TestIGBPTileHolder:
         Stages one tile with the MODIS radius and one with the WGS84 equatorial radius and asserts loading raises
         an error naming the radius mismatch.
         """
-        first, _ = _tile(tmp_path, 17, 4)
-        second, _ = _tile(tmp_path, 18, 4, proj_params="6378137.0,0,0,0,0,0,0,0,0,0,0,0,0")
+        first, _ = igbp_tile_factory(17, 4)
+        second, _ = igbp_tile_factory(18, 4, proj_params="6378137.0,0,0,0,0,0,0,0,0,0,0,0,0")
         with pytest.raises(ValueError, match="sphere radius .* differs from the first staged tile"):
             _ = IGBPReader([first, second])._native
 
-    def test_tiles_with_different_shapes_raise(self, tmp_path):
+    def test_tiles_with_different_shapes_raise(self, igbp_tile_factory):
         """``IGBPReader`` raises ``ValueError`` when the staged tiles differ in pixel count.
 
         All tiles are held in one ``(n_tiles, n_rows, n_cols)`` array, which cannot take tiles of mixed size, and
@@ -393,12 +406,12 @@ class TestIGBPTileHolder:
 
         Stages a 60 x 60 tile and a 30 x 30 tile and asserts loading raises an error naming the shape mismatch.
         """
-        first, _ = _tile(tmp_path, 17, 4)
-        second, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N // 2, _N // 2), dtype=np.uint8))
+        first, _ = igbp_tile_factory(17, 4)
+        second, _ = igbp_tile_factory(18, 4, codes=np.ones((_N // 2, _N // 2), dtype=np.uint8))
         with pytest.raises(ValueError, match="tile shape .* differs from the first staged tile"):
             _ = IGBPReader([first, second])._native
 
-    def test_non_uint8_codes_raise(self, tmp_path):
+    def test_non_uint8_codes_raise(self, igbp_tile_factory):
         """``IGBPReader`` raises ``ValueError`` when ``LC_Type1`` is not stored as uint8.
 
         MCD12Q1 distributes IGBP classes as uint8; another dtype means the file is not the product as distributed,
@@ -406,7 +419,7 @@ class TestIGBPTileHolder:
 
         Writes a tile with int16 codes and asserts loading raises an error naming the dtype.
         """
-        path, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N, _N), dtype=np.int16))
+        path, _ = igbp_tile_factory(18, 4, codes=np.ones((_N, _N), dtype=np.int16))
         with pytest.raises(ValueError, match="LC_Type1 is int16"):
             _ = IGBPReader([path])._native
 
@@ -463,3 +476,13 @@ class TestIGBPReaderRealSubset:
         served, counts = np.unique(samples.values[0], return_counts=True)
         assert set(served.tolist()) <= {1, 2, 5, 9, 10, 11, 12, 13, 14, 16, 17}
         assert served[np.argmax(counts)] == 12
+
+    def test_granule_date_is_not_checked(self, fmatch_real_ancillary_granules):
+        """``IGBPReader`` sets no ``GRANULE_DATE_WINDOW`` and reports no granule span.
+
+        MCD12Q1 is an annual map whose newest year is applied to later dates, so the runner must never reject the real
+        2024 granule for its date; ``granule_span`` raises rather than dating it.
+        """
+        assert IGBPReader.GRANULE_DATE_WINDOW is None
+        with pytest.raises(NotImplementedError, match="GRANULE_DATE_WINDOW is None"):
+            IGBPReader.granule_span(fmatch_real_ancillary_granules["IGBP"])

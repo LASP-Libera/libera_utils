@@ -111,3 +111,11 @@ ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
 FROM libera-utils AS libera-utils-scene-id
 
 ENTRYPOINT ["libera-utils", "scene-id"]
+
+
+# CLI for the FMATCH algorithms from a manifest file. The input manifest's configuration["processing_step_id"], or
+# --processing_step_id appended to the entrypoint, selects the variant (e.g. "aux-fmatch-cam").
+# -------------------------------------------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch
+
+ENTRYPOINT ["libera-utils", "fmatch"]

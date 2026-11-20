@@ -18,17 +18,17 @@ variable is filled by one of three routes:
 * **Computed** - the derived viewing geometry (``Sunglint_Angle``, via
   :func:`compute_derived_viewing_geometry`) is always calculated, and the external
   aggregated variables (:func:`aggregate_external_variables`) plus the coverage/QA
-  columns (``PSF_Coverage_Fraction`` / ``Quality_Flag``) are calculated whenever staged
+  variables (``PSF_Coverage_Fraction`` / ``Quality_Flag``) are calculated whenever staged
   ancillary inputs are supplied - the PSF aggregation of each source's native samples.
 * **Placeholders** - a declared variable no input produced, when the caller opts in
-  with ``allow_placeholders=True``: the external columns when no ancillary data is
-  staged, a reader's columns when its source is not supplied, and
+  with ``allow_placeholders=True``: the external variables when no ancillary data is
+  staged, a reader's variables when its source is not supplied, and
   ``Cloud_Fraction_Camera`` when it is omitted for a CAM mode. Without the opt-in,
   assembly raises.
 
 Variable names
 --------------
-Assembly fills each column under the name the product definition declares
+Assembly fills each variable under the name the product definition declares
 (``Sunglint_Angle``, ``Quality_Flag``, ``<READER_KEY>_<spec_name>`` such as
 ``ERA5_Surface_Wind_U10``), so nothing is renamed on the way to the file. The L1B input
 dict is keyed by the L1B RAD-4CH variable names (``Latitude``, ``Subsatellite_Latitude``,
@@ -47,11 +47,17 @@ are the contract every downstream consumer (Scene ID, Camera Cloud Fraction, ADM
 binning) reads against. Keeping the loaders next to the writers means there is a
 single place that knows how a FMATCH file is produced, while the reader plugins
 stay decoupled from product I/O.
+
+See Also
+--------
+libera_utils.footprint_matching.footprint_match_algorithm : Manifest-driven runners that call into this module.
 """
 
 from __future__ import annotations
 
+import logging
 import multiprocessing
+import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,6 +80,8 @@ from libera_utils.footprint_matching.geometry import (
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.sources import build_sources, require_mode_reader_keys
 from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    CameraFootprintQualityFlag,
     FmatchCoverageFlag,
     OperationalMode,
     PseudoFootprint,
@@ -97,6 +105,8 @@ if TYPE_CHECKING:
     from libera_utils.footprint_matching.types import VariableSpec
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
+logger = logging.getLogger(__name__)
+
 # L1B RAD-4CH variables FMATCH copies straight out of L1B rather than computing. They keep
 # their L1B name in the product, which follows CERES BDS, so each is also the FMATCH product
 # variable name and the key the L1B input dict carries it under.
@@ -109,7 +119,7 @@ L1B_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "Relative_Azimuth_Surface",
 )
 
-# L1B fields (beyond the pass-through product columns) that FMATCH reads only to build
+# L1B fields (beyond the pass-through product variables) that FMATCH reads only to build
 # each footprint's viewing geometry - the true ray-traced bounding box
 # (:func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box`)
 # and the CERES-faithful angular PSF weigher. These are NOT written to the product;
@@ -119,7 +129,7 @@ L1B_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
 # orient the scan plane and locate the satellite, so they are AND-ed into the
 # finite-footprint mask alongside the pass-through variables (a footprint without valid
 # ephemeris cannot get a real box). They are read at float64 for geometry precision rather
-# than the float32 the product columns use.
+# than the float32 the product variables use.
 #
 # Like L1B_PASSTHROUGH_VARIABLES this lives here (not in the runner that reads it) so the
 # assembly path and the runner share one source of truth without a circular import.
@@ -139,14 +149,30 @@ L1B_CONE_ANGLE_RATE_VARIABLE: str = "Cone_Angle_Rate"
 # coordinate for the radiometer-timescale modes). Each footprint carries it so the readers
 # can match ancillary samples to it in time.
 RADIOMETER_TIME_KEY: str = "RADIOMETER_TIME"
-# Configuration key for the number of worker processes the external aggregation runs on.
-# ``1`` (the default in ``config.json``) keeps everything in the calling process.
+# Configuration key for the number of worker processes the external aggregation runs on: a positive
+# integer (``1`` keeps everything in the calling process), or ``"auto"`` (the default in ``config.json``)
+# to size the pool from the CPUs and memory available to the process.
 FMATCH_WORKERS_CONFIG_KEY: str = "FMATCH_WORKERS"
+FMATCH_WORKERS_AUTO: str = "auto"
+# Configuration key for the memory, in bytes, one worker is assumed to need when FMATCH_WORKERS is
+# "auto": an object keyed by operational mode value in config.json, or one integer for every mode when
+# set through the environment variable of the same name. config.json's defaults (CAM modes 512 MiB,
+# IMAGER modes 2 GiB) are estimates from the ERA5 surface and pressure-level grids a worker reloads, plus
+# headroom, until peak worker RSS is measured on a full-day L1B with full-size granules.
+FMATCH_WORKER_MEMORY_CONFIG_KEY: str = "FMATCH_WORKER_MEMORY_BYTES"  # TODO[LIBSDC-928]: measure the per-mode defaults
+# Memory, in bytes, left to the calling process when FMATCH_WORKERS is "auto".
+_PARENT_MEMORY_RESERVE_BYTES: int = 512 * 1024**2  # TODO[LIBSDC-928]: measure the calling process's peak memory
+# Where the process's cgroup limits and the host's free memory are read from (Linux).
+_CGROUP_ROOT: Path = Path("/sys/fs/cgroup")
+_PROC_MEMINFO: Path = Path("/proc/meminfo")
+# A cgroup v1 memory limit at or above this means "no limit" (the kernel writes a page-aligned
+# near-2**63 sentinel).
+_CGROUP_V1_NO_LIMIT: int = 2**60
 # Chunks per worker: footprints are split into this many contiguous ranges per worker so
 # a slow chunk (a stepped source reloading, a dense swath) does not idle the others.
 _CHUNKS_PER_WORKER: int = 4  # TODO[LIBSDC-928]: Define the best value of this variable
 # Below this many footprints the pool's start-up costs more than it saves.
-_MIN_FOOTPRINTS_PER_WORKER: int = 50
+_MIN_FOOTPRINTS_PER_WORKER: int = 50  # TODO[LIBSDC-928]: measure where the pool starts to pay for itself
 
 # The sources a forked worker inherits from its parent (copy-on-write): set by
 # _aggregate_in_parallel right before the pool starts, cleared after. A worker started by
@@ -174,11 +200,11 @@ FMATCH_DEFINITION_FILENAMES: dict[OperationalMode, str] = {
 # start/end-time generation.
 _CAMERA_TIMESCALE_MODES = frozenset({OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME})
 
-# Fill for a missing or padded cell of an integer category or pixel-index column. 0 is a real
+# Fill for a missing or padded cell of an integer category or pixel-index variable. 0 is a real
 # value in each of them (IGBP surface types 1-17, VIIRS Deep Blue aerosol types 0-7, CLDPIX cloud
 # mask 0-3 and phase 1-5, as the igbp, aod and cldpix readers define them, and camera pixel
 # indices from 0), so the fill sits below every domain. Integer bitmasks are filled with 0 instead,
-# meaning no flag set (see :func:`_fill_value_for`). Each such column declares this value as its
+# meaning no flag set (see :func:`_fill_value_for`). Each such variable declares this value as its
 # _FillValue in the FMATCH product definitions. Public because readers of the FMATCH products
 # (e.g. SCENE-ID) must recognize it.
 FMATCH_INTEGER_FILL_VALUE: int = -1
@@ -291,7 +317,7 @@ def _footprint_geometry(footprint: RadiometerFootprint | PseudoFootprint) -> _Fo
         :class:`PseudoFootprint`.
     """
     if isinstance(footprint, PseudoFootprint):
-        # TODO[LIBSDC-884]: read the camera record's ephemeris once camera segmentation carries it.
+        # TODO[LIBSDC-943]: read the camera record's ephemeris once CF-CAM-CAMTIME carries it.
         raise ValueError(
             "Camera pseudo-footprints carry no L1B ephemeris (subsatellite point and satellite radius), so "
             "their PSF cannot be sized: aggregate the camera-timescale modes once camera segmentation carries "
@@ -373,14 +399,14 @@ def aggregate_external_variables(
     sample is averaged, binned or interpolated before the weigher sees it. The active
     reader set - and therefore the keys of the returned dict - grows with the mode's
     latency (e.g. CAM has ERA5_Surface, IGBP, NISE, VIIRS_BRDF, VIIRS_CLDPROP_D3; IMAGER
-    additionally has ERA5_Pressure, VIIRS_AOD, and the RBSP FLASHFlux and CLDPIX fields).
+    additionally has ERA5_Pressure, VIIRS_AOD, and the CERES SSF and RBSP CLDPIX fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<READER_KEY>_<spec_name>`` (e.g.
     ``ERA5_Surface_Wind_U10``, ``IGBP_Surface_Type``, ``CLDPIX_Cloud_Mask``), the name the
     product definition declares. The reader's ``INSTRUMENT`` is recorded in each
     variable's ``long_name`` rather than in the name. A spec is aggregated only
-    when ``mode`` is in its ``modes`` (e.g. the extended FLASHFlux
+    when ``mode`` is in its ``modes`` (e.g. the extended CERES SSF
     cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
     Processing is done one footprint at a time, so only the current footprint's
@@ -437,7 +463,8 @@ def aggregate_external_variables(
     n_workers : int, optional
         Worker processes to run the footprints on. ``None`` (the default) reads the
         ``FMATCH_WORKERS`` configuration key (``config.json``, overridable through the
-        environment variable of the same name); ``1`` runs in the calling process. Fewer
+        environment variable of the same name), whose ``"auto"`` sizes the pool from the
+        available CPUs and memory (see ``_auto_worker_count``); ``1`` runs in the calling process. Fewer
         than ``_MIN_FOOTPRINTS_PER_WORKER`` footprints per worker also runs in the
         calling process, since the pool would cost more than it saves.
 
@@ -448,7 +475,7 @@ def aggregate_external_variables(
         name to a 1-D array indexed by footprint, carrying ``NaN`` where a footprint had
         no usable data. Float variables keep their reader dtype; categorical (integer)
         variables are returned as ``float64`` so they can carry ``NaN`` too, and the
-        product's integer fill (see ``_fill_value_for``) replaces it when the column is
+        product's integer fill (see ``_fill_value_for``) replaces it when the variable is
         written. With
         ``return_coverage=True``: a ``(values, coverage)`` tuple, where
         ``coverage`` is a 1-D float array in ``[0, 1]`` indexed by footprint (the
@@ -462,7 +489,9 @@ def aggregate_external_variables(
         has no finite viewing zenith angle; if an on-Earth footprint has no usable cone-angle
         rate and ``weigher`` is the default ``AngularPSFWeigher``; if a footprint's time is NaT and a
         source selects by time; if ``n_workers``, or the ``FMATCH_WORKERS`` configuration
-        key it defaults to, is below one or not an integer; or if the pool must be
+        key it defaults to, is below one or neither an integer nor ``"auto"``; if
+        ``FMATCH_WORKERS`` is ``"auto"`` and ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive
+        integer for ``mode``; or if the pool must be
         spawned (no fork on this platform) and ``source_file_paths`` was not given, so a
         worker cannot build its sources.
     KeyError
@@ -490,7 +519,7 @@ def aggregate_external_variables(
     n_footprints = len(footprints)
 
     if n_workers is None:
-        n_workers = _configured_worker_count()
+        n_workers = _configured_worker_count(mode)
     if n_workers < 1:
         raise ValueError(f"n_workers must be at least 1, got {n_workers}.")
     if n_workers > 1 and n_footprints >= _MIN_FOOTPRINTS_PER_WORKER * n_workers:
@@ -498,18 +527,31 @@ def aggregate_external_variables(
     return _aggregate_footprints(mode, footprints, sources, weigher, return_coverage)
 
 
-def _configured_worker_count() -> int:
+def _configured_worker_count(mode: OperationalMode) -> int:
     """Read the worker count from the ``FMATCH_WORKERS`` configuration key.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated, whose per-worker memory sizes an ``"auto"`` pool.
+
+    Returns
+    -------
+    int
+        The configured count, or the count ``_auto_worker_count`` computes for ``"auto"``.
 
     Raises
     ------
     ValueError
-        If the configured value is not a positive integer.
+        If the configured value is neither a positive integer nor ``"auto"``, or is ``"auto"`` and
+        ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive integer for ``mode``.
     """
     raw = config.get(FMATCH_WORKERS_CONFIG_KEY)
+    if isinstance(raw, str) and raw.strip().lower() == FMATCH_WORKERS_AUTO:
+        return _auto_worker_count(mode)
     message = (
-        f"{FMATCH_WORKERS_CONFIG_KEY} must be a positive integer, got {raw!r}: set it in config.json or the "
-        f"{FMATCH_WORKERS_CONFIG_KEY} environment variable."
+        f"{FMATCH_WORKERS_CONFIG_KEY} must be a positive integer or {FMATCH_WORKERS_AUTO!r}, got {raw!r}: set it in "
+        f"config.json or the {FMATCH_WORKERS_CONFIG_KEY} environment variable."
     )
     try:
         n_workers = int(raw)
@@ -518,6 +560,164 @@ def _configured_worker_count() -> int:
     if n_workers < 1:
         raise ValueError(message)
     return n_workers
+
+
+def _auto_worker_count(mode: OperationalMode, cgroup_root: Path | None = None, meminfo: Path | None = None) -> int:
+    """Size the aggregation pool from the CPUs and memory available to this process.
+
+    The count is the smaller of the CPUs the process may use and the number of workers whose
+    ``FMATCH_WORKER_MEMORY_BYTES`` fits in the available memory after a reserve for the calling
+    process, and at least one. CPUs are the process's affinity set capped by its cgroup CPU quota;
+    memory is the lower of the cgroup's remaining limit and the host's ``MemAvailable``. When no
+    memory figure can be read (a platform without ``/proc`` or cgroups), the pool is one worker.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated, which selects the per-worker memory.
+    cgroup_root : pathlib.Path, optional
+        Root of the cgroup filesystem. Defaults to ``_CGROUP_ROOT`` (``/sys/fs/cgroup``).
+    meminfo : pathlib.Path, optional
+        The kernel's memory summary. Defaults to ``_PROC_MEMINFO`` (``/proc/meminfo``).
+
+    Returns
+    -------
+    int
+        The number of workers, at least one.
+
+    Raises
+    ------
+    ValueError
+        If ``FMATCH_WORKER_MEMORY_BYTES`` gives no positive integer for ``mode``.
+    """
+    cgroup_root = _CGROUP_ROOT if cgroup_root is None else cgroup_root
+    meminfo = _PROC_MEMINFO if meminfo is None else meminfo
+    per_worker = _worker_memory_bytes(mode)
+    cpus = _available_cpus(cgroup_root)
+    memory = _available_memory_bytes(cgroup_root, meminfo)
+    if memory is None:
+        n_workers = 1
+    else:
+        n_workers = max(1, min(cpus, (memory - _PARENT_MEMORY_RESERVE_BYTES) // per_worker))
+    logger.info(
+        {
+            "msg": f"{FMATCH_WORKERS_CONFIG_KEY} is {FMATCH_WORKERS_AUTO!r}",
+            "mode": mode.value,
+            "workers": n_workers,
+            "cpus": cpus,
+            "available_memory_bytes": memory,
+            "worker_memory_bytes": per_worker,
+        }
+    )
+    return n_workers
+
+
+def _worker_memory_bytes(mode: OperationalMode) -> int:
+    """Read the memory one worker of ``mode`` is assumed to need from ``FMATCH_WORKER_MEMORY_BYTES``.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The mode being aggregated.
+
+    Returns
+    -------
+    int
+        Bytes per worker.
+
+    Raises
+    ------
+    ValueError
+        If the configured value has no positive integer for ``mode``.
+    """
+    raw = config.get(FMATCH_WORKER_MEMORY_CONFIG_KEY)
+    value = raw.get(mode.value) if isinstance(raw, dict) else raw
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(
+            f"{FMATCH_WORKER_MEMORY_CONFIG_KEY} must give a positive integer number of bytes for {mode.value}, got "
+            f"{value!r}: set it per mode in config.json, or for every mode in the {FMATCH_WORKER_MEMORY_CONFIG_KEY} "
+            "environment variable."
+        )
+    return value
+
+
+def _available_cpus(cgroup_root: Path) -> int:
+    """Return the CPUs this process may use: its affinity set, capped by its cgroup CPU quota.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem.
+
+    Returns
+    -------
+    int
+        At least one.
+    """
+    cpus = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    quota = _cgroup_cpu_quota(cgroup_root)
+    if quota is not None:
+        cpus = min(cpus, int(quota))
+    return max(1, cpus)
+
+
+def _cgroup_cpu_quota(cgroup_root: Path) -> float | None:
+    """Return the cgroup CPU quota in CPUs, or ``None`` when there is none.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem: ``cpu.max`` under it (cgroup v2), or
+        ``cpu/cpu.cfs_quota_us`` and ``cpu/cpu.cfs_period_us`` (cgroup v1).
+
+    Returns
+    -------
+    float or None
+        Quota divided by period.
+    """
+    cpu_max = cgroup_root / "cpu.max"
+    if cpu_max.is_file():
+        quota, period = cpu_max.read_text().split()[:2]
+        return None if quota == "max" else int(quota) / int(period)
+    quota_file, period_file = cgroup_root / "cpu" / "cpu.cfs_quota_us", cgroup_root / "cpu" / "cpu.cfs_period_us"
+    if quota_file.is_file() and period_file.is_file():
+        quota = int(quota_file.read_text())
+        return None if quota < 0 else quota / int(period_file.read_text())
+    return None
+
+
+def _available_memory_bytes(cgroup_root: Path, meminfo: Path) -> int | None:
+    """Return the memory this process can still use: the lower of its cgroup headroom and ``MemAvailable``.
+
+    Parameters
+    ----------
+    cgroup_root : pathlib.Path
+        Root of the cgroup filesystem: ``memory.max`` and ``memory.current`` under it (cgroup v2), or
+        ``memory/memory.limit_in_bytes`` and ``memory/memory.usage_in_bytes`` (cgroup v1).
+    meminfo : pathlib.Path
+        The kernel's memory summary, read for ``MemAvailable``.
+
+    Returns
+    -------
+    int or None
+        Bytes, or ``None`` when neither a cgroup limit nor ``MemAvailable`` can be read.
+    """
+    figures = []
+    for limit_file, usage_file in (
+        (cgroup_root / "memory.max", cgroup_root / "memory.current"),
+        (cgroup_root / "memory" / "memory.limit_in_bytes", cgroup_root / "memory" / "memory.usage_in_bytes"),
+    ):
+        if limit_file.is_file() and usage_file.is_file():
+            limit = limit_file.read_text().strip()
+            if limit != "max" and int(limit) < _CGROUP_V1_NO_LIMIT:
+                figures.append(int(limit) - int(usage_file.read_text()))
+            break
+    if meminfo.is_file():
+        for line in meminfo.read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                figures.append(int(line.split()[1]) * 1024)
+                break
+    return min(figures) if figures else None
 
 
 def _aggregate_footprints(
@@ -551,7 +751,7 @@ def _aggregate_footprints(
     # Pre-allocate one NaN-filled output array per product variable: 1-D for a spec, and
     # (footprint, coordinate) for a stack of specs (e.g. ERA5 pressure levels). Integer
     # (categorical) variables are held as float64 so a footprint with no usable data
-    # stays NaN; the integer fill from _fill_value_for replaces it when the column is placed.
+    # stays NaN; the integer fill from _fill_value_for replaces it when the variable is placed.
     # Cache the per-reader name plan so we do not recompute it for every footprint.
     outputs: dict[str, np.ndarray] = {}
     plan: dict[str, list[tuple[str, str]]] = {}
@@ -559,28 +759,28 @@ def _aggregate_footprints(
         specs = {spec.name: spec for spec in reader_cls.product_variable_specs()}
         stacks = reader_cls.product_stacks()
         stacked_members = {member for stack in stacks for member in stack.members}
-        columns: list[tuple[str, VariableSpec, int | None]] = [
+        variables: list[tuple[str, VariableSpec, int | None]] = [
             (name, spec, None) for name, spec in specs.items() if name not in stacked_members
         ]
         for stack in stacks:
-            columns.append((stack.name, specs[stack.members[0]], len(stack.members)))
+            variables.append((stack.name, specs[stack.members[0]], len(stack.members)))
         entries: list[tuple[str, str]] = []
-        for name, spec, width in columns:
+        for name, spec, width in variables:
             # Per-spec mode gating: a reader may declare variables that only some of its
-            # products carry (e.g. the extended FLASHFlux cloud/aerosol/albedo fields are
+            # products carry (e.g. the extended CERES SSF cloud/aerosol/albedo fields are
             # FMATCH-IMAGER only), so skip specs whose modes exclude this one.
             if mode not in spec.modes:
                 continue
-            # Column name is ``<READER_KEY>_<name>`` (no instrument token), the name the
+            # Variable name is ``<READER_KEY>_<name>`` (no instrument token), the name the
             # product definition declares; the definition carries the reader's
             # INSTRUMENT in the variable's long_name.
-            column_name = f"{key}_{name}"
+            variable_name = f"{key}_{name}"
             dtype = np.dtype(spec.dtype)
             if not np.issubdtype(dtype, np.floating):
                 dtype = np.dtype(np.float64)
             shape = n_footprints if width is None else (n_footprints, width)
-            outputs[column_name] = np.full(shape, np.nan, dtype=dtype)
-            entries.append((column_name, name))
+            outputs[variable_name] = np.full(shape, np.nan, dtype=dtype)
+            entries.append((variable_name, name))
         plan[key] = entries
 
     # Per-footprint coverage accumulator: track the minimum across sources. Start at
@@ -620,8 +820,8 @@ def _aggregate_footprints(
             # variable, keyed by the bare spec or stack name.
             scalars = aggregate_sample_variables(reader_cls, samples, weight_field)
             values = stack_product_values(reader_cls, scalars)
-            for column_name, name in plan[key]:
-                outputs[column_name][i] = values[name]
+            for variable_name, name in plan[key]:
+                outputs[variable_name][i] = values[name]
 
     if not return_coverage:
         return outputs
@@ -741,7 +941,7 @@ def compute_derived_viewing_geometry(
 ) -> dict[str, np.ndarray]:
     """Compute derived viewing-geometry variables from the geolocation angles.
 
-    Produces the ``Sunglint_Angle`` column
+    Produces the ``Sunglint_Angle`` variable
     every FMATCH product definition declares: the angle between the sensor view direction and the specular
     reflection of the solar beam, in degrees. Small values indicate potential sun
     glint contamination.
@@ -796,7 +996,7 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     plane.
 
     Exactly one footprint is produced per input record, in input order, so the list stays
-    index-aligned with the product columns: an off-Earth view (a space/calibration view
+    index-aligned with the product variables: an off-Earth view (a space/calibration view
     that slipped past the reader's finite filter) keeps its index with ``bbox=None`` and
     ``off_limb=True``, so aggregation leaves it at fill rather than querying and
     weighting a region the instrument did not see.
@@ -804,8 +1004,9 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The L1B pass-through arrays the FMATCH runner reads from L1B Daily (already
-        filtered to finite geolocation), keyed by their L1B names. ``RADIOMETER_TIME``,
+        The arrays
+        :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`
+        returns (already filtered to finite geolocation), keyed by their L1B names. ``RADIOMETER_TIME``,
         ``Latitude``, ``Longitude``, ``Viewing_Zenith_Surface`` and every name in
         ``L1B_SCAN_REFERENCE_VARIABLES`` are required; ``Cone_Angle_Rate``
         (``L1B_CONE_ANGLE_RATE_VARIABLE``) is read when present.
@@ -885,21 +1086,21 @@ def _merge_computed_variables(
     allow_placeholders: bool = False,
     to_grid: Callable[[Any, np.dtype, Any], np.ndarray] | None = None,
 ) -> None:
-    """Merge the *computed* (non-input) product columns into ``data`` in place.
+    """Merge the *computed* (non-input) product variables into ``data`` in place.
 
     Fills the two families of variable the footprint-matching engine owns, so they
     carry real values instead of placeholders:
 
     * **Derived viewing geometry** (``Sunglint_Angle``) -- always computed, from the
       real per-footprint geolocation angles (:func:`compute_derived_viewing_geometry`).
-    * **External aggregated variables** and the **coverage/QA** columns
+    * **External aggregated variables** and the **coverage/QA** variables
       (``PSF_Coverage_Fraction``, ``Quality_Flag``) -- computed from the ancillary inputs
       (``sources`` or ``source_file_paths``). Without them this raises, unless
-      the caller passes ``allow_placeholders=True``, in which case those columns are
+      the caller passes ``allow_placeholders=True``, in which case those variables are
       left for :func:`_fill_placeholder_variables`.
 
     Only variables the ``definition`` actually declares are written, so a mode whose
-    product omits a column is unaffected. Runs *before*
+    product omits a variable is unaffected. Runs *before*
     :func:`_fill_placeholder_variables`, which then fills only whatever remains.
 
     Parameters
@@ -926,12 +1127,12 @@ def _merge_computed_variables(
         :func:`aggregate_external_variables` default.
     allow_placeholders : bool, optional
         When ``True`` and neither ``sources`` nor ``source_file_paths`` is given,
-        skip the external aggregation and leave those columns as placeholders. Defaults
+        skip the external aggregation and leave those variables as placeholders. Defaults
         to ``False``.
     to_grid : callable, optional
-        Scatter ``(values, dtype, fill_value) -> ndarray`` mapping a flat per-footprint column onto the 2-D
+        Scatter ``(values, dtype, fill_value) -> ndarray`` mapping a flat per-footprint variable onto the 2-D
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid, supplied by the camera-timescale assembly. When ``None`` (the
-        radiometer-timescale products) each computed column is stored 1-D as-is.
+        radiometer-timescale products) each computed variable is stored 1-D as-is.
 
     Raises
     ------
@@ -944,8 +1145,8 @@ def _merge_computed_variables(
     """
 
     # The engine computes one value per footprint (flat). For the camera-timescale products the caller passes a
-    # ``to_grid`` scatter so each computed column lands on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid (padded cells taking
-    # the declared fill); the radiometer products keep the 1-D column as-is. Integer columns arrive as float with NaN
+    # ``to_grid`` scatter so each computed variable lands on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid (padded cells taking
+    # the declared fill); the radiometer products keep the 1-D variable as-is. Integer variables arrive as float with NaN
     # where a footprint had no usable data, and take the integer fill there.
     def _place(name: str, values: np.ndarray) -> np.ndarray:
         dtype, fill_value = _fill_value_for(name, definition.variables[name])
@@ -953,7 +1154,7 @@ def _merge_computed_variables(
             values = np.where(np.isnan(values), fill_value, values)
         return np.asarray(values, dtype=dtype) if to_grid is None else to_grid(values, dtype, fill_value)
 
-    # Derived geometry is always computable from the real angle columns.
+    # Derived geometry is always computable from the real angle variables.
     if "Sunglint_Angle" in definition.variables and "Sunglint_Angle" not in data:
         sunglint = compute_derived_viewing_geometry(solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle)[
             "Sunglint_Angle"
@@ -961,7 +1162,7 @@ def _merge_computed_variables(
         data["Sunglint_Angle"] = _place("Sunglint_Angle", sunglint)
 
     # External aggregation needs staged ancillary data. Without it the product would carry
-    # placeholder external columns and an unflagged Quality_Flag, so only an explicit opt-in
+    # placeholder external variables and an unflagged Quality_Flag, so only an explicit opt-in
     # leaves them as placeholders.
     if sources is None and source_file_paths is None:
         if allow_placeholders:
@@ -969,7 +1170,7 @@ def _merge_computed_variables(
         raise ValueError(
             f"No ancillary inputs were supplied for {mode.value}, so its external variables, PSF_Coverage_Fraction "
             "and Quality_Flag cannot be computed. Pass sources or source_file_paths, or pass "
-            "allow_placeholders=True to write those columns as fill values."
+            "allow_placeholders=True to write those variables as fill values."
         )
 
     aggregated, coverage = aggregate_external_variables(
@@ -1009,7 +1210,7 @@ def _merge_coverage_qa(
     data : dict[str, np.ndarray]
         Variable arrays; ``PSF_Coverage_Fraction`` and ``Quality_Flag`` are set/updated here.
     definition : LiberaDataProductDefinition
-        Gates which of the two columns are written (both are declared by every FMATCH
+        Gates which of the two variables are written (both are declared by every FMATCH
         definition, but the guard keeps this robust).
     coverage : np.ndarray
         Per-footprint coverage fraction in ``[0, 1]``.
@@ -1079,15 +1280,17 @@ def assemble_fmatch_dataset(
       :class:`~libera_utils.footprint_matching.types.PseudoFootprint` objects. See
       ``_assemble_camtime_dataset``.
     * **Radiometer-timescale** (``CAM``, ``IMAGER``) - assembled
-      from the L1B pass-through arrays the FMATCH runner reads from L1B Daily.
-      ``inputs`` is that dict. See ``_assemble_radiometer_dataset``.
+      from the L1B pass-through arrays produced by
+      :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`.
+      The first positional argument is that dict. See
+      ``_assemble_radiometer_dataset``.
 
     In both cases the derived viewing geometry (``Sunglint_Angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
-    coverage/QA columns are computed from the ancillary inputs (``sources`` or
+    coverage/QA variables are computed from the ancillary inputs (``sources`` or
     ``source_file_paths``, forwarded to :func:`aggregate_external_variables`). A declared
     variable no input produced raises, unless ``allow_placeholders=True`` asks for it to
-    be written as a conformant placeholder. Columns are named as the product definition
+    be written as a conformant placeholder. Variables are named as the product definition
     declares them.
 
     Parameters
@@ -1128,8 +1331,8 @@ def assemble_fmatch_dataset(
         :func:`aggregate_external_variables`).
     allow_placeholders : bool, optional
         When ``True``, a declared variable no input produced is written as fill instead
-        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` columns
-        when neither ``sources`` nor ``source_file_paths`` is given, a reader's columns when
+        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` variables
+        when neither ``sources`` nor ``source_file_paths`` is given, a reader's variables when
         its source is missing, and ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera``
         is omitted for a CAM mode. Defaults to ``False``.
 
@@ -1151,7 +1354,7 @@ def assemble_fmatch_dataset(
         has no finite viewing zenith angle, or no usable cone-angle rate under the default
         weigher; if a camera-timescale mode is aggregated, since camera pseudo-footprints
         carry no L1B ephemeris; if a footprint's time is NaT and a source selects by time;
-        or if assembly produces a column the definition does not declare.
+        or if assembly produces a variable the definition does not declare.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active
         in ``mode``.
@@ -1242,7 +1445,7 @@ def _fill_value_for(name: str, variable_definition: Any) -> tuple[np.dtype, Any]
     for floating-point definitions. An integer bitmask (a definition declaring
     ``flag_masks``, such as ``Quality_Flag``) takes ``0``, meaning no flag set. Any other integer
     must declare its ``_FillValue``, :data:`FMATCH_INTEGER_FILL_VALUE` in the FMATCH
-    definitions, because no value of an integer column is missing by default.
+    definitions, because no value of an integer variable is missing by default.
     Used both for not-yet-computed placeholder variables and for the padded cells of the
     camera-timescale grid (images segmented into fewer subsections than the widest image).
 
@@ -1317,10 +1520,10 @@ def _fill_placeholder_variables(
 ) -> None:
     """Fill every declared variable missing from ``data`` with a conformant placeholder, if allowed.
 
-    A declared variable no input produced (the external columns when no ancillary data
-    was staged, a reader's columns when its source was not supplied, or
+    A declared variable no input produced (the external variables when no ancillary data
+    was staged, a reader's variables when its source was not supplied, or
     ``Cloud_Fraction_Camera`` when it was omitted) would otherwise reach the file as a
-    column of fill indistinguishable from a computed one, so it is written only when the
+    variable of only fill, indistinguishable from a computed one, so it is written only when the
     caller opts in with ``allow_placeholders=True``. Mutates ``data`` in place, adding one
     array per such variable, filled with what :func:`_fill_value_for` returns: structurally
     valid (declared dtype/shape/attributes) but numerically meaningless.
@@ -1328,7 +1531,7 @@ def _fill_placeholder_variables(
     Parameters
     ----------
     data : dict[str, np.ndarray]
-        The variable arrays assembled so far (the real, input-derived columns).
+        The variable arrays assembled so far (the real, input-derived variables).
     definition : LiberaDataProductDefinition
         The product definition naming every variable the file must contain.
     shape : int or tuple of int
@@ -1376,6 +1579,161 @@ def _normalize_longitude(longitude_deg: float) -> float:
     return longitude_deg - 360.0 if longitude_deg > 180.0 else longitude_deg
 
 
+# Bit layout of the CF-CAM-CAMTIME ``PSF_Bbox_Flags`` variable, set by the Camera Cloud Fraction
+# algorithm. These carry the BoundingBox flags that cannot be recovered from the stored bounds alone
+# (``is_polar`` depends on the boresight latitude and ``truncated`` on the limb-clipping history), so
+# FMATCH can rebuild the exact BoundingBox of each pseudo-footprint.
+CAMTIME_BBOX_WRAPS_DATELINE_BIT: int = 0b001
+CAMTIME_BBOX_IS_POLAR_BIT: int = 0b010
+CAMTIME_BBOX_TRUNCATED_BIT: int = 0b100
+
+# Every CF-CAM-CAMTIME variable and coordinate :func:`pseudofootprints_from_camtime_dataset` reads to
+# rebuild the camera pseudo-footprints. The bounding-box longitudes are raw (they may exceed +/-180 for a
+# dateline-crossing box), ``Altitude`` is in meters as in L1B, and ``Quality_Flag`` holds only the
+# :class:`~libera_utils.footprint_matching.types.CameraFootprintQualityFlag` bits.
+CAMTIME_PSEUDOFOOTPRINT_VARIABLES: tuple[str, ...] = (
+    "CAMERA_TIME",
+    "Camera_Pixel_X_Min",
+    "Camera_Pixel_X_Max",
+    "Camera_Pixel_Y_Min",
+    "Camera_Pixel_Y_Max",
+    "Latitude",
+    "Longitude",
+    "Altitude",
+    "Solar_Zenith_Surface",
+    "Viewing_Zenith_Surface",
+    "Relative_Azimuth_Surface",
+    "Center_Pixel_X",
+    "Center_Pixel_Y",
+    "PSF_Bbox_Lat_Min",
+    "PSF_Bbox_Lat_Max",
+    "PSF_Bbox_Lon_Min",
+    "PSF_Bbox_Lon_Max",
+    "PSF_Bbox_Flags",
+    "Quality_Flag",
+)
+
+
+class FmatchInputError(ValueError):
+    """An FMATCH run's inputs cannot produce its product.
+
+    Raised when the input manifest leaves out an input the run requires or lists one it cannot use, or when an input
+    lacks a variable FMATCH reads: a missing Libera input or CF-CAM product, no granule of an active reader's product,
+    a file name that does not parse as a data product, an ancillary granule dated outside its reader's window, or a
+    CF-CAM or CF-CAM-CAMTIME input without a variable FMATCH reads from it. The message names the input and what to
+    change.
+    """
+
+
+def camtime_real_cell_mask(dataset: Dataset) -> np.ndarray:
+    """Boolean ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` mask of real (non-padded) footprint cells.
+
+    The camera-timescale grid is rectangular but ragged: images segmented into fewer subsections than
+    the widest image leave padded trailing cells. A real footprint always has a finite center-pixel
+    latitude, so a finite ``Latitude`` marks a real cell. The footprint reconstruction and any per-cell
+    variable read (e.g. ``Cloud_Fraction``) both use this mask, so they select the same cells in the
+    same order.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        A camera-timescale dataset carrying a 2-D ``Latitude`` variable.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean array shaped ``(CAMERA_TIME, PSEUDOFOOTPRINT)``; ``True`` at real footprint cells.
+    """
+    return np.isfinite(np.asarray(dataset["Latitude"].values, dtype=float))
+
+
+def pseudofootprints_from_camtime_dataset(dataset: Dataset) -> list[PseudoFootprint]:
+    """Rebuild the flat pseudo-footprint list from a CF-CAM-CAMTIME dataset.
+
+    The Camera Cloud Fraction algorithm segments each L1B camera image into pseudo-footprints and
+    writes them onto the rectangular ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid of CF-CAM-CAMTIME. Both
+    camera-timescale FMATCH modes take their footprints from that product rather than segmenting the
+    camera image themselves.
+
+    Real footprints are recovered in row-major order (``CAMERA_TIME`` ascending, then
+    ``PSEUDOFOOTPRINT`` ascending), skipping the padded cells (see :func:`camtime_real_cell_mask`).
+    Because the per-image column order is preserved, the FMATCH product built from the result lays out
+    its grid identically to the input.
+
+    Parameters
+    ----------
+    dataset : xarray.Dataset
+        A CF-CAM-CAMTIME dataset carrying every name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
+
+    Returns
+    -------
+    list[PseudoFootprint]
+        The pseudo-footprints, in an order that regenerates the source grid.
+
+    Raises
+    ------
+    FmatchInputError
+        If ``dataset`` lacks any name in ``CAMTIME_PSEUDOFOOTPRINT_VARIABLES``.
+    """
+    missing = [name for name in CAMTIME_PSEUDOFOOTPRINT_VARIABLES if name not in dataset.variables]
+    if missing:
+        raise FmatchInputError(
+            f"The camera-timescale input lacks {', '.join(missing)}, which FMATCH needs to rebuild the camera "
+            "pseudo-footprints. Check that the input is a CF-CAM-CAMTIME product written by the Camera Cloud "
+            "Fraction algorithm, and report the missing variables to that algorithm's owners if it is."
+        )
+
+    def values(name: str, dtype: type | None = None) -> np.ndarray:
+        return np.asarray(dataset[name].values, dtype=dtype)
+
+    camera_time = dataset["CAMERA_TIME"].values
+    lat, lon, alt = values("Latitude", float), values("Longitude", float), values("Altitude", float)
+    sza = values("Solar_Zenith_Surface", float)
+    vza = values("Viewing_Zenith_Surface", float)
+    raa = values("Relative_Azimuth_Surface", float)
+    center_x, center_y = values("Center_Pixel_X"), values("Center_Pixel_Y")
+    px_min, px_max = values("Camera_Pixel_X_Min"), values("Camera_Pixel_X_Max")
+    py_min, py_max = values("Camera_Pixel_Y_Min"), values("Camera_Pixel_Y_Max")
+    bbox_lat_min, bbox_lat_max = values("PSF_Bbox_Lat_Min", float), values("PSF_Bbox_Lat_Max", float)
+    bbox_lon_min, bbox_lon_max = values("PSF_Bbox_Lon_Min", float), values("PSF_Bbox_Lon_Max", float)
+    bbox_flags, q_flags = values("PSF_Bbox_Flags"), values("Quality_Flag")
+
+    # np.nonzero is C-order (CAMERA_TIME ascending, then PSEUDOFOOTPRINT ascending), which is the order
+    # that rebuilds this grid and the order a boolean-mask read of a per-cell variable returns.
+    rows, cols = np.nonzero(camtime_real_cell_mask(dataset))
+    footprints: list[PseudoFootprint] = []
+    for row, col in zip(rows, cols, strict=True):
+        flags = int(bbox_flags[row, col])
+        bbox = BoundingBox(
+            float(bbox_lat_min[row, col]),
+            float(bbox_lat_max[row, col]),
+            float(bbox_lon_min[row, col]),
+            float(bbox_lon_max[row, col]),
+            bool(flags & CAMTIME_BBOX_WRAPS_DATELINE_BIT),
+            bool(flags & CAMTIME_BBOX_IS_POLAR_BIT),
+            bool(flags & CAMTIME_BBOX_TRUNCATED_BIT),
+        )
+        footprints.append(
+            PseudoFootprint(
+                time=camera_time[row],
+                # camera_pixel_*_max are inclusive; the slices are half-open.
+                slice_x=slice(int(px_min[row, col]), int(px_max[row, col]) + 1),
+                slice_y=slice(int(py_min[row, col]), int(py_max[row, col]) + 1),
+                center_ix=int(center_x[row, col]),
+                center_iy=int(center_y[row, col]),
+                latitude=float(lat[row, col]),
+                longitude=float(lon[row, col]),
+                altitude=float(alt[row, col]),
+                solar_zenith_angle=float(sza[row, col]),
+                viewing_zenith_angle=float(vza[row, col]),
+                relative_azimuth_angle=float(raa[row, col]),
+                bbox=bbox,
+                q_flags=CameraFootprintQualityFlag(int(q_flags[row, col])),
+            )
+        )
+    return footprints
+
+
 def _assemble_camtime_dataset(
     footprints: Sequence[PseudoFootprint],
     *,
@@ -1399,7 +1757,7 @@ def _assemble_camtime_dataset(
     bounding box, and the QA flags come straight from the pseudo-footprints (the
     ``real_columns`` built below). The derived ``Sunglint_Angle`` is computed from the
     geolocation angles, and (when ``source_file_paths`` or ``sources`` is supplied) the
-    external aggregated variables and coverage/QA columns are computed via
+    external aggregated variables and coverage/QA variables are computed via
     :func:`_merge_computed_variables`.
 
     Parameters
@@ -1465,12 +1823,12 @@ def _assemble_camtime_dataset(
     grid_shape = (n_camera_times, n_footprints_per_image)
 
     def to_grid(values: Sequence[Any], dtype: np.dtype, fill_value: Any) -> np.ndarray:
-        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
+        """Scatter one flat per-footprint variable into the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
         grid = np.full(grid_shape, fill_value, dtype=dtype)
         grid[rows, columns] = np.asarray(values, dtype=dtype)
         return grid
 
-    # The real, segmentation-derived columns. Longitudes of the PSF box are wrapped into
+    # The real, segmentation-derived variables. Longitudes of the PSF box are wrapped into
     # [-180, 180] to satisfy the product definition's valid range. Center_Pixel_X/Y are the
     # boresight stand-in pixel; they are FMATCH-only provenance (the block's inclusive extent
     # is emitted as the Camera_Pixel_{X,Y}_{Min,Max} coordinates below).
@@ -1512,8 +1870,8 @@ def _assemble_camtime_dataset(
         dtype, fill_value = _fill_value_for(coordinate_name, definition.coordinates[coordinate_name])
         data[coordinate_name] = to_grid(values, dtype, fill_value)
 
-    # Cast each real column to the exact dtype the definition declares and scatter it into the
-    # grid. Only columns the definition actually declares are written; both camtime products
+    # Cast each real variable to the exact dtype the definition declares and scatter it into the
+    # grid. Only variables the definition actually declares are written; both camtime products
     # declare the same segmentation variables, but the guard keeps the assembly robust to
     # definition drift.
     for name, values in real_columns.items():
@@ -1534,7 +1892,7 @@ def _assemble_camtime_dataset(
         to_grid=to_grid,
     )
 
-    # Computed columns: derived geometry (always) and, when ancillary inputs are
+    # Computed variables: derived geometry (always) and, when ancillary inputs are
     # supplied, the external aggregated variables + coverage/QA (OR-ed into Quality_Flag).
     _merge_computed_variables(
         data,
@@ -1598,7 +1956,7 @@ def _merge_cloud_fraction_camera(
             raise ValueError(
                 f"{product_id} declares Cloud_Fraction_Camera but no values were given: pass the CF-CAM values as "
                 "cloud_fraction_camera, or "
-                "allow_placeholders=True to write the column as fill."
+                "allow_placeholders=True to write the variable as fill."
             )
         return
     if len(cloud_fraction_camera) != n_footprints:
@@ -1659,18 +2017,20 @@ def _assemble_radiometer_dataset(
 
     Serves the two radiometer-timescale modes (``CAM`` and ``IMAGER``). Their footprints
     are the L1B radiometer footprints themselves, so the time coordinate and the
-    geolocation/viewing-angle columns (:data:`L1B_PASSTHROUGH_VARIABLES`) are carried
+    geolocation/viewing-angle variables (:data:`L1B_PASSTHROUGH_VARIABLES`) are carried
     through verbatim from L1B. Each record's footprint is built by
     :func:`build_radiometer_footprints`, and its ray-traced bounding box is written as
     ``PSF_Bbox_*`` (``NaN`` for an off-limb record). The derived ``Sunglint_Angle`` is
     computed from the angles, and (when ``source_file_paths`` or ``sources`` is supplied)
-    the external aggregated variables and coverage/QA columns are computed over those
+    the external aggregated variables and coverage/QA variables are computed over those
     footprints.
 
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
-        The arrays the FMATCH runner reads from L1B Daily, keyed by their L1B names: the
+        The arrays
+        :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs`
+        returns, keyed by their L1B names: the
         ``RADIOMETER_TIME`` coordinate, each name in :data:`L1B_PASSTHROUGH_VARIABLES`
         and :data:`L1B_SCAN_REFERENCE_VARIABLES`, all the same length, and optionally
         ``Cone_Angle_Rate``.
@@ -1726,7 +2086,7 @@ def _assemble_radiometer_dataset(
             f"(from {time_variable}) but got a different length for: {', '.join(inconsistent)}"
         )
 
-    # Start with the time coordinate, then the real L1B columns cast to the exact
+    # Start with the time coordinate, then the real L1B variables cast to the exact
     # dtype the definition declares.
     data: dict[str, np.ndarray] = {
         time_variable: np.asarray(l1b_inputs[time_variable], dtype="datetime64[ns]"),
@@ -1751,7 +2111,7 @@ def _assemble_radiometer_dataset(
         data, definition, cloud_fraction_camera, n_footprints=n_footprints, allow_placeholders=allow_placeholders
     )
 
-    # Computed columns: derived geometry (always) and, when ancillary inputs are
+    # Computed variables: derived geometry (always) and, when ancillary inputs are
     # supplied, the external aggregated variables + coverage/QA.
     _merge_computed_variables(
         data,
@@ -1824,8 +2184,8 @@ def write_fmatch_product(
         :func:`aggregate_external_variables`).
     allow_placeholders : bool, optional
         When ``True``, a declared variable no input produced is written as fill instead
-        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` columns
-        when neither ``sources`` nor ``source_file_paths`` is given, a reader's columns when
+        of raising: the external, ``PSF_Coverage_Fraction`` and ``Quality_Flag`` variables
+        when neither ``sources`` nor ``source_file_paths`` is given, a reader's variables when
         its source is missing, and ``Cloud_Fraction_Camera`` when ``cloud_fraction_camera``
         is omitted for a CAM mode. Defaults to ``False``.
 
@@ -1843,7 +2203,7 @@ def write_fmatch_product(
         declared variable no input produced without ``allow_placeholders``, a footprint with
         no viewing zenith angle or no usable cone-angle rate under the default weigher,
         camera pseudo-footprints aggregated without ephemeris, a footprint whose time is NaT
-        when a source selects by time, an assembled column the definition does not
+        when a source selects by time, an assembled variable the definition does not
         declare), or if the assembled Dataset does not conform to the product definition.
     KeyError
         If the keys of ``sources`` or ``source_file_paths`` are not exactly the readers active

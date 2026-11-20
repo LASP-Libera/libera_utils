@@ -35,7 +35,7 @@ Variables read (at each retained pressure level)
 - r:  relative humidity (%)
 
 These pressure-level fields sit in the radiometer-timescale FMATCH-IMAGER product
-alongside the RBSP CLDPIX/FLASHFlux cloud fields. The reader is deliberately absent from
+alongside the CLDPIX and CERES SSF cloud fields. The reader is deliberately absent from
 the camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
 radiometer-timescale quantity. Product membership is declared outside the reader.
 
@@ -54,6 +54,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.era5_surface import ERA5ReaderBase
 from libera_utils.footprint_matching.types import OperationalMode, ProductStack, VariableSpec
 
@@ -196,6 +197,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     """
 
     READER_KEY: str = "ERA5_Pressure"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_era5_pressure_level
     # Same producing-center token as the single-level reader so the long_name
     # provenance tag stays uniform: "Air temperature on ERA5 pressure levels (ECMWF)" etc.
     # Product variable names are ERA5_Pressure_Temperature etc. (no instrument token).

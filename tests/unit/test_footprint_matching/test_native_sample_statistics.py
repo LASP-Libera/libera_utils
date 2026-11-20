@@ -16,6 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.product import aggregate_external_variables
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import (
@@ -47,7 +48,10 @@ class _PixelReader(StaticReader):
     """Serves the synthetic pixel field: one continuous and one categorical variable."""
 
     READER_KEY = "_native_stats"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (

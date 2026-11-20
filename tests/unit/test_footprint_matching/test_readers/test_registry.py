@@ -17,11 +17,12 @@ import pytest
 
 import libera_utils
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers import (
+    CeresSsfReader,
     CLDPIXReader,
     ERA5PressureLevelReader,
     ERA5SurfaceReader,
-    FLASHFluxReader,
     IGBPReader,
     NISEReader,
     ReaderRegistry,
@@ -67,8 +68,8 @@ def _ranked(base: str, n_categories: int, modes: frozenset[OperationalMode]) -> 
     )
 
 
-# The FLASHFlux fields carried by FMATCH-IMAGER alone.
-_FLASHFLUX_EXTENDED = (
+# The CERES SSF fields carried by FMATCH-IMAGER alone.
+_SSF_EXTENDED = (
     *(
         _mean(f"{base}_{layer}", _ONLY_IMAGER)
         for base in (
@@ -83,8 +84,6 @@ _FLASHFLUX_EXTENDED = (
     _mean("Cloud_Optical_Depth_Upper", _ONLY_IMAGER),
     _mean("Cloud_Water_Particle_Radius_Upper", _ONLY_IMAGER),
     _mean("Cloud_Ice_Particle_Radius_Upper", _ONLY_IMAGER),
-    _mean("Match_AOT", _ONLY_IMAGER),
-    *(_mean(f"Aerosol_Type_Percentage_Type{i}", _ONLY_IMAGER) for i in range(7)),
     _mean("Imager_Dark_Target_Land_055um_Corrected_Aerosol_Optical_Depth", _ONLY_IMAGER),
     _mean("Imager_Deep_Blue_Ocean_055um_Aerosol_Optical_Depth", _ONLY_IMAGER),
     _mean("Surface_Albedo", _ONLY_IMAGER),
@@ -184,15 +183,14 @@ _DECLARED = [
         (),
     ),
     (
-        "FLASHFlux",
-        FLASHFluxReader,
+        "CERES_SSF",
+        CeresSsfReader,
         "NOAA20",
         20.0,  # the CERES footprint at nadir
         TimeMatch.NEAREST_PASS,
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _mean("Aerosol_Optical_Depth", _IMAGER_PAIR),
             _mean("Clear_Coverage", _IMAGER_PAIR),
             _mean("Cloud_Optical_Depth_Lower", _IMAGER_PAIR),
             _mean("Cloud_Water_Particle_Radius_Lower", _IMAGER_PAIR),
@@ -200,7 +198,7 @@ _DECLARED = [
             _code("Cloud_Classification", None, _IMAGER_PAIR),
             _code("Shortwave_ADM_Type", None, _IMAGER_PAIR),
             _code("Longwave_ADM_Type", None, _IMAGER_PAIR),
-            *_FLASHFLUX_EXTENDED,
+            *_SSF_EXTENDED,
         ),
         (),
     ),
@@ -230,7 +228,7 @@ _BUILT_IN = {row[0]: row[1] for row in _DECLARED}
 
 # The readers each product draws on, written out independently of the readers' specs.
 _CAM_READERS = frozenset({"IGBP", "NISE", "VIIRS_CLDPROP_D3"})
-_IMAGER_CAMTIME_READERS = _CAM_READERS | {"ERA5_Surface", "VIIRS_BRDF", "VIIRS_AOD", "CLDPIX", "FLASHFlux"}
+_IMAGER_CAMTIME_READERS = _CAM_READERS | {"ERA5_Surface", "VIIRS_BRDF", "VIIRS_AOD", "CLDPIX", "CERES_SSF"}
 _EXPECTED_MODE_READERS = {
     OperationalMode.CAM: _CAM_READERS,
     OperationalMode.CAM_CAMTIME: _CAM_READERS,
@@ -241,8 +239,8 @@ _EXPECTED_MODE_READERS = {
 _EXPECTED_PRODUCT_VARIABLE_COUNTS = {
     OperationalMode.CAM: 18,
     OperationalMode.CAM_CAMTIME: 18,
-    OperationalMode.IMAGER: 505,
-    OperationalMode.IMAGER_CAMTIME: 85,
+    OperationalMode.IMAGER: 487,
+    OperationalMode.IMAGER_CAMTIME: 83,
 }
 
 
@@ -251,7 +249,9 @@ def _stub_reader(key: str, modes: frozenset[OperationalMode]) -> type[StaticRead
 
     class _Stub(StaticReader):
         READER_KEY = key
+        PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
         INSTRUMENT = "FAKE"
+        GRANULE_DATE_WINDOW = None
         RESOLUTION_KM = 1.0
         TIME_MATCH = TimeMatch.DAILY
         VARIABLES = (VariableSpec(name="v", dtype="int16", aggregation="weighted_mode", modes=modes),)
@@ -387,7 +387,7 @@ class TestReadersForMode:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM, OperationalMode.CAM_CAMTIME])
     def test_camera_modes_exclude_the_climate_quality_readers(self, mode):
-        """``FMATCH_MODE_READERS`` gives the CAM products none of the AOD, FLASHFlux, CLDPIX or ERA5 pressure-level readers.
+        """``FMATCH_MODE_READERS`` gives the CAM products none of the AOD, CERES SSF, CLDPIX or ERA5 pressure-level readers.
 
         Those sources are inputs to the Climate Quality FMATCH-IMAGER products only. The CAM products run at
         near-real-time latency from mission start; a ``modes`` entry that named a CAM product by mistake would add
@@ -395,7 +395,7 @@ class TestReadersForMode:
 
         Parametrized over the two CAM modes; asserts none of the four keys is in the mode's set.
         """
-        assert not {"VIIRS_AOD", "FLASHFlux", "CLDPIX", "ERA5_Pressure"} & FMATCH_MODE_READERS[mode]
+        assert not {"VIIRS_AOD", "CERES_SSF", "CLDPIX", "ERA5_Pressure"} & FMATCH_MODE_READERS[mode]
 
     def test_era5_pressure_levels_are_radiometer_timescale_only(self):
         """``ERA5_Pressure`` contributes to FMATCH-IMAGER but not to FMATCH-IMAGER-CAMTIME.
@@ -497,7 +497,9 @@ class TestDuplicateKey:
 
         class _First(StaticReader):
             READER_KEY = "_registry_test_duplicate"
+            PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
             INSTRUMENT = "FAKE"
+            GRANULE_DATE_WINDOW = None
             RESOLUTION_KM = 1.0
             TIME_MATCH = TimeMatch.DAILY
             VARIABLES = (_SPEC,)
@@ -510,7 +512,9 @@ class TestDuplicateKey:
 
             class _Second(StaticReader):
                 READER_KEY = "_registry_test_duplicate"
+                PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
                 INSTRUMENT = "FAKE"
+                GRANULE_DATE_WINDOW = None
                 RESOLUTION_KM = 1.0
                 TIME_MATCH = TimeMatch.DAILY
                 VARIABLES = (_SPEC,)
@@ -519,6 +523,32 @@ class TestDuplicateKey:
                     raise NotImplementedError
 
         assert ReaderRegistry.get("_registry_test_duplicate") is _First
+
+    @pytest.mark.parametrize(
+        "product_id", [None, "ERA5-SINGLE-LEVEL", DataProductIdentifier.l1b_rad], ids=["absent", "string", "not-anc"]
+    )
+    def test_product_id_must_be_an_ancillary_product(self, monkeypatch, product_id):
+        """The runner hands a reader the manifest's files of its PRODUCT_ID, so a reader without a DataLevel.ANC
+        product fails at definition, not when a run looks its granules up."""
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        attributes = {} if product_id is None else {"PRODUCT_ID": product_id}
+
+        with pytest.raises(TypeError, match="READER_KEY='_registry_test_product'.*must set PRODUCT_ID"):
+            type(
+                "_NoProduct",
+                (StaticReader,),
+                {
+                    "READER_KEY": "_registry_test_product",
+                    "INSTRUMENT": "FAKE",
+                    "GRANULE_DATE_WINDOW": None,
+                    "RESOLUTION_KM": 1.0,
+                    "TIME_MATCH": TimeMatch.DAILY,
+                    "VARIABLES": (_SPEC,),
+                    "_load_native": lambda self: None,
+                    **attributes,
+                },
+            )
+        assert "_registry_test_product" not in ReaderRegistry._registry
 
 
 # The shipped FMATCH product definition of each operational mode.

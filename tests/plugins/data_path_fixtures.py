@@ -307,12 +307,32 @@ def test_l1a_product_definition_file(test_data_path: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def fmatch_real_data_path(test_data_path):
-    """Path to shortened real ancillary granules for the footprint matching readers.
+    """Path to shortened real granules for footprint matching: the readers' ancillary inputs and a CF-CAM product.
 
     Each file is cut from a real granule with its values unchanged; see the README.md
     in that directory for each file's source granule and what was kept.
     """
     return test_data_path / "footprint_matching"
+
+
+@pytest.fixture(scope="session")
+def fmatch_real_ancillary_granules(fmatch_real_data_path) -> dict[str, Path]:
+    """The shortened real granule each FMATCH ancillary reader reads, by reader key.
+
+    ``README.md`` in ``fmatch_real_data_path`` says what each was cut from.
+    """
+    names = {
+        "CLDPIX": "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015_subset.nc",
+        "ERA5_Pressure": "era5_pressure_levels_20250101T00_subset.nc",
+        "ERA5_Surface": "era5_single_levels_20250101T00_subset.nc",
+        "CERES_SSF": "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_subset.nc",
+        "IGBP": "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf",
+        "NISE": "NISE_AMSR2_20260610_subset.HDFEOS",
+        "VIIRS_AOD": "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc",
+        "VIIRS_BRDF": "VJ143C1.A2026153.002.2026161161054_subset.h5",
+        "VIIRS_CLDPROP_D3": "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc",
+    }
+    return {reader_key: fmatch_real_data_path / name for reader_key, name in names.items()}
 
 
 @pytest.fixture

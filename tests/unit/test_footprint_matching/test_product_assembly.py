@@ -18,7 +18,11 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching import product
 from libera_utils.footprint_matching.geometry import MissingGeolocationError
 from libera_utils.footprint_matching.product import (
+    CAMTIME_BBOX_TRUNCATED_BIT,
+    CAMTIME_BBOX_WRAPS_DATELINE_BIT,
+    CAMTIME_PSEUDOFOOTPRINT_VARIABLES,
     L1B_PASSTHROUGH_VARIABLES,
+    FmatchInputError,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     _fill_value_for,
@@ -30,6 +34,7 @@ from libera_utils.footprint_matching.product import (
     compute_derived_viewing_geometry,
     fmatch_time_variable,
     load_fmatch_definition,
+    pseudofootprints_from_camtime_dataset,
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader
@@ -58,8 +63,6 @@ from tests.plugins.footprint_matching_fixtures import (
     FakeMeanReader,
     era5_pressure_fixture_value,
     fake_radiometer_footprint,
-    make_era5_pressure_netcdf_fixture,
-    make_era5_surface_netcdf_fixture,
 )
 
 _PARTIAL = int(FmatchCoverageFlag.PARTIAL_COVERAGE)
@@ -491,7 +494,10 @@ class _WestHalfReader(StaticReader):
     """Serves the fake grid's western columns only, so it covers well under 75% of a footprint box."""
 
     READER_KEY = "_fake_west_half"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "TEST"
+    GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
@@ -677,7 +683,8 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
 class TestAssemblyWithAggregation:
     """Supplying readers makes the external columns carry real aggregated values."""
 
-    def _era5_sources(self, tmp_path) -> dict[str, AncillaryReader]:
+    @pytest.fixture
+    def era5_sources(self, era5_surface_file_factory, era5_pressure_file_factory) -> dict[str, AncillaryReader]:
         """The real ERA5 surface and pressure-level readers, the IMAGER readers for these tests.
 
         The surface grid is fine (0.1 deg) so a grid point falls inside the PSF ground radius
@@ -688,8 +695,7 @@ class TestAssemblyWithAggregation:
         FMATCH-IMAGER declares.
         """
         era5_cls = ReaderRegistry.get("ERA5_Surface")
-        era5_file = make_era5_surface_netcdf_fixture(
-            tmp_path,
+        era5_file = era5_surface_file_factory(
             lat_min=0.0,
             lat_max=2.0,
             lon_min=10.0,
@@ -698,20 +704,20 @@ class TestAssemblyWithAggregation:
             n_lon=21,
             times=[ERA5_FIXTURE_TIME],
         )
-        pressure_file = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        pressure_file = era5_pressure_file_factory(n_lat=41, n_lon=41)
         return {"ERA5_Surface": era5_cls([era5_file]), "ERA5_Pressure": ERA5PressureLevelReader([pressure_file])}
 
     @pytest.fixture(autouse=True)
     def _imager_uses_era5_only(self, set_mode_readers):
         set_mode_readers(OperationalMode.IMAGER, ("ERA5_Surface", "ERA5_Pressure"))
 
-    def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
+    def test_radiometer_assembly_carries_real_era5_values(self, era5_sources):
         # Footprint sits inside the ERA5 grid so every PSF cell has data.
         l1b = _l1b_at(lat=1.0, lon=11.0)
         dataset = assemble_fmatch_dataset(
             OperationalMode.IMAGER,
             l1b,
-            sources=self._era5_sources(tmp_path),
+            sources=era5_sources,
             algorithm_version="1.0.0",
             input_files="l1b.nc,era5.nc",
             allow_placeholders=True,
@@ -730,13 +736,13 @@ class TestAssemblyWithAggregation:
         # The product still conforms strictly with the computed columns in place.
         assert load_fmatch_definition(OperationalMode.IMAGER).check_dataset_conformance(dataset, strict=True) == []
 
-    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, tmp_path):
+    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, era5_sources):
         # Boresight far from the ERA5 grid -> no samples -> zero coverage.
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(
             OperationalMode.IMAGER,
             l1b,
-            sources=self._era5_sources(tmp_path),
+            sources=era5_sources,
             allow_placeholders=True,
         )
 
@@ -746,7 +752,7 @@ class TestAssemblyWithAggregation:
 
 
 class TestStackedProductVariables:
-    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, tmp_path, set_mode_readers):
+    def test_era5_pressure_levels_fill_the_stacked_imager_variables(self, set_mode_readers, era5_pressure_file_factory):
         """FMATCH-IMAGER carries each ERA5 pressure-level field as one variable on ``PRESSURE_LEVEL``.
 
         The reader aggregates every (field, level) pair on its own, and the product definition declares one
@@ -758,7 +764,7 @@ class TestStackedProductVariables:
         level order, every stacked standard deviation is zero, and the ``PRESSURE_LEVEL`` coordinate holds the levels.
         """
         set_mode_readers(OperationalMode.IMAGER, ("ERA5_Pressure",))
-        era5_path = make_era5_pressure_netcdf_fixture(tmp_path, n_lat=41, n_lon=41)
+        era5_path = era5_pressure_file_factory(n_lat=41, n_lon=41)
         l1b = _l1b_inputs()
         l1b["RADIOMETER_TIME"] = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "s")
         for name, value in [("Latitude", 1.0), ("Subsatellite_Latitude", 1.0)]:
@@ -801,3 +807,60 @@ class TestStackedProductVariables:
             load_fmatch_definition(OperationalMode.IMAGER).variables["ERA5_Pressure_Temperature"],
         )
         np.testing.assert_array_equal(temperature.values, fill_value)
+
+
+class TestPseudofootprintsFromCamtime:
+    """Camera pseudo-footprints are rebuilt from the CF-CAM-CAMTIME grid the Camera Cloud Fraction algorithm writes."""
+
+    def test_rebuilds_one_footprint_per_real_cell_in_row_major_order(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=2, n_pixels_x=2, n_pixels_y=2)
+
+        footprints = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert len(footprints) == 8
+        assert [f.time for f in footprints] == [dataset["CAMERA_TIME"].values[i] for i in (0, 0, 0, 0, 1, 1, 1, 1)]
+        assert [(f.center_ix, f.center_iy) for f in footprints[:4]] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    def test_inclusive_pixel_bounds_become_half_open_slices(self, cf_cam_camtime_dataset_factory):
+        footprint = pseudofootprints_from_camtime_dataset(cf_cam_camtime_dataset_factory(n_images=1))[0]
+
+        assert footprint.slice_x == slice(0, 1)
+        assert footprint.slice_y == slice(0, 1)
+
+    def test_padded_cells_are_skipped(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=2, n_pixels_x=2, n_pixels_y=2, n_padded=3)
+
+        assert len(pseudofootprints_from_camtime_dataset(dataset)) == 5
+
+    def test_bbox_and_quality_flags_are_decoded(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory(n_images=1, n_pixels_x=1, n_pixels_y=2)
+        dataset["PSF_Bbox_Flags"].values[0, 1] = CAMTIME_BBOX_WRAPS_DATELINE_BIT | CAMTIME_BBOX_TRUNCATED_BIT
+        dataset["Quality_Flag"].values[0, 1] = int(CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED)
+
+        clean, flagged = pseudofootprints_from_camtime_dataset(dataset)
+
+        assert (clean.bbox.wraps_dateline, clean.bbox.is_polar, clean.bbox.truncated) == (False, False, False)
+        assert (flagged.bbox.wraps_dateline, flagged.bbox.is_polar, flagged.bbox.truncated) == (True, False, True)
+        assert clean.q_flags == CameraFootprintQualityFlag(0)
+        assert flagged.q_flags == CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
+
+    def test_missing_variable_raises_naming_it(self, cf_cam_camtime_dataset_factory):
+        dataset = cf_cam_camtime_dataset_factory().drop_vars(["PSF_Bbox_Flags", "Camera_Pixel_X_Min"])
+
+        with pytest.raises(FmatchInputError, match="Camera_Pixel_X_Min, PSF_Bbox_Flags"):
+            pseudofootprints_from_camtime_dataset(dataset)
+
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_every_required_name_is_one_the_fmatch_camtime_products_declare(self, mode):
+        """FMATCH copies these straight into its camera-timescale products, so each must be declared there.
+
+        CF-CAM-CAMTIME and the FMATCH camera-timescale products carry them under the same product names.
+        """
+        definition = load_fmatch_definition(mode)
+        declared = {*definition.variables, *definition.coordinates}
+        assert set(CAMTIME_PSEUDOFOOTPRINT_VARIABLES) - declared - {"PSF_Bbox_Flags"} == set()
+
+
+def test_fmatch_input_error_is_a_value_error():
+    """FmatchInputError subclasses ValueError, so a caller that handles ValueError keeps handling every input failure."""
+    assert issubclass(FmatchInputError, ValueError)

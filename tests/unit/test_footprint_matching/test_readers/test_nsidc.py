@@ -12,11 +12,13 @@ Real NISE files can be downloaded from:
     Earthdata login required: https://urs.earthdata.nasa.gov/
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from libera_utils.footprint_matching.readers._eos_metadata import ecs_range_span
 from libera_utils.footprint_matching.readers.nsidc import (
     _HEMISPHERE_LABEL_NORTH,
     _HEMISPHERE_LABEL_SOUTH,
@@ -24,7 +26,7 @@ from libera_utils.footprint_matching.readers.nsidc import (
     _HemisphereGrid,
 )
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet
-from tests.plugins.footprint_matching_fixtures import UNREAD_GRANULE, make_nise_hdfeos_fixture
+from tests.plugins.footprint_matching_fixtures import UNREAD_GRANULE
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
@@ -80,18 +82,23 @@ def _filled(code: int) -> np.ndarray:
     return np.full((_TEST_ROWS, _TEST_COLS), code, dtype=np.uint8)
 
 
-def _granule(tmp_path: Path, north: np.ndarray | None = None, south: np.ndarray | None = None, **metadata) -> Path:
-    """Write a 4 x 4 NISE granule on the test grid; a hemisphere not given is all ocean (255).
+@pytest.fixture
+def nise_granule_factory(nise_file_factory) -> Callable[..., Path]:
+    """Factory writing a 4 x 4 NISE granule on the test grid; a hemisphere not given is all ocean (255).
 
-    ``metadata`` overrides the ``StructMetadata.0`` keywords of ``make_nise_hdfeos_fixture``.
+    Keywords other than ``north`` and ``south`` override the ``StructMetadata.0`` keywords of ``nise_file_factory``.
     """
-    corners = {"upper_left_m": _TEST_UPPER_LEFT_M, "lower_right_m": _TEST_LOWER_RIGHT_M}
-    return make_nise_hdfeos_fixture(
-        tmp_path / "NISE_AMSR2_20260101.HDFEOS",
-        north=_filled(255) if north is None else north,
-        south=_filled(255) if south is None else south,
-        **{**corners, **metadata},
-    )
+
+    def _write(north: np.ndarray | None = None, south: np.ndarray | None = None, **metadata) -> Path:
+        corners = {"upper_left_m": _TEST_UPPER_LEFT_M, "lower_right_m": _TEST_LOWER_RIGHT_M}
+        return nise_file_factory(
+            north=_filled(255) if north is None else north,
+            south=_filled(255) if south is None else south,
+            filename="NISE_AMSR2_20260101.HDFEOS",
+            **{**corners, **metadata},
+        )
+
+    return _write
 
 
 @pytest.fixture
@@ -100,9 +107,14 @@ def north_test_grid(monkeypatch):
     monkeypatch.setattr(NISEReader, "_HEMISPHERES", (_TEST_HEMI_NORTH,))
 
 
-def _make_reader(tmp_path: Path, north: np.ndarray | None = None) -> NISEReader:
-    """A NISEReader over a written 4 x 4 granule (use with ``north_test_grid``)."""
-    return NISEReader([_granule(tmp_path, north=north)])
+@pytest.fixture
+def nise_reader_factory(nise_granule_factory) -> Callable[..., NISEReader]:
+    """Factory building a NISEReader over a written 4 x 4 granule (use with ``north_test_grid``)."""
+
+    def _make(north: np.ndarray | None = None) -> NISEReader:
+        return NISEReader([nise_granule_factory(north=north)])
+
+    return _make
 
 
 def _whole_grid_box(reader: NISEReader) -> BoundingBox:
@@ -155,7 +167,7 @@ class TestNISEReaderLatLonGrid:
 
 @pytest.mark.usefixtures("north_test_grid")
 class TestNISEReaderSamples:
-    def test_returns_value_rows_and_1d_coords(self, tmp_path):
+    def test_returns_value_rows_and_1d_coords(self, nise_reader_factory):
         """``NISEReader.samples_in`` returns a ``SampleSet`` of float32 value rows per variable and 1-D coordinates.
 
         Downstream weighting expects this layout: a ``(5, n_pixels)`` value array matched to flat per-pixel coordinates,
@@ -164,7 +176,7 @@ class TestNISEReaderSamples:
         A 4 x 4 Northern grid of code 50 is queried over its whole extent, and the result's type, ``source``,
         ``timestamp_source``, value dtype and shape, and coordinate shapes are checked.
         """
-        reader = _make_reader(tmp_path, north=_filled(50))
+        reader = nise_reader_factory(north=_filled(50))
         samples = reader.samples_in(_whole_grid_box(reader), _T)
         assert isinstance(samples, SampleSet)
         assert samples.source == "NISE"
@@ -209,7 +221,7 @@ class TestNISEExtentToCategoryMasks:
 class TestNISEReadExtentSds:
     """Hemisphere selection on a written granule whose two grids share SDS names."""
 
-    def test_each_label_returns_its_own_grid(self, tmp_path):
+    def test_each_label_returns_its_own_grid(self, nise_granule_factory):
         """``_read_extent_sds`` returns the ``Extent`` SDS of the hemisphere whose label it is given.
 
         Both hemispheres name their field ``Extent``, so selecting by name always returns the Northern grid; the
@@ -219,11 +231,11 @@ class TestNISEReadExtentSds:
         array.
         """
         north, south = _filled(50), _filled(101)
-        reader = NISEReader([_granule(tmp_path, north=north, south=south)])
+        reader = NISEReader([nise_granule_factory(north=north, south=south)])
         np.testing.assert_array_equal(reader._read_extent_sds(_HEMISPHERE_LABEL_NORTH), north)
         np.testing.assert_array_equal(reader._read_extent_sds(_HEMISPHERE_LABEL_SOUTH), south)
 
-    def test_unknown_label_raises(self, tmp_path):
+    def test_unknown_label_raises(self, nise_granule_factory):
         """``_read_extent_sds`` raises ``KeyError`` when no ``Extent`` SDS matches the hemisphere label.
 
         A staged file without the expected grid must stop the run with a message saying what file to stage, rather than
@@ -232,11 +244,11 @@ class TestNISEReadExtentSds:
         A valid granule is read with the label ``"Equatorial"``, and the error message is checked for its staging
         advice.
         """
-        reader = NISEReader([_granule(tmp_path)])
+        reader = NISEReader([nise_granule_factory()])
         with pytest.raises(KeyError, match="NISE or NISE_A2 HDF-EOS granule"):
             reader._read_extent_sds("Equatorial")
 
-    def test_extent_not_matching_the_grid_raises(self, tmp_path):
+    def test_extent_not_matching_the_grid_raises(self, nise_granule_factory):
         """``NISEReader._load_native`` raises ``ValueError`` when an ``Extent`` SDS is not its grid's declared shape.
 
         Pixel coordinates are computed from the declared grid, so an SDS of another shape cannot be geolocated and would
@@ -245,7 +257,7 @@ class TestNISEReadExtentSds:
         A 4 x 4 granule is read with the reader's 721 x 721 grids, and the error message must name both shapes.
         """
         with pytest.raises(ValueError, match=r"Extent SDS has shape \(4, 4\).*721 x 721"):
-            NISEReader([_granule(tmp_path)])._load_native()
+            NISEReader([nise_granule_factory()])._load_native()
 
 
 @pytest.mark.usefixtures("north_test_grid")
@@ -259,7 +271,7 @@ class TestNISEGridGeometry:
             pytest.param({"lower_right_m": (1_000_000.0, -1_050_000.0)}, id="lower-right"),
         ],
     )
-    def test_other_corners_raise(self, tmp_path, metadata):
+    def test_other_corners_raise(self, metadata, nise_granule_factory):
         """``NISEReader._load_native`` raises ``ValueError`` when ``StructMetadata.0`` gives other grid corners.
 
         Pixel centers are computed from the reader's fixed grid, so a granule of the same shape on another extent would
@@ -269,9 +281,9 @@ class TestNISEGridGeometry:
         must raise a message naming the grid, both sets of corners and what to stage.
         """
         with pytest.raises(ValueError, match=r"grid 'Northern Hemisphere' YDim=4, XDim=4, corners .*stage the 25 km"):
-            NISEReader([_granule(tmp_path, **metadata)])._load_native()
+            NISEReader([nise_granule_factory(**metadata)])._load_native()
 
-    def test_other_projection_raises(self, tmp_path):
+    def test_other_projection_raises(self, nise_granule_factory):
         """``NISEReader._load_native`` raises ``ValueError`` when a grid names a projection other than ``GCTP_LAMAZ``.
 
         The pixel centers are reprojected from the EASE-Grid's Lambert azimuthal equal-area CRS, which is wrong for a
@@ -280,9 +292,9 @@ class TestNISEGridGeometry:
         A granule whose grids name ``GCTP_GEO`` is loaded, and the error must name both projections.
         """
         with pytest.raises(ValueError, match="Projection=GCTP_GEO .* not the EASE-Grid GCTP_LAMAZ"):
-            NISEReader([_granule(tmp_path, projection="GCTP_GEO")])._load_native()
+            NISEReader([nise_granule_factory(projection="GCTP_GEO")])._load_native()
 
-    def test_missing_struct_metadata_raises(self, tmp_path):
+    def test_missing_struct_metadata_raises(self, nise_granule_factory):
         """``NISEReader._load_native`` raises ``ValueError`` when the granule has no ``StructMetadata.0`` grid.
 
         Without the attribute the reader cannot confirm the grid it geolocates on, and a distributed NISE granule always
@@ -291,13 +303,13 @@ class TestNISEGridGeometry:
         A granule written without ``StructMetadata.0`` is loaded, and the error must name the missing grid.
         """
         with pytest.raises(ValueError, match="has no grid named 'Northern Hemisphere'"):
-            NISEReader([_granule(tmp_path, struct_metadata=False)])._load_native()
+            NISEReader([nise_granule_factory(struct_metadata=False)])._load_native()
 
 
 class TestNISEReaderBothHemispheres:
     """The reader reads and merges both the Northern and Southern EASE-Grids."""
 
-    def test_both_hemispheres_are_concatenated(self, tmp_path, monkeypatch):
+    def test_both_hemispheres_are_concatenated(self, monkeypatch, nise_granule_factory):
         """``NISEReader._load_native`` merges both hemispheres' pixels into one point cloud.
 
         Footprints over either pole draw from the same cloud, so a hemisphere left out of the merge would leave its
@@ -307,7 +319,7 @@ class TestNISEReaderBothHemispheres:
         equator, 32 points and a ``(5, 32)`` value array.
         """
         monkeypatch.setattr(NISEReader, "_HEMISPHERES", (_TEST_HEMI_NORTH, _TEST_HEMI_SOUTH))
-        points = NISEReader([_granule(tmp_path, north=_filled(50), south=_filled(50))])._load_native()
+        points = NISEReader([nise_granule_factory(north=_filled(50), south=_filled(50))])._load_native()
         # The point cloud spans both hemispheres and keeps every pixel (no code 254 to drop).
         assert np.any(points.lats > 0)
         assert np.any(points.lats < 0)
@@ -315,7 +327,7 @@ class TestNISEReaderBothHemispheres:
         assert points.lats.size == points.lons.size == expected
         assert points.values.shape == (len(NISEReader.VARIABLES), expected)
 
-    def test_southern_box_is_served_from_the_southern_grid(self, tmp_path, monkeypatch):
+    def test_southern_box_is_served_from_the_southern_grid(self, monkeypatch, nise_granule_factory):
         """A box over the Southern grid is served the Southern hemisphere's values, not the Northern's.
 
         This guards the end-to-end path for the hemisphere that name-based SDS selection would miss: a Southern
@@ -325,13 +337,13 @@ class TestNISEReaderBothHemispheres:
         over that grid; all 16 pixels must come back with 0.5 sea ice concentration.
         """
         monkeypatch.setattr(NISEReader, "_HEMISPHERES", (_TEST_HEMI_SOUTH,))
-        reader = NISEReader([_granule(tmp_path, north=_filled(255), south=_filled(50))])
+        reader = NISEReader([nise_granule_factory(north=_filled(255), south=_filled(50))])
         values = reader.samples_in(_whole_grid_box(reader), _T).values
         assert values.shape[1] == _TEST_ROWS * _TEST_COLS
         assert np.allclose(values[_layer_index("Sea_Ice_Concentration")], 0.5, atol=1e-5)
 
     @pytest.mark.usefixtures("north_test_grid")
-    def test_off_earth_code_254_is_dropped_not_zeroed(self, tmp_path):
+    def test_off_earth_code_254_is_dropped_not_zeroed(self, nise_reader_factory):
         """``NISEReader._load_native`` removes pixels with Extent code 254 from the point cloud.
 
         Code 254 marks off-Earth grid corners that reproject into the opposite hemisphere; kept as all-zero layers they
@@ -345,7 +357,7 @@ class TestNISEReaderBothHemispheres:
         raw = _filled(50)
         raw[0, 0] = 254
         raw[-1, -1] = 254
-        points = _make_reader(tmp_path, north=raw)._load_native()
+        points = nise_reader_factory(north=raw)._load_native()
         expected = _TEST_ROWS * _TEST_COLS - 2
         assert points.lats.size == points.lons.size == expected
         assert points.values.shape == (len(NISEReader.VARIABLES), expected)
@@ -439,3 +451,52 @@ class TestNISEReaderRealSubset:
         north_pole = reader.samples_in(BoundingBox(89.5, 90.0, -180.0, 180.0), self._TIME).values
         assert north_pole.size > 0
         assert np.isnan(north_pole).all()
+
+    def test_granule_span_is_the_granule_date(self, fmatch_real_ancillary_granules):
+        """``NISEReader.granule_span`` dates the real granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``: the day ``20260610`` in its name.
+
+        The FMATCH runner rejects a granule whose span lies more than a day from the input's footprint times, so a
+        misread span would reject the right granule or accept one from the wrong day. Read without constructing the
+        reader, as the runner reads it.
+        """
+        start, end = NISEReader.granule_span(fmatch_real_ancillary_granules["NISE"])
+        assert start == np.datetime64("2026-06-10T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-11T00:00:00", "ns")
+
+
+class TestNISEGranuleSpan:
+    """``NISEReader.granule_span`` dates a granule from the ``RANGEDATETIME`` group of its ``coremetadata.0``."""
+
+    def test_span_is_the_coverage_date(self, nise_file_factory):
+        path = nise_file_factory(
+            north=np.full((2, 2), 255, dtype=np.uint8),
+            south=np.full((2, 2), 255, dtype=np.uint8),
+            coverage_date="2026-06-11",
+        )
+
+        start, end = NISEReader.granule_span(path)
+
+        assert start == np.datetime64("2026-06-11T00:00:00", "ns")
+        assert end == np.datetime64("2026-06-12T00:00:00", "ns")
+
+    def test_granule_without_a_date_raises(self, nise_file_factory):
+        """A granule with no date metadata cannot be checked against the input's day, so reading its span raises."""
+        path = nise_file_factory(
+            north=np.full((2, 2), 255, dtype=np.uint8),
+            south=np.full((2, 2), 255, dtype=np.uint8),
+        )
+
+        with pytest.raises(ValueError, match="RANGEBEGINNINGDATE"):
+            NISEReader.granule_span(path)
+
+    @pytest.mark.parametrize(
+        ("values", "match"),
+        [
+            (("2026-06-12", "00:00:00", "2026-06-11", "00:00:00"), "ends"),
+            (("2026-13-40", "00:00:00", "2026-06-11", "00:00:00"), "ISO 8601"),
+        ],
+    )
+    def test_invalid_range_raises(self, values, match):
+        """``ecs_range_span`` rejects a range that ends before it begins or is not a date."""
+        with pytest.raises(ValueError, match=match):
+            ecs_range_span(*values, source="NISE.HDFEOS")

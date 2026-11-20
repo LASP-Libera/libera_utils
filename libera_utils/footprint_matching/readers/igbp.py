@@ -24,6 +24,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._hdf4_io import _SinusoidalGeometry, read_modis_sinusoidal_hdf4
 from libera_utils.footprint_matching.readers.base import StaticReader, in_box
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch, VariableSpec
@@ -82,6 +83,9 @@ class IGBPReader(StaticReader):
         The coverage measure credits each pixel with a cell of this side.
     VARIABLES : tuple[VariableSpec, ...]
         Single variable: ``"Surface_Type"`` (categorical, 20 IGBP classes).
+    GRANULE_DATE_WINDOW : None
+        The annual map is applied to dates outside its own year, so its granules' dates
+        are not checked.
 
     Parameters
     ----------
@@ -90,6 +94,7 @@ class IGBPReader(StaticReader):
     """
 
     READER_KEY: str = "IGBP"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_modis_igbp
     # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
     # TODO[LIBSDC-899]: decide the land-cover source once Terra and Aqua MODIS end: a successor product on this
     # sinusoidal grid (this reader, a new INSTRUMENT) or a new reader.
@@ -97,6 +102,10 @@ class IGBPReader(StaticReader):
     # The MCD12Q1 v061 User Guide's sinusoidal grid cell, 463.3 m.
     RESOLUTION_KM: float = 0.463
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
+    # MCD12Q1 is an annual land-cover map (MCD12Q1 v061 User Guide), and its newest year is applied
+    # to every later date until the next is released, so a granule's own year says nothing about
+    # whether it was staged for the right day: its date is not checked.
+    GRANULE_DATE_WINDOW: np.timedelta64 | None = None
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="Surface_Type",

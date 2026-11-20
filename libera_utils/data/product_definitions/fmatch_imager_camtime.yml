@@ -5,7 +5,7 @@
 attributes:
   ProductID: FMATCH-IMAGER-CAMTIME
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
+  InputGranules: null # TODO[LIBSDC-869]: set by write_libera_data_product once it takes the input granules
 
 coordinates:
   # 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: each pseudo-footprint (image subsection) is identified by its image time
@@ -324,76 +324,66 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Standard deviation of forecast albedo (broadband surface albedo), PSF-weighted over within-footprint values (ECMWF)
-  # --- source reader: FLASHFlux (resolution 20.0 km) ---
-  FLASHFlux_Aerosol_Optical_Depth:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Aerosol optical depth (CERES FLASHFlux) (NOAA20)
-  FLASHFlux_Aerosol_Optical_Depth_Standard_Deviation:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Standard deviation of aerosol optical depth (CERES FLASHFlux), PSF-weighted over within-footprint values (NOAA20)
-  FLASHFlux_Clear_Coverage:
+  # --- source reader: CERES_SSF (resolution 20.0 km) ---
+  CERES_SSF_Clear_Coverage:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Clear-sky areal coverage (NOAA20)
       units: "percent"
-  FLASHFlux_Clear_Coverage_Standard_Deviation:
+  CERES_SSF_Clear_Coverage_Standard_Deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Standard deviation of clear-sky areal coverage, PSF-weighted over within-footprint values (NOAA20)
       units: "percent"
-  FLASHFlux_Cloud_Optical_Depth_Lower:
+  CERES_SSF_Cloud_Optical_Depth_Lower:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Cloud optical depth (CERES FLASHFlux imager lower layer) (NOAA20)
-  FLASHFlux_Cloud_Optical_Depth_Lower_Standard_Deviation:
+      long_name: Cloud optical depth (CERES SSF imager lower layer) (NOAA20)
+  CERES_SSF_Cloud_Optical_Depth_Lower_Standard_Deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Standard deviation of cloud optical depth (CERES FLASHFlux imager lower layer), PSF-weighted over within-footprint values (NOAA20)
-  FLASHFlux_Cloud_Water_Particle_Radius_Lower:
+      long_name: Standard deviation of cloud optical depth (CERES SSF imager lower layer), PSF-weighted over within-footprint values (NOAA20)
+  CERES_SSF_Cloud_Water_Particle_Radius_Lower:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      long_name: Effective cloud water particle radius at 3.7 um (CERES SSF lower layer) (NOAA20)
       units: "um"
-  FLASHFlux_Cloud_Water_Particle_Radius_Lower_Standard_Deviation:
+  CERES_SSF_Cloud_Water_Particle_Radius_Lower_Standard_Deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Standard deviation of effective cloud water particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
+      long_name: Standard deviation of effective cloud water particle radius at 3.7 um (CERES SSF lower layer), PSF-weighted over within-footprint values (NOAA20)
       units: "um"
-  FLASHFlux_Cloud_Ice_Particle_Radius_Lower:
+  CERES_SSF_Cloud_Ice_Particle_Radius_Lower:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer) (NOAA20)
+      long_name: Effective cloud ice particle radius at 3.7 um (CERES SSF lower layer) (NOAA20)
       units: "um"
-  FLASHFlux_Cloud_Ice_Particle_Radius_Lower_Standard_Deviation:
+  CERES_SSF_Cloud_Ice_Particle_Radius_Lower_Standard_Deviation:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Standard deviation of effective cloud ice particle radius at 3.7 um (FLASHFlux lower layer), PSF-weighted over within-footprint values (NOAA20)
+      long_name: Standard deviation of effective cloud ice particle radius at 3.7 um (CERES SSF lower layer), PSF-weighted over within-footprint values (NOAA20)
       units: "um"
-  FLASHFlux_Cloud_Classification:
+  CERES_SSF_Cloud_Classification:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       _FillValue: -1
       long_name: CERES cloud classification code (encoded) (NOAA20)
-  FLASHFlux_Shortwave_ADM_Type:
+  CERES_SSF_Shortwave_ADM_Type:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       _FillValue: -1
       long_name: CERES shortwave ADM scene type (encoded) (NOAA20)
-  FLASHFlux_Longwave_ADM_Type:
+  CERES_SSF_Longwave_ADM_Type:
     dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:

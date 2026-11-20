@@ -5,7 +5,7 @@
 attributes:
   ProductID: FMATCH-CAM
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
+  InputGranules: null # TODO[LIBSDC-869]: set by write_libera_data_product once it takes the input granules
 
 coordinates:
   RADIOMETER_TIME:

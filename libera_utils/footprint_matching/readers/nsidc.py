@@ -106,13 +106,15 @@ EASE-Grid ref:   https://nsidc.org/ease
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pyhdf.SD as sd
 import pyproj
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
-from libera_utils.footprint_matching.readers._hdf4_io import read_hdf4_struct_metadata
+from libera_utils.footprint_matching.readers._hdf4_io import read_hdf4_granule_span, read_hdf4_struct_metadata
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
@@ -251,6 +253,7 @@ class NISEReader(StaticReader):
     """
 
     READER_KEY: str = "NISE"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_nsidc_ice_snow
     # The pipeline ingests NISE_A2, built from AMSR-2 passive microwave radiometry,
     # so provenance is tagged AMSR2.
     INSTRUMENT: str = "AMSR2"
@@ -303,6 +306,29 @@ class NISEReader(StaticReader):
         _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
         _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
     )
+
+    @classmethod
+    def granule_span(cls, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the day the granule covers, from the ``RANGEDATETIME`` group of its ``coremetadata.0``.
+
+        Parameters
+        ----------
+        path : Path
+            One staged NISE HDF-EOS file.
+
+        Returns
+        -------
+        tuple[np.datetime64, np.datetime64]
+            ``(start, end)`` as UTC ``datetime64[ns]``.
+
+        Raises
+        ------
+        pyhdf.error.HDF4Error
+            If the file cannot be opened.
+        ValueError
+            If ``coremetadata.0`` is missing or does not give a valid range.
+        """
+        return read_hdf4_granule_span(path)
 
     def _build_transformer(self, epsg: int) -> object:
         """Build an ``epsg`` → WGS84 transformer for one hemisphere's pixel centers.

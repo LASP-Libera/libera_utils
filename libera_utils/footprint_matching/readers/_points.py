@@ -3,16 +3,18 @@
 The fill and valid-range helpers the readers use are in :mod:`libera_utils.io.netcdf`.
 
 - :func:`decode_cf_times` -- turn a netCDF time variable with CF ``units`` into
-  ``datetime64[ns]`` sample times (CERES FLASHFlux).
+  ``datetime64[ns]`` sample times (CERES SSF).
 - :func:`decode_hours_of_day` -- turn a fractional-hour-of-day time variable (CERES
   CLDPIX) into ``datetime64[ns]`` sample times, each dated to the day nearest the
   granule's start.
-- :func:`granule_time_coverage` -- read the span a granule covers from its
-  ``time_coverage_start`` / ``time_coverage_end`` attributes.
+- :func:`granule_time_coverage` and :func:`read_granule_time_coverage` -- read the span
+  a granule covers from its ``time_coverage_start`` / ``time_coverage_end`` attributes,
+  of an open dataset or of a file.
 - :func:`neighbor_spacing_km` and :func:`scan_to_scan_spacing_km` -- measure a swath's
   or track's native sample spacing, which the coverage measure credits each sample with.
 """
 
+from pathlib import Path
 from typing import Any
 
 import netCDF4
@@ -179,6 +181,32 @@ def granule_time_coverage(dataset: Any, *, source: str) -> tuple[np.datetime64, 
     return out[0], out[1]
 
 
+def read_granule_time_coverage(path: Path, *, source: str) -> tuple[np.datetime64, np.datetime64]:
+    """Open a netCDF granule and read its ``time_coverage_start`` and ``time_coverage_end`` global attributes.
+
+    Parameters
+    ----------
+    path : Path
+        The granule.
+    source : str
+        Name used in error messages (reader key); the file name is appended.
+
+    Returns
+    -------
+    tuple[np.datetime64, np.datetime64]
+        ``(start, end)`` as UTC ``datetime64[ns]``.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be opened as netCDF.
+    ValueError
+        If either attribute is missing or is not an ISO 8601 instant.
+    """
+    with netCDF4.Dataset(str(path), "r") as ds:
+        return granule_time_coverage(ds, source=f"{source} {Path(path).name}")
+
+
 _EARTH_RADIUS_KM: float = 6371.0
 
 
@@ -236,7 +264,7 @@ def neighbor_spacing_km(lats: np.ndarray, lons: np.ndarray, *, max_rows: int = 5
 def scan_to_scan_spacing_km(lats: np.ndarray, lons: np.ndarray, times: np.ndarray, sample_number: np.ndarray) -> float:
     """Median distance between a scan position and the same position on the next scan, km.
 
-    CERES FLASHFlux lists footprints scan by scan; ``sample_number`` is the position within a
+    CERES SSF lists footprints scan by scan; ``sample_number`` is the position within a
     scan. Sorting by position and time pairs each footprint with the one at the same
     position on the following scan, whose separation is the along-track spacing (about
     44 km for a 6.6 s scan at 6.7 km/s), far larger than the along-scan spacing. Pairs
