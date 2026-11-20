@@ -995,8 +995,8 @@ class FootprintData:
         (for cloud fraction), the CLDPIX cloud optical depth and particle phase (for the full TRMM
         classification), the ERA5 winds (for surface wind), and the IGBP surface type -- but laid out on the 2-D
         ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one ``CAMERA_TIME`` entry per 2048x2048 image and one
-        ``PSEUDOFOOTPRINT`` entry per image subsection). Like SCENE-ID-IMAGER, this supports ERBE, unfiltering, and
-        the full TRMM classification.
+        ``PSEUDOFOOTPRINT`` entry per image subsection). It supports ERBE and the full TRMM
+        classification.
 
         This reader is the union of :meth:`from_fmatch_imager` and :meth:`from_fmatch_cam_camtime`: it uses the
         IMAGER column map (so the CERES_SSF/CLDPIX inputs and the mapped cloud phase are read) on the camera-timescale

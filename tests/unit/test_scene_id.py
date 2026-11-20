@@ -1040,9 +1040,12 @@ class TestSceneIdImagerProductDtypes:
         """Scene_ID_TRMM is uint16 (not uint8): the TRMM definition assigns IDs up to 650, which overflows a byte."""
         definition = self._load(definition_filename)
         assert definition.variables["Scene_ID_TRMM"].dtype == "uint16"
-        # ERBE/unfiltering IDs stay within a byte.
+        # ERBE/unfiltering IDs stay within a byte. Unfiltering runs on the radiometer timescale only.
         assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
-        assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
+        if definition_filename == "scene_id_imager.yml":
+            assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
+        else:
+            assert "Scene_ID_Unfiltering" not in definition.variables
 
     @pytest.mark.parametrize(
         "definition_filename",

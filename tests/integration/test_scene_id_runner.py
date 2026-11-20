@@ -24,6 +24,7 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
+    CAM_CAMTIME_CONFIG,
     RUNNER_CONFIGS,
     collect_input_files,
     create_and_write_data_product,
@@ -416,7 +417,7 @@ class TestSceneIdCamCamtimeWrite:
         """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
         # Targets the CAM-CAMTIME strict write; asserts data lands on the 2-D grid with int32 camera_pixel bounds.
         footprint_data = _synthetic_camtime_footprint_data()
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(CAM_CAMTIME_CONFIG.scene_types))
 
         # Writes with strict=True; a non-conformant definition/dataset (including the 2-D grid) would raise.
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
@@ -447,7 +448,7 @@ class TestSceneIdCamCamtimeWrite:
         """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
         # Targets the write's variable pruning; asserts retired center_pixel and start/stop pixel vars are absent.
         footprint_data = _synthetic_camtime_footprint_data()
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(CAM_CAMTIME_CONFIG.scene_types))
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
 
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
@@ -470,7 +471,7 @@ class TestSceneIdCamCamtimeWrite:
         reader, classified, and written as a conformant SCENE-ID-CAM-CAMTIME product on the 2-D grid."""
         fmatch_path = fmatch_product_file_factory(OperationalMode.CAM_CAMTIME, n_footprints=6)
         footprint_data = FootprintData.from_fmatch_cam_camtime(fmatch_path)
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(CAM_CAMTIME_CONFIG.scene_types))
 
         output_file = create_and_write_data_product_cam_camtime(footprint_data, fmatch_path.name, tmp_path)
 
@@ -532,11 +533,12 @@ class TestSceneIdImagerCamtimeWrite:
 
         assert output_file.path.exists()
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
-        # All three classifications are present and hang on the 2-D grid; TRMM is uint16.
+        # ERBE and TRMM are present and hang on the 2-D grid; TRMM is uint16. Unfiltering is radiometer-timescale only.
         assert reopened["Scene_ID_TRMM"].dtype == np.uint16
-        for scene_id in ("Scene_ID_ERBE", "Scene_ID_Unfiltering", "Scene_ID_TRMM"):
+        for scene_id in ("Scene_ID_ERBE", "Scene_ID_TRMM"):
             assert scene_id in reopened.variables
             assert reopened[scene_id].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+        assert "Scene_ID_Unfiltering" not in reopened.variables
         assert reopened.sizes["CAMERA_TIME"] == 6
         assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         # The pseudo-footprint provenance (incl. lat/lon) passes straight through onto the grid.

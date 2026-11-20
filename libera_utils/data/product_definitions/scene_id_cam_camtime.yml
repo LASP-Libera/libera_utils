@@ -97,11 +97,6 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
-  Scene_ID_Unfiltering:
-    dtype: uint8
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
 
   ##############################
   # ERBE scene property-bin bounds
@@ -165,70 +160,6 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Upper bound (exclusive) of the Relative_Azimuth_Surface bin of the matched ERBE scene
-      units: degrees
-
-  #####################################
-  # Unfiltering scene property-bin bounds
-  #####################################
-  Scene_Bin_Unfiltering_Cloud_Fraction_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Lower bound (inclusive) of the Cloud_Fraction bin of the matched unfiltering scene
-      units: percent
-  Scene_Bin_Unfiltering_Cloud_Fraction_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Upper bound (exclusive) of the Cloud_Fraction bin of the matched unfiltering scene
-      units: percent
-  Scene_Bin_Unfiltering_Surface_Type_Min:
-    dtype: int8
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
-      long_name: Lower bound (inclusive) of the Surface_Type bin of the matched unfiltering scene
-  Scene_Bin_Unfiltering_Surface_Type_Max:
-    dtype: int8
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
-      long_name: Upper bound (exclusive) of the Surface_Type bin of the matched unfiltering scene
-  Scene_Bin_Unfiltering_Solar_Zenith_Surface_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Lower bound (inclusive) of the Solar_Zenith_Surface bin of the matched unfiltering scene
-      units: degrees
-  Scene_Bin_Unfiltering_Solar_Zenith_Surface_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Upper bound (exclusive) of the Solar_Zenith_Surface bin of the matched unfiltering scene
-      units: degrees
-  Scene_Bin_Unfiltering_Viewing_Zenith_Surface_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Lower bound (inclusive) of the Viewing_Zenith_Surface bin of the matched unfiltering scene
-      units: degrees
-  Scene_Bin_Unfiltering_Viewing_Zenith_Surface_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Upper bound (exclusive) of the Viewing_Zenith_Surface bin of the matched unfiltering scene
-      units: degrees
-  Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Lower bound (inclusive) of the Relative_Azimuth_Surface bin of the matched unfiltering scene
-      units: degrees
-  Scene_Bin_Unfiltering_Relative_Azimuth_Surface_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Upper bound (exclusive) of the Relative_Azimuth_Surface bin of the matched unfiltering scene
       units: degrees
   Quality_Flag:
     dtype: uint32
