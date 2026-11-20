@@ -1,7 +1,7 @@
 """Constants module used throughout the libera_utils package"""
 
 import warnings
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from enum import IntEnum, StrEnum
 from typing import Union
 
@@ -73,8 +73,10 @@ class PartitionScheme(StrEnum):
     file's partition key as ``partition_key``, a string in the scheme's ``key_format``.
 
     - TWO_HOUR: L0 files, one per two-hour chunk. An EDOS PDS file's name carries no chunk start, so its
-      ``partition_key`` is None and the chunk start comes from its Construction Record. A ground-test capture
-      (LiberaGroundCcsdsFilename) is named by its two-hour bin start, which is its key.
+      ``partition_key`` is None and the chunk start comes from its Construction Record. The Construction Record
+      (PDS-CR) holds no packets: it has no partition key and is not a Dagster asset. A ground-test capture
+      (LiberaGroundCcsdsFilename) is a file of its APID's L0 product, named by its two-hour bin start, which is its
+      key.
     - HOURLY: each file holds one UTC hour of data, keyed by the start of that hour. The CERES SSF and CLDPIX files
       (CeresFilename) are hourly; they are still archived under the UTC day of that hour.
     - DAILY: each file holds data for one applicable date, which is its key. Its filename carries the time range of
@@ -132,7 +134,38 @@ _PARTITION_KEY_FORMATS: dict[PartitionScheme, str | None] = {
 }
 
 
-# Upper bounds on one L0 file's data time span (see DataProductIdentifier.longest_file_span). The three JPSS-1 SC-POS
+def format_coverage_key(instant: datetime) -> str:
+    """Format an instant as the timestamp of a File Metadata ``COVERAGE#`` sort key.
+
+    Every stored ``COVERAGE#`` timestamp is written in this one format, so that string order is time order and a
+    window query's ``BETWEEN`` bounds compare correctly: UTC, ``YYYY-MM-DDTHH:MM:SS`` zero-padded, with fractional
+    seconds (``.ffffff``) only when the instant has them, and no zone suffix. A query bound may be any prefix of
+    this format, since a shorter bound sorts before every key it begins. The ``COVERAGE#`` prefix is the caller's.
+
+    Parameters
+    ----------
+    instant : datetime.datetime
+        A timezone-aware instant, in any zone.
+
+    Returns
+    -------
+    str
+        The UTC timestamp, e.g. ``2026-03-14T00:10:00`` or ``2026-03-14T00:10:00.500000``
+
+    Raises
+    ------
+    ValueError
+        If ``instant`` is naive, since its zone, and so its UTC time, is unknown.
+    """
+    if instant.utcoffset() is None:
+        raise ValueError(
+            f"{instant!r} has no time zone, so its UTC time is unknown. Pass a timezone-aware datetime, such as one "
+            "with tzinfo=datetime.UTC."
+        )
+    return instant.astimezone(UTC).replace(tzinfo=None).isoformat()
+
+
+# Upper bounds on one L0 file's effective span (see DataProductIdentifier.longest_file_span). The three JPSS-1 SC-POS
 # test PDS files in tests/test_data/packets hold 1 h 59 min 59.1 s of data time each, under 2 h 10 min. WFOV science
 # data time can lag its packet time, so WFOV-SCI-PDS is given 3 h.
 _L0_LONGEST_FILE_SPAN = timedelta(hours=2, minutes=10)
@@ -156,8 +189,9 @@ class DataProductIdentifier(StrEnum):
     - data_level: The DataLevel enum value indicating the processing level
     - partition_scheme: The PartitionScheme of the product's files. Omitted, and therefore PartitionScheme.DAILY,
       for a daily product.
-    - longest_file_span: For an L0 product other than the Construction Record, the longest span of data time one of
-      its files holds, as a ``datetime.timedelta``. Omitted, and therefore None, for every other product.
+    - longest_file_span: For an L0 product other than the Construction Record, the longest effective span (data time
+      for a data-time-indexed APID, packet time otherwise) one of its files holds, as a ``datetime.timedelta``.
+      Omitted, and therefore None, for every other product.
 
     Example:
         >>> product = DataProductIdentifier.l1b_rad
@@ -216,9 +250,8 @@ class DataProductIdentifier(StrEnum):
     # ==================================
     # PDS Construction Record (metadata file)
     l0_pds_cr = ("PDS-CR", DataLevel.L0, PartitionScheme.TWO_HOUR)
-    # Demuxed ground-test CCSDS files (TVAC/DITL/ISTR/IOV); not EDOS PDS
-    l0_ground_ccsds = ("GROUND-CCSDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
-    # PDS data files (contain CCSDS packets for a single APID)
+    # PDS data files (contain CCSDS packets for a single APID), and the demuxed ground-test captures of the same APID
+    # (TVAC/DITL/ISTR/IOV, LiberaGroundCcsdsFilename)
     # NOTE: These names are derived directly from the packet names used by Libera FSW (see LiberaApid)
     # JPSS spacecraft position (attitude quaternions and ephemeris coordinates) in 1Hz packets with 1 sample per packet for 1Hz samples
     l0_jpss_sc_pos_pds = ("SC-POS-PDS", DataLevel.L0, PartitionScheme.TWO_HOUR, _L0_LONGEST_FILE_SPAN)
@@ -543,16 +576,19 @@ class DataProductIdentifier(StrEnum):
         Returns
         -------
         PartitionScheme
-            TWO_HOUR for an L0 product, HOURLY for the CERES FLASHFlux and CLDPIX products, EVENT for a calibration
+            TWO_HOUR for an L0 product, HOURLY for the CERES SSF and CLDPIX products, EVENT for a calibration
             ObsID's TRIMMED and CAL products, VERSION for a version-partitioned product, DAILY otherwise
         """
         return self._partition_scheme
 
     @property
     def longest_file_span(self) -> timedelta | None:
-        """Get the longest span of data time one file of this product holds.
+        """Get the longest effective span one file of this product holds.
 
-        It bounds how far before a day the L0 coverage index's window query looks for files with data in that day.
+        The effective span is data time for a data-time-indexed APID
+        (``libera_utils.l1a.data_time_extractors.is_data_time_indexed_apid``) and packet time otherwise, the span a
+        file's ``COVERAGE#`` record holds. It bounds how far before a window the L0 coverage window query looks for
+        files that reach into it.
 
         Returns
         -------

@@ -16,9 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `EVENT` (every calibration ObsID's TRIMMED and CAL product), and `PartitionScheme.key_format` gives each
   scheme's partition key format, which is Dagster's: `%Y-%m-%d` daily, `%Y-%m-%d-%H:%M` two-hour and hourly,
   `%Y%m%dT%H%M%S` event, and `None` for version.
-- `DataProductIdentifier.longest_file_span` gives each L0 product but the Construction Record the longest span of data
-  time one of its files holds, the bound for the L0 coverage index's window query: 3 hours for `WFOV-SCI-PDS` and
-  2 hours 10 minutes for the rest.
+- `DataProductIdentifier.longest_file_span` gives each L0 product but the Construction Record the longest effective
+  span (data time for a data-time-indexed APID, packet time otherwise) one of its files holds, the bound for the L0
+  coverage window query: 3 hours for `WFOV-SCI-PDS` and 2 hours 10 minutes for the rest.
+- `libera_utils.constants.format_coverage_key` writes the timestamp of a File Metadata `COVERAGE#` sort key in the
+  one format whose string order is time order: UTC, `YYYY-MM-DDTHH:MM:SS`, fractional seconds only when present, and
+  no zone suffix. It raises `ValueError` for a naive datetime.
 - Every data product filename class gives `partition_key` (its partition in its product's scheme, the Dagster
   partition key, or `None` for an EDOS L0 file, whose chunk start comes from its Construction Record), `version` (PEP
   440 for a Libera product, `V1-2-3RC1` becoming `1.2.3rc1`; as named for an external one) and `revision` (a UTC
@@ -35,12 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming it. Its version field, like `check_version_number_format`, needs digits in each part, so `V--` is rejected.
 - **BREAKING:** A ground-test capture (`LiberaGroundCcsdsFilename`) must be named by the start of its two-hour bin, an
   even UTC hour with minutes and seconds `00`; any other time is rejected.
+- **BREAKING:** A ground-test capture is a file of its APID's L0 product: `LiberaGroundCcsdsFilename.data_product_id`
+  is `LiberaApid(apid).data_product_id` instead of `GROUND-CCSDS`, so captures of different APIDs in one bin are in
+  different partitions, and a name whose APID is not a `LiberaApid` member is rejected.
+- `AbstractValidFilename.from_file_path`, and so `s3-utils put`, gives a ground-test capture's or Libera data
+  product's own message for a name in its form with a field the class rejects, such as a capture time that is not a
+  bin start, instead of saying the name is in no known form.
 - **BREAKING:** `s3-utils put --verify` checks a data product's File Metadata record at sort key
   `PARTITION#<partition_key>` instead of its applicable date. Against an SDC whose Data Ingester does not yet write
   `PARTITION#` records (libera_cdk LIBSDC-938), `--verify` times out for every data product, daily included.
 
 ### Removed
 
+- **BREAKING:** `DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), since a ground-test capture is a file of its
+  APID's L0 product, and `libera_utils.io.filenaming.MAX_CCSDS_APID`.
 - **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 
 ## [5.27.0] - 2026-11-18

@@ -13,6 +13,7 @@ from ulid import ULID
 from libera_utils.constants import (
     DataLevel,
     DataProductIdentifier,
+    LiberaApid,
     ManifestType,
     PartitionScheme,
     ProcessingStepIdentifier,
@@ -216,14 +217,25 @@ def test_L0Filename_parts(filename, basepath, parts):
         "s3://fake-bucket/LIBERA_SDC_1036_ccsds_2025_346_12_00_00",
         S3Path("s3://fake-bucket/LIBERA_SDC_1040_ccsds_2025_318_12_00_00"),
         "LIBERA_SDC_11_ccsds_2025_001_00_00_00",
-        "LIBERA_SDC_0_ccsds_2025_001_00_00_00",
-        "LIBERA_SDC_2047_ccsds_2025_001_00_00_00",
     ],
 )
 def test_LiberaGroundCcsdsFilename(filename):
-    """Test LiberaGroundCcsdsFilename accepts demuxed ground names."""
+    """Test LiberaGroundCcsdsFilename accepts demuxed ground names, each a file of its APID's L0 product."""
     fn = filenaming.LiberaGroundCcsdsFilename(filename)
-    assert fn.data_product_id == DataProductIdentifier.l0_ground_ccsds
+    assert fn.data_product_id == LiberaApid(fn.apid).data_product_id
+
+
+def test_LiberaGroundCcsdsFilename_captures_of_different_apids_are_different_products():
+    """Two APIDs' captures of one bin share a key but not a product, so they are in different partitions.
+
+    A WFOV science capture takes WFOV-SCI-PDS's longest file span, like the APID's EDOS PDS files.
+    """
+    rad = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_1036_ccsds_2025_318_12_00_00")
+    wfov = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_1040_ccsds_2025_318_12_00_00")
+    assert rad.partition_key == wfov.partition_key
+    assert rad.data_product_id is DataProductIdentifier.l0_icie_rad_sample_pds
+    assert wfov.data_product_id is DataProductIdentifier.l0_icie_wfov_sci_pds
+    assert wfov.data_product_id.longest_file_span == dt.timedelta(hours=3)
 
 
 def test_LiberaGroundCcsdsFilename_parts_and_archive_prefix():
@@ -967,31 +979,46 @@ def test_ummg_metadata_filename_stem_mismatch():
         "LIBERA_SDC_1040_ccsds_2025_000_00_00_00",  # DOY below range
         "LIBERA_SDC_1040_ccsds_2025_999_00_00_00",  # DOY above range
         "LIBERA_SDC_1040_ccsds_2025_367_00_00_00",  # DOY above range
-        "LIBERA_SDC_1040_ccsds_2025_366_00_00_00",  # DOY 366 in a common year
         "LIBERA_SDC_1040_ccsds_2025_001_24_00_00",  # hour out of range
         "LIBERA_SDC_1040_ccsds_2025_001_00_60_00",  # minute out of range
         "LIBERA_SDC_1040_ccsds_2025_001_00_00_60",  # second out of range
         "LIBERA_SDC_1040_ccsds_2025_001_99_99_99",
-        "LIBERA_SDC_2048_ccsds_2025_001_00_00_00",  # APID above the 11-bit CCSDS maximum
-        "LIBERA_SDC_9999_ccsds_2025_001_00_00_00",  # APID above the 11-bit CCSDS maximum
+        "LIBERA_SDC_10400_ccsds_2025_001_00_00_00",  # APID of five digits
         "ccsds_2025_001_00_00_00",  # pre-demux naming, no APID
         "LIBERA_SDC_ccsds_2025_001_00_00_00",  # APID field missing
         "LIBERA_SDC_1040_ccsds_2025_001_00_00_00.bin",  # extension not part of the convention
     ],
 )
-def test_LiberaGroundCcsdsFilename_rejects_invalid_names(basename):
-    """Invalid field values are rejected at construction, not deferred to archive_prefix.
-
-    A name that constructs but blows up later passes ingest validation and only fails at
-    staging, when the archive prefix is computed.
-    """
-    # Out-of-range fields and wrong shapes fail the regex; DOY 366 in a common year fails the
-    # date parse; an in-regex but illegal APID fails the CCSDS range check.
-    bad_name = "failed validation against regex pattern|does not exist|outside the CCSDS range"
-    with pytest.raises(ValueError, match=bad_name):
+def test_LiberaGroundCcsdsFilename_rejects_names_not_in_its_form(basename):
+    """A name not in the capture form is rejected by the class, and from_file_path tries every other form"""
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
         filenaming.LiberaGroundCcsdsFilename(basename)
 
     with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(basename)
+
+
+@pytest.mark.parametrize(
+    ("basename", "message"),
+    [
+        ("LIBERA_SDC_1040_ccsds_2025_366_00_00_00", "Day of year 366 does not exist in 2025"),
+        ("LIBERA_SDC_0_ccsds_2025_001_00_00_00", "APID 0 is not a Libera APID"),
+        ("LIBERA_SDC_2047_ccsds_2025_001_00_00_00", "APID 2047 is not a Libera APID"),
+        ("LIBERA_SDC_9999_ccsds_2025_001_00_00_00", "APID 9999 is not a Libera APID"),
+        ("LIBERA_SDC_1040_ccsds_2025_318_13_16_34", "is not the start of a two-hour bin.*Rename the file"),
+    ],
+)
+def test_LiberaGroundCcsdsFilename_rejects_a_field_with_its_own_message(basename, message):
+    """A name in the capture form with a field the class rejects fails at construction with a message saying what to
+    fix, and from_file_path gives that message rather than a generic one.
+
+    A name that constructs but blows up later passes ingest validation and only fails at staging, when the archive
+    prefix is computed. A capture named by its write time, as DITL captures were, gets the rename instruction.
+    """
+    with pytest.raises(ValueError, match=message):
+        filenaming.LiberaGroundCcsdsFilename(basename)
+
+    with pytest.raises(ValueError, match=message):
         filenaming.AbstractValidFilename.from_file_path(basename)
 
 
@@ -1115,11 +1142,18 @@ def test_LiberaVersionPartitionedDataProductFilename_rejects_daily_filenames(pro
     [dpi for dpi in DataProductIdentifier if dpi.partition_scheme is PartitionScheme.VERSION],
 )
 def test_LiberaDataProductFilename_rejects_version_partitioned_products(product_id):
-    """A version-partitioned product named with a time range is rejected where it is constructed"""
+    """A version-partitioned product named with a time range is rejected where it is constructed, with the form to use
+
+    An ancillary one is ingested in its version archive; a Libera one is named by
+    LiberaVersionPartitionedDataProductFilename. from_file_path gives the same message rather than a generic one.
+    """
     filename = (
         f"LIBERA_{product_id.data_level}_{product_id}_V1-2-3_20270102T000000_20270103T000000_R20270102T112233000000.nc"
     )
-    expected = "has partition scheme VERSION.*Name it with LiberaVersionPartitionedDataProductFilename"
+    if product_id.data_level is DataLevel.ANC:
+        expected = f"has partition scheme VERSION.*Ingest it inside its version archive, {product_id}_<version>"
+    else:
+        expected = "has partition scheme VERSION.*Name it with LiberaVersionPartitionedDataProductFilename"
     with pytest.raises(ValueError, match=expected):
         filenaming.LiberaDataProductFilename(filename)
     with pytest.raises(ValueError, match=expected):
@@ -1129,7 +1163,7 @@ def test_LiberaDataProductFilename_rejects_version_partitioned_products(product_
             utc_start=dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
             utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
         )
-    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+    with pytest.raises(ValueError, match=expected):
         filenaming.AbstractValidFilename.from_file_path(filename)
 
 
@@ -2032,6 +2066,8 @@ def test_LiberaDataProductFilename_rejects_two_hour_and_hourly_products(product_
     )
     with pytest.raises(ValueError, match="this form names only DAILY and EVENT products"):
         filenaming.LiberaDataProductFilename(name)
+    with pytest.raises(ValueError, match="this form names only DAILY and EVENT products"):
+        filenaming.AbstractValidFilename.from_file_path(name)
 
 
 @pytest.mark.parametrize(

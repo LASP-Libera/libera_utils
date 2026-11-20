@@ -1,7 +1,7 @@
 """Tests for the top level constants module"""
 
 import warnings
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from enum import IntEnum, StrEnum
 
 import pytest
@@ -13,6 +13,7 @@ from libera_utils.constants import (
     ManifestType,
     PartitionScheme,
     ProcessingStepIdentifier,
+    format_coverage_key,
 )
 from libera_utils.time import PRINTABLE_TS_FORMAT
 
@@ -114,6 +115,39 @@ class TestPartitionScheme:
         assert PartitionScheme.EVENT.key_format == PRINTABLE_TS_FORMAT
 
 
+class TestFormatCoverageKey:
+    """Tests for format_coverage_key"""
+
+    @pytest.mark.parametrize(
+        ("instant", "expected"),
+        [
+            (datetime(2026, 3, 14, 0, 10, tzinfo=UTC), "2026-03-14T00:10:00"),
+            (datetime(2026, 3, 14, 0, 10, 0, 500000, tzinfo=UTC), "2026-03-14T00:10:00.500000"),
+            (datetime(2026, 3, 13, 17, 10, tzinfo=timezone(timedelta(hours=-7))), "2026-03-14T00:10:00"),
+        ],
+    )
+    def test_formats_utc_with_no_zone_suffix(self, instant, expected):
+        """A key is the instant in UTC, fractional seconds only when present, and no zone suffix"""
+        assert format_coverage_key(instant) == expected
+
+    def test_string_order_is_time_order(self):
+        """Sorted keys are in time order, across zones and with and without fractional seconds"""
+        instants = [
+            datetime(2026, 3, 14, 0, 0, 0, 500000, tzinfo=UTC),
+            datetime(2026, 3, 13, 23, 59, 59, tzinfo=UTC),
+            datetime(2026, 3, 14, 0, 0, tzinfo=UTC),
+            datetime(2026, 3, 13, 17, 0, 1, tzinfo=timezone(timedelta(hours=-7))),
+            datetime(2025, 12, 31, 23, 50, tzinfo=UTC),
+        ]
+        keys = [format_coverage_key(instant) for instant in instants]
+        assert sorted(keys) == [format_coverage_key(instant) for instant in sorted(instants)]
+
+    def test_rejects_a_naive_datetime(self):
+        """A naive datetime has no known UTC time, so it is rejected rather than assumed UTC"""
+        with pytest.raises(ValueError, match="has no time zone"):
+            format_coverage_key(datetime(2026, 3, 14))
+
+
 class TestDataProductIdentifier:
     """Tests for DataProductIdentifier enum"""
 
@@ -125,7 +159,6 @@ class TestDataProductIdentifier:
         expected_names = [
             # L0 PDS Products
             "l0_pds_cr",
-            "l0_ground_ccsds",
             "l0_jpss_sc_pos_pds",
             "l0_icie_rad_sample_pds",
             "l0_icie_wfov_sci_pds",
@@ -353,7 +386,7 @@ class TestDataProductIdentifier:
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
-        _no_single_apid = {DataProductIdentifier.l0_pds_cr, DataProductIdentifier.l0_ground_ccsds}
+        _no_single_apid = {DataProductIdentifier.l0_pds_cr}
         for product in DataProductIdentifier:
             apid = product.associated_apid
             # L0 and L1A products should have an associated APID, others should be None.

@@ -111,13 +111,22 @@ def test_scan_degraded_reason_names_the_apid_that_returned_none(tmp_path: Path, 
 
 
 def test_scan_returns_none_for_apid_outside_libera_apid(tmp_path: Path, caplog):
-    """An APID with no LiberaApid member cannot produce searchable metadata."""
-    f = tmp_path / "LIBERA_SDC_9_ccsds_2025_318_12_00_00"
+    """An APID with no LiberaApid member, passed explicitly, cannot produce searchable metadata."""
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING):
-        assert scan_ground_ccsds_file(f) is None
+        assert scan_ground_ccsds_file(f, apid=9) is None
     assert "not a known LiberaApid" in caplog.text
+
+
+def test_scan_rejects_a_name_whose_apid_is_outside_libera_apid(tmp_path: Path):
+    """With no APID given, a capture name whose APID has no LiberaApid member is rejected as a filename."""
+    f = tmp_path / "LIBERA_SDC_9_ccsds_2025_318_12_00_00"
+    f.write_bytes(b"")
+
+    with pytest.raises(ValueError, match="APID 9 is not a Libera APID"):
+        scan_ground_ccsds_file(f)
 
 
 def test_scan_returns_none_when_apid_has_no_packet_config(tmp_path: Path, caplog):

@@ -351,8 +351,8 @@ block until each file is confirmed fully ingested — that is, present in its ar
 and (for Libera and daily external ancillary data products) a Data Availability record. For a data product, the File
 Metadata record checked is the one whose sort key is `PARTITION#<partition key>` (see File Naming Conventions), which
 File Metadata writes once it has seen the file archived. Until the SDC Data Ingester writes those records, `--verify`
-times out for every data product, daily included. A non-daily ancillary file (the version archive of IGBP or the
-land/ocean mask) has no applicable date and cannot be verified yet: it is staged with the other files, which are
+times out for every data product, daily included. A version-partitioned ancillary file (the version archive of IGBP
+or the land/ocean mask) has no applicable date and cannot be verified yet: it is staged with the other files, which are
 verified, and the command then exits with an error naming it. Verification needs only read permissions. Use `--timeout`
 to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command logs a per-file
 summary and exits with an error.

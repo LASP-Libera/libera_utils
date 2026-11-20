@@ -140,10 +140,14 @@ gives three properties:
 | `VERSION`  | `ADM-CAM`, `ADM-IMAGER`, `MODIS-IGBP`, `NSIDC-LAND-OCEAN-MASK` | `LiberaVersionPartitionedDataProductFilename`, `AncillaryVersionArchiveFilename` | `1.2.3`, `061`          |
 
 - **TWO_HOUR.** An EDOS PDS name carries no chunk start, so an `L0Filename`'s `partition_key` is `None`: the chunk
-  start comes from its Construction Record. Its `revision` is the EDOS creation time in the name. A ground-test
-  capture is named by the start of the two-hour bin it was cut from, an even UTC hour, and that bin start is its key;
-  `LiberaGroundCcsdsFilename` rejects a name whose time is not a two-hour bin start. Every L0 product but the
-  Construction Record also has a `longest_file_span`, the bound the L0 coverage index's window query looks back by.
+  start comes from its Construction Record. Its `revision` is the EDOS creation time in the name. The Construction
+  Record (`PDS-CR`) has no partition key and is not a Dagster asset. A ground-test capture is a file of its APID's L0
+  product, named by the start of the two-hour bin it was cut from, an even UTC hour, and that bin start is its key;
+  `LiberaGroundCcsdsFilename` rejects a name whose time is not a two-hour bin start or whose APID is not a
+  `LiberaApid` member. Every L0 product but the Construction Record also has a `longest_file_span`, the longest
+  effective span (data time for a data-time-indexed APID, packet time otherwise) one of its files holds, which bounds
+  how far back the L0 coverage window query looks. `format_coverage_key` writes the timestamp of a File Metadata
+  `COVERAGE#` sort key.
 - **HOURLY.** A CERES file holds one hour; its key is the start of that hour. It is still archived under the UTC day
   of that hour.
 - **DAILY.** A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename` with its data level and
@@ -159,7 +163,8 @@ gives three properties:
   `<ProductID>/<Version>`, with the version in the form the name carries. It has no `applicable_date`, and the period
   it covers is recorded in the file's variables and metadata. Its key is its PEP 440 version. IGBP and the land/ocean
   mask are ingested as version archives (`AncillaryVersionArchiveFilename`, see Version archives), each keyed by the
-  version its name carries; a file inside an archive gives the same key.
+  version its name carries. A file inside an archive is never ingested on its own; an IGBP tile gives the collection
+  in its own name as its key, and a mask grid the dataset version `1`.
 
 `LiberaDataProductFilename` accepts only DAILY and EVENT products, and `LiberaVersionPartitionedDataProductFilename`
 only VERSION products that are not ancillary; each rejects any other product where the name is made.

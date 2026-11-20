@@ -97,9 +97,6 @@ LIBERA_GROUND_CCSDS_REGEX = re.compile(
     r"_(?P<second>[0-5][0-9])$"
 )
 
-# CCSDS primary header APID field is 11 bits.
-MAX_CCSDS_APID = 2047
-
 # Get all data levels for the regex
 DATA_LEVELS = "|".join([level.value for level in DataLevel])
 
@@ -300,7 +297,9 @@ class AbstractValidFilename(ABC):
         Raises
         ------
         ValueError
-            If no filename class accepts the path. A loose file of a version-partitioned ancillary product (an
+            If no filename class accepts the path. A ground-test capture or Libera data product name that is in its
+            class's form but has a field the class rejects, such as a capture time that is not a two-hour bin start,
+            is rejected with that class's message. A loose file of a version-partitioned ancillary product (an
             MCD12Q1 tile or an NSIDC-0609 grid) is rejected with a message naming the version archive it is
             ingested in.
         """
@@ -320,6 +319,8 @@ class AbstractValidFilename(ABC):
             try:
                 filename = CandidateClass(*args, **kwargs)
                 return filename
+            except _RejectedNameError:
+                raise
             except ValueError:
                 continue
 
@@ -750,10 +751,32 @@ class L0Filename(AbstractDataProductFilename):
         return SimpleNamespace(**d)
 
 
-def _validate_ccsds_apid(apid: int) -> int:
-    """Return ``apid`` if it fits the 11-bit CCSDS APID field, else raise ``ValueError``."""
-    if not 0 <= apid <= MAX_CCSDS_APID:
-        raise ValueError(f"APID {apid} is outside the CCSDS range 0-{MAX_CCSDS_APID}")
+def _validate_libera_apid(apid: int) -> int:
+    """Return ``apid`` if it is a ``LiberaApid`` member, whose L0 product a ground-test capture of it belongs to.
+
+    Parameters
+    ----------
+    apid : int
+        APID from a ground-test capture's name.
+
+    Returns
+    -------
+    int
+        ``apid``, unchanged
+
+    Raises
+    ------
+    ValueError
+        If ``apid`` is not a ``LiberaApid`` member.
+    """
+    try:
+        LiberaApid(apid)
+    except ValueError:
+        raise ValueError(
+            f"APID {apid} is not a Libera APID (libera_utils.constants.LiberaApid). A ground-test capture is a file "
+            "of its APID's L0 product, so only Libera APIDs can be ingested: check the APID in the name, or add the "
+            "APID to LiberaApid and its L0 product to DataProductIdentifier."
+        ) from None
     return apid
 
 
@@ -790,6 +813,14 @@ class _NamedFormError(ValueError):
     """A name rejected for its form rather than a field, whose message already states the next action.
 
     The ancillary path setter adds no "Correct the field in the name." suffix to it.
+    """
+
+
+class _RejectedNameError(ValueError):
+    """A name in a filename class's form that the class rejects for a field's value; its message states the fix.
+
+    ``AbstractValidFilename.from_file_path`` re-raises it rather than trying the other forms, since no other class
+    accepts a name in this form.
     """
 
 
@@ -843,6 +874,10 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     e.g. ``LIBERA_SDC_1057_ccsds_2026_191_14_00_00``. Each file holds packets for the single
     APID named in the basename, with no record header before the CCSDS primary header.
 
+    A capture is a file of its APID's L0 product, the same product as that APID's EDOS PDS files, so the APID must
+    be a ``LiberaApid`` member and its ``data_product_id`` is that member's L0 product. Two captures of different
+    APIDs with one bin start are therefore in different partitions.
+
     The time fields are the start of the two-hour bin the file was cut from, an even UTC hour, not the
     span of the packets inside it: packet times can fall outside the bin. A name whose time is not
     the start of a two-hour bin is rejected. The bin start is the file's TWO_HOUR partition key. The
@@ -856,10 +891,10 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
 
     @AbstractValidFilename.path.setter
     def path(self, new_path: str | PathType):
-        """Set the path, rejecting fields that do not form a real instant, a two-hour bin start or a legal APID.
+        """Set the path, rejecting fields that do not form a real instant, a two-hour bin start or a Libera APID.
 
         The base setter validates against the regex only, which cannot express leap years or bin
-        boundaries and admits APIDs above the 11-bit CCSDS maximum.
+        boundaries and admits any APID of up to four digits.
 
         Parameters
         ----------
@@ -870,22 +905,28 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         ------
         ValueError
             If the name does not match the regex, its time fields are not a real instant or not the
-            start of a two-hour bin, or its APID is above 2047.
+            start of a two-hour bin, or its APID is not a ``LiberaApid`` member.
         """
         AbstractValidFilename.path.fset(self, new_path)
-        self._parse_filename_parts()
+        try:
+            self._parse_filename_parts()
+        except ValueError as err:
+            raise _RejectedNameError(str(err)) from err
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
-        """Property that contains the DataProductIdentifier for this file type."""
-        return DataProductIdentifier.l0_ground_ccsds
+        """The L0 product of the capture's APID, which EDOS PDS files of that APID also belong to.
+
+        Returns
+        -------
+        DataProductIdentifier
+            ``LiberaApid(apid).data_product_id``
+        """
+        return LiberaApid(self.apid).data_product_id
 
     @property
     def apid(self) -> int:
-        """CCSDS APID encoded in the filename.
-
-        Not necessarily a defined ``LiberaApid`` member; ingest accepts any legal APID.
-        """
+        """CCSDS APID encoded in the filename, a ``LiberaApid`` member's value."""
         return self.filename_parts.apid
 
     @property
@@ -947,7 +988,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         Parameters
         ----------
         apid : int
-            CCSDS APID of the packets in the file (0-2047).
+            CCSDS APID of the packets in the file, a ``LiberaApid`` member's value.
         year : int
             Four-digit UTC year of the bin start.
         doy : int
@@ -964,8 +1005,8 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         Raises
         ------
         ValueError
-            If the APID is above 2047, the fields do not form a real UTC instant, or that instant is not the start of
-            a two-hour bin.
+            If the APID is not a ``LiberaApid`` member, the fields do not form a real UTC instant, or that instant is
+            not the start of a two-hour bin.
         """
         return cls._from_filename_parts(
             basepath=basepath,
@@ -989,14 +1030,14 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         second: int,
     ):
         """Construct a basename from filename parts."""
-        _validate_ccsds_apid(apid)
+        _validate_libera_apid(apid)
         _validate_two_hour_bin_start(_parse_doy_datetime(year, doy, hour, minute, second))
         return cls._fmt.format(apid=apid, year=year, doy=doy, hour=hour, minute=minute, second=second)
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings."""
         d = self.regex_match(self.path)
-        apid = _validate_ccsds_apid(int(d["apid"]))
+        apid = _validate_libera_apid(int(d["apid"]))
         year = int(d["year"])
         doy = int(d["doy"])
         hour = int(d["hour"])
@@ -1066,19 +1107,23 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         try:
             parsed = self._parse_match(parts)
         except ValueError as err:
-            raise ValueError(
+            raise _RejectedNameError(
                 f"Proposed path {_new_path} has a utc_start, utc_end or revision that is not a real UTC time: "
                 f"{err}. Correct that field."
             ) from err
         product_id = DataProductIdentifier(parsed.product_name)
         if product_id.partition_scheme is PartitionScheme.VERSION:
-            raise ValueError(
+            name_it = (
+                f"Ingest it inside its version archive, {_version_archive_form(product_id)}."
+                if product_id.data_level is DataLevel.ANC
+                else "Name it with LiberaVersionPartitionedDataProductFilename."
+            )
+            raise _RejectedNameError(
                 f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a valid "
-                "filename for it: its filename carries no time range. Name it with "
-                "LiberaVersionPartitionedDataProductFilename."
+                f"filename for it: its filename carries no time range. {name_it}"
             )
         if product_id.partition_scheme not in (PartitionScheme.DAILY, PartitionScheme.EVENT):
-            raise ValueError(
+            raise _RejectedNameError(
                 f"{product_id} has partition scheme {product_id.partition_scheme}, so {_new_path.name} is not a valid "
                 "filename for it: this form names only DAILY and EVENT products. An L0 file keeps its EDOS name "
                 "(L0Filename) or ground-test capture name (LiberaGroundCcsdsFilename), and a CERES file its upstream "

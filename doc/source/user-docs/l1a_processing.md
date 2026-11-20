@@ -88,10 +88,11 @@ fn.archive_prefix    # "GroundCCSDS/1057/2026/07/10"
 fn.partition_key     # "2026-07-10-14:00"
 ```
 
-The APID field accepts any value in the CCSDS 11-bit range (0-2047), including APIDs with no
-`LiberaApid` member, so an unmodelled APID can still be archived. The DPI is
-`DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`) for every APID, distinct from EDOS PDS
-products. These names are accepted by the manual ingest CLI (`s3-utils put` /
+The APID must be a `LiberaApid` member: a capture is a file of its APID's L0 product, the same
+`DataProductIdentifier` as that APID's EDOS PDS files (`fn.data_product_id` is
+`LiberaApid(fn.apid).data_product_id`), and a name with any other APID raises `ValueError`. To ingest
+captures of a new APID, add it to `LiberaApid` and its L0 product to `DataProductIdentifier` first.
+These names are accepted by the manual ingest CLI (`s3-utils put` /
 `manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox without
 CNM/ASDC delivery.
 
