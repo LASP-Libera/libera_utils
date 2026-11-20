@@ -87,7 +87,7 @@ class SceneIdRunnerConfig:
 # --- Per-variant runner configs ------------------------------------------------------------------------------------
 #
 # Each config below is a complete SCENE-ID runner. The comment on each records the domain rationale for its parameter
-# choices; the shared engine (run_algorithm and friends) is otherwise identical across all five.
+# choices; the shared engine (run_algorithm and friends) is otherwise identical across every config in RUNNER_CONFIGS.
 
 # SCENE-ID-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product. Input is FMATCH-CAM
 # (one footprint per RADIOMETER_TIME carrying the Libera-camera-derived cloud fraction). Runs ERBE and unfiltering

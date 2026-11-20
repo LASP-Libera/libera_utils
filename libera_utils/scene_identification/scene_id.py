@@ -24,20 +24,11 @@ from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
 logger = logging.getLogger(__name__)
 
-# Names used throughout footprint data processing and when emitting a Libera SCENE-ID product. FootprintData
-# carries data on the "RADIOMETER_TIME" dimension from creation onward: the radiometer-timescale scene-ID
-# products (CAM, IMAGER) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
-# mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
-# the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
-# so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
-# libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
+# Dimension and time coordinate of the radiometer-timescale SCENE-ID products, one entry per footprint, as in L1B RAD.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
-# The camera-timescale counterpart of the constant above. The camera-timescale scene-ID product (CAM-CAMTIME) is
-# written on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
-# sorted image-acquisition axis (one 2048x2048 image = one entry) and PSEUDOFOOTPRINT is the 0-based subsection index within
-# each image (subsections may overlap and do not tile the image). Both are dimension coordinates and every data
-# variable hangs on both.
+# Time coordinate of the camera-timescale products: one entry per camera image, on the (CAMERA_TIME, PSEUDOFOOTPRINT)
+# grid.
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # FMATCH variables SCENE-ID copies unchanged under the same names, so a scene traces back to its ground footprint
@@ -608,10 +599,8 @@ class _FmatchColumn:
     transform: Callable | None = None
 
 
-# CAM / CAM-CAMTIME classification inputs. The Libera WFOV camera cloud fraction is stored in percent [0, 100] in
-# the FMATCH product (fmatch_cam.yml: units "percent", matching the CF-CAM input), which is the same scale as the
-# scene-definition bins and the SCENE-ID "Cloud_Fraction" variable, so it is ingested as-is (no rescale).
-# Cloud_Fraction is injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
+# CAM classification inputs. Cloud_Fraction_Camera is in percent, the scale of the scene bins, so it is read as
+# Cloud_Fraction unchanged.
 _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("IGBP_Surface_Type", np.float32),
     FootprintVariables.CLOUD_FRACTION: _FmatchColumn("Cloud_Fraction_Camera", np.float32),
@@ -620,20 +609,9 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("Relative_Azimuth_Surface", np.float32),
 }
 
-# FMATCH-IMAGER / FMATCH-IMAGER-CAMTIME classification inputs. Note two of these are *raw inputs* to existing
-# derived-variable calculators rather than final classification columns, chosen so the imager path reuses the
-# validated calculators instead of duplicating them:
-#   * clear_area (from the CERES SSF clear coverage, already in percent) -> Cloud_Fraction is derived by
-#     identify_scenes as 100 - clear_area (calculate_cloud_fraction); and
-#   * surface_wind_u / surface_wind_v (from the ERA5 10 m wind components) -> Surface_Wind is derived as
-#     sqrt(u^2 + v^2) (calculate_surface_wind).
-# Surface_Type is likewise derived from IGBP_Surface_Type via calculate_trmm_surface_type. The IGBP reader
-# masks LC_Type1 to its valid 1..17 domain (17 = Water Bodies), which aligns 1:1 with the low IGBPSurfaceType
-# members, so a valid modal class maps straight through. A footprint with no usable IGBP pixels (and every padded
-# cell of a camera-timescale grid) carries FMATCH's declared integer _FillValue, which xarray decodes to NaN on read,
-# leaving that footprint unmatched for the surface-bounded scenes. The three viewing angles are read straight
-# through. The CLDPIX cloud particle phase code is remapped to the classifier's 1 = liquid / 2 = ice convention via
-# map_cldpix_phase_to_trmm (see CLDPIXCloudPhase for the CER_CLDPIX code meanings).
+# IMAGER classification inputs. clear_area and surface_wind_u/_v are inputs to calculate_cloud_fraction and
+# calculate_surface_wind, and IGBP_Surface_Type to calculate_trmm_surface_type. FMATCH's IGBP _FillValue decodes to
+# NaN, which leaves the footprint unmatched. The CLDPIX phase code is remapped by map_cldpix_phase_to_trmm.
 _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("IGBP_Surface_Type", np.float32),
     FootprintVariables.CLEAR_AREA: _FmatchColumn("CERES_SSF_Clear_Coverage", np.float32),
