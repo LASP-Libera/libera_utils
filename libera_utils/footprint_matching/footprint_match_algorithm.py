@@ -1063,7 +1063,8 @@ def create_and_write_data_product(
 
     input_file_name = AnyPath(input_file_path).name
     # Provenance records every file that fed this product, so a written file names its own inputs.
-    # TODO[LIBSDC-869]: record the inputs through the UMM-G writer once it is implemented.
+    # TODO[LIBSDC-869]: pass these input granules to write_libera_data_product once it takes them, and stop building
+    #  InputGranules here.
     provenance = [input_file_name]
     if cloud_fraction is not None:
         cloud_fraction_camera = cloud_fraction.values_for(

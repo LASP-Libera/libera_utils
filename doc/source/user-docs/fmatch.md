@@ -223,7 +223,8 @@ flagged rather than discarded: coverage from 75% to below 95% sets
 `LIMB_TRUNCATED`, and a view off the Earth's limb sets `OFF_LIMB` (`types.FmatchCoverageFlag`).
 
 The product's `InputGranules` attribute names the Libera input, any CF-CAM input and every ancillary granule it was
-made from. It is the product's record of its inputs until the UMM-G writer (LIBSDC-869) records them.
+made from. FMATCH builds that attribute itself until `write_libera_data_product` sets `InputGranules` from the input
+granules it is given (LIBSDC-869).
 
 ## Extending FMATCH
 
