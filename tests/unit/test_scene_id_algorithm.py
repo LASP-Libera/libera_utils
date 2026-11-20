@@ -55,22 +55,42 @@ class TestCollectInputFiles:
         return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
 
     # Built once: a Libera filename carries its creation time as the revision, so a second call names another file.
-    _WANTED = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
+    _CAM_CAMTIME = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
+    _CAM = _libera_product_name(DataProductIdentifier.aux_fmatch_cam)
+    _IMAGER = _libera_product_name(DataProductIdentifier.aux_fmatch_imager)
+    _IMAGER_CAMTIME = _libera_product_name(DataProductIdentifier.aux_fmatch_imager_camtime)
     _OTHER = _libera_product_name(DataProductIdentifier.l1b_rad)
 
     @pytest.mark.parametrize(
-        ("filenames", "expected"),
+        ("product_id", "filenames", "expected"),
         [
-            pytest.param([_WANTED, _OTHER, SSF_INPUT_NAME], [_WANTED], id="mixed"),
-            pytest.param([_OTHER], [], id="another-libera-product-only"),
-            pytest.param([SSF_INPUT_NAME, "not_a_libera_file.txt"], [], id="unparsable-names-only"),
+            pytest.param(
+                DataProductIdentifier.aux_fmatch_cam_camtime,
+                [_CAM_CAMTIME, _OTHER, SSF_INPUT_NAME],
+                [_CAM_CAMTIME],
+                id="mixed",
+            ),
+            pytest.param(DataProductIdentifier.aux_fmatch_cam, [SSF_INPUT_NAME, _OTHER, _CAM], [_CAM], id="cam-mixed"),
+            pytest.param(
+                DataProductIdentifier.aux_fmatch_imager_camtime,
+                [_IMAGER_CAMTIME, _IMAGER, SSF_INPUT_NAME],
+                [_IMAGER_CAMTIME],
+                id="imager-camtime-mixed",
+            ),
+            pytest.param(DataProductIdentifier.aux_fmatch_cam_camtime, [_OTHER], [], id="another-libera-product-only"),
+            pytest.param(
+                DataProductIdentifier.aux_fmatch_cam_camtime,
+                [SSF_INPUT_NAME, "not_a_libera_file.txt"],
+                [],
+                id="unparsable-names-only",
+            ),
         ],
     )
-    def test_keeps_only_matching_product(self, filenames, expected):
+    def test_keeps_only_matching_product(self, product_id, filenames, expected):
         """Only files with the configured product id are kept, and unparsable names are skipped."""
         manifest = self._manifest(*filenames)
 
-        selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
+        selected = collect_input_files(manifest, product_id)
 
         assert selected == [f"{self._INPUT_DIR}/{name}" for name in expected]
 

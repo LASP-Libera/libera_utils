@@ -45,10 +45,10 @@ class TestSceneIdRunnerEndToEnd:
     ):
         """An FMATCH input runs end-to-end into a conformant SCENE-ID product under product names, with real matches.
 
-        Asserts the output manifest registers one product with the variant's Libera filename, the product declares
-        every variable of its definition under its product name and none under its internal name, each scene type
-        the variant runs matches at least one footprint, and a camera-timescale product carries its FMATCH input's
-        identifier variables unchanged.
+        Asserts the output manifest registers one product with the variant's Libera filename and carries the input
+        manifest's ULID, the dropbox holds only that product and the manifest, the product carries every variable its
+        definition declares, every footprint matches a scene of each type the variant runs, and the product carries
+        its FMATCH input's geolocation (and, on the camera timescale, its identifiers) unchanged.
         """
         runner_config = RUNNER_CONFIGS[step]
 
@@ -76,9 +76,11 @@ class TestSceneIdRunnerEndToEnd:
         output_manifest = Manifest.from_file(output_manifest_path)
         assert output_manifest.manifest_type == ManifestType.OUTPUT
         assert len(output_manifest.files) == 1
+        assert output_manifest.ulid_code == Manifest.from_file(input_manifest_path).ulid_code
 
         # Step 5: the registered product has the variant's Libera filename and carries its provenance.
         product_path = pathlib.Path(output_manifest.files[0])
+        assert sorted(dropbox_path.iterdir()) == sorted([pathlib.Path(output_manifest_path), product_path])
         assert LiberaDataProductFilename.from_file_path(product_path).data_product_id is runner_config.output_product_id
         definition = LiberaDataProductDefinition.from_yaml(runner_config.product_definition_path)
 
@@ -90,10 +92,11 @@ class TestSceneIdRunnerEndToEnd:
             # Every declared variable is written.
             assert set(definition.variables) <= set(product.variables)
 
-            # Each scene type the variant runs classifies at least one footprint (scene ID 0 is unmatched).
+            # The fixture gives every footprint valid classification inputs, so every footprint matches a scene of each
+            # type the variant runs (scene ID 0 is unmatched).
             for scene_definition in standard_scene_definitions(runner_config.scene_types):
                 scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
-                assert np.count_nonzero(scene_ids) > 0, f"{step}: no footprint matched a {scene_definition.type} scene"
+                assert (scene_ids > 0).all(), f"{step}: a footprint matched no {scene_definition.type} scene"
 
             # The product carries its FMATCH input's geolocation, and on the camera timescale its identifiers, unchanged.
             camtime = runner_config.time_variable == "CAMERA_TIME"

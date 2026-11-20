@@ -4,21 +4,15 @@ These exercise the manifest/dropbox plumbing in
 ``libera_utils.scene_identification.scene_id_algorithm`` and its concrete runner configs, including the actual product
 write (which is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular
 is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
-``TestSceneIdContainerRun`` runs each variant the way its container does, through the ``libera-utils scene-id`` CLI.
 """
-
-from datetime import UTC, datetime
 
 import netCDF4
 import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils import cli
-from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, OperationalMode
-from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_definitions import SCENE_ID_INTEGER_FILL_VALUE
@@ -26,7 +20,6 @@ from libera_utils.scene_identification.scene_id import standard_scene_definition
 from libera_utils.scene_identification.scene_id_algorithm import (
     CAM_CAMTIME_CONFIG,
     RUNNER_CONFIGS,
-    collect_input_files,
     create_and_write_data_product,
     run_scene_identification,
 )
@@ -83,26 +76,6 @@ def create_and_write_data_product_imager_camtime(footprint_data, input_file_name
     return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS[IMAGER_CAMTIME])
 
 
-def collect_fmatch_cam_input_files(manifest):
-    """Select the FMATCH-CAM input files from ``manifest``."""
-    return collect_input_files(manifest, RUNNER_CONFIGS[CAM].input_product_id)
-
-
-def collect_fmatch_imager_camtime_input_files(manifest):
-    """Select the FMATCH-IMAGER-CAMTIME input files from ``manifest``."""
-    return collect_input_files(manifest, RUNNER_CONFIGS[IMAGER_CAMTIME].input_product_id)
-
-
-def _libera_product_name(product_id: DataProductIdentifier) -> str:
-    """Build a valid Libera data-product filename string for the given product id."""
-    return LiberaDataProductFilename.from_filename_parts(
-        product_name=product_id,
-        version="V1-0-0",
-        utc_start=datetime(2023, 1, 1, tzinfo=UTC),
-        utc_end=datetime(2023, 1, 1, 23, 59, 59, tzinfo=UTC),
-    ).path.name
-
-
 class TestSceneIdCamWrite:
     """The CAM runner must produce a conformant SCENE-ID-CAM product with only declared variables."""
 
@@ -134,28 +107,6 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-
-
-SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
-
-
-class TestCollectInputFiles:
-    """collect_input_files keeps only the manifest entries whose Libera product id matches the runner's input."""
-
-    # Manifest records must be absolute paths; the runner keys off the filename (basename) when parsing.
-    _INPUT_DIR = "/dropbox/inputs"
-
-    def _manifest(self, *filenames: str) -> Manifest:
-        return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
-
-    def test_cam_runner_keeps_only_fmatch_cam(self):
-        """The CAM runner keeps FMATCH-CAM files and skips other Libera products and non-Libera (CERES SSF) files."""
-        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam)
-        manifest = self._manifest(SSF_INPUT_NAME, wanted)
-
-        selected = collect_fmatch_cam_input_files(manifest)
-
-        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
 
 class TestToTimeProduct:
@@ -570,18 +521,6 @@ class TestSceneIdImagerCamtimeWrite:
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
 
-    def test_collect_keeps_only_fmatch_imager_camtime(self):
-        """collect_fmatch_imager_camtime_input_files keeps only FMATCH-IMAGER-CAMTIME files, dropping other products."""
-        input_dir = "/dropbox/inputs"
-        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_imager_camtime)
-        other = _libera_product_name(DataProductIdentifier.aux_fmatch_imager)
-        manifest = Manifest(
-            manifest_type=ManifestType.INPUT,
-            files=[f"{input_dir}/{name}" for name in (wanted, other, SSF_INPUT_NAME)],
-        )
-        selected = collect_fmatch_imager_camtime_input_files(manifest)
-        assert selected == [f"{input_dir}/{wanted}"]
-
 
 def _with_missing_igbp(fmatch_path, tmp_path, cell):
     """Copy an FMATCH fixture with FMATCH's integer fill written into ``igbp_surface_type`` at ``cell``."""
@@ -669,61 +608,3 @@ class TestMissingIgbpCode:
             assert (product["IGBP_Surface_Type"].values[[0, 2, 3]] > 0).all()
         with xr.open_dataset(written.path) as decoded:
             assert np.isnan(decoded["Surface_Type"].values[1])
-
-
-class TestSceneIdContainerRun:
-    """Each SCENE-ID variant runs end to end the way its container does.
-
-    The ``libera-utils-scene-id`` image's entrypoint is ``libera-utils scene-id <manifest>``, with the input manifest's
-    ``configuration["processing_step_id"]`` naming the variant and the processing step setting ``PROCESSING_PATH``.
-    Each case writes the variant's FMATCH product, lists it on an input manifest naming the step, runs the CLI, and
-    checks the dropbox holds exactly the SCENE-ID product and an output manifest registering it.
-    """
-
-    @pytest.mark.parametrize("step", list(RUNNER_CONFIGS))
-    def test_cli_writes_product_and_output_manifest(self, fmatch_product_file_factory, tmp_path, monkeypatch, step):
-        runner_config = RUNNER_CONFIGS[step]
-        input_dir = tmp_path / "inputs"
-        input_dir.mkdir()
-        dropbox = tmp_path / "dropbox"
-        dropbox.mkdir()
-
-        fmatch_mode = OperationalMode(runner_config.input_product_id.value)
-        fmatch_path = fmatch_product_file_factory(fmatch_mode, n_footprints=4, directory=input_dir)
-        assert LiberaDataProductFilename.from_file_path(fmatch_path).data_product_id is runner_config.input_product_id
-        input_manifest = Manifest(
-            manifest_type=ManifestType.INPUT, configuration={PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step)}
-        )
-        input_manifest.add_files(fmatch_path)
-        input_manifest_path = input_manifest.write(input_dir)
-
-        monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
-        cli.main(["scene-id", str(input_manifest_path)])
-
-        output_manifest_paths = list(dropbox.glob("*.json"))
-        product_paths = list(dropbox.glob("*.nc"))
-        assert len(output_manifest_paths) == 1
-        assert len(product_paths) == 1
-        assert sorted(dropbox.iterdir()) == sorted(output_manifest_paths + product_paths)
-
-        output_manifest = Manifest.from_file(output_manifest_paths[0])
-        assert output_manifest.manifest_type is ManifestType.OUTPUT
-        assert output_manifest.ulid_code == input_manifest.ulid_code
-        assert output_manifest.files == [str(product_paths[0])]
-
-        product_filename = LiberaDataProductFilename.from_file_path(product_paths[0])
-        assert product_filename.data_product_id is runner_config.output_product_id
-
-        with (
-            xr.open_dataset(fmatch_path) as fmatch_product,
-            xr.open_dataset(product_paths[0], mask_and_scale=False) as product,
-        ):
-            assert product.attrs["InputGranules"] == fmatch_path.name
-            assert product.attrs["algorithm_version"] == version()
-            time_variable = runner_config.time_variable
-            assert time_variable in product.coords
-            assert product.sizes[time_variable] == fmatch_product.sizes[time_variable]
-            # The fixture gives every footprint valid classification inputs, so every footprint is matched.
-            for scene_definition in standard_scene_definitions(runner_config.scene_types):
-                scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
-                assert (scene_ids > 0).all(), scene_definition.type
