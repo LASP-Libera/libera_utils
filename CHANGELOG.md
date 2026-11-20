@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [6.1.0] - 2026-11-19
+## [5.28.0] - 2026-11-19
+
+_Note:_ The changes below to `libera_utils.footprint_matching` and the ancillary `DataProductIdentifier`s are not
+breaking: no operational processing step uses them yet, so this is a minor release that existing `5.x` dependency
+specifications accept.
 
 ### Added
 
+- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
+- `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, archived under `<ProductID>/<version>/<production YYYYMMDD>`. IGBP's version is its three-digit MCD12Q1 collection. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), gives `None` for a file not in that form, and raises `ValueError` for one in that form whose fields do not parse. (#107)
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the version archives it staged but cannot verify. Until the Data Ingester ingests external products (LIBSDC-859), their files are staged but not ingested, and `--verify` times out on the daily ones. (#107)
 - `libera_utils.footprint_matching.footprint_match_algorithm`, one runner for the four FMATCH products, run as `libera-utils fmatch <manifest>` from the `libera-utils-fmatch` Docker target. The manifest's `configuration["processing_step_id"]` or `--processing_step_id` picks the product. (#92)
   - It reads L1B RAD-4CH, or CF-CAM-CAMTIME for the camera-timescale products, and FMATCH-CAM also reads CF-CAM `Cloud_Fraction` (percent), matched to the footprints by exact `radiometer_time`. Every input, the ancillary granules included, is picked out of the manifest's `files` by the product its name parses to, and each reader is given the granules of its `PRODUCT_ID`; a file whose name does not parse as a Libera or ancillary product raises `FmatchInputError`. A version archive (`AncillaryVersionArchiveFilename`), such as IGBP's, is unpacked to its product's files once per run.
   - It raises `FmatchInputError` for a missing or unusable input, including an ancillary granule dated more than its reader's `GRANULE_DATE_WINDOW` from the footprints or a version archive that is not the reader's only granule, holds a file in its product's form whose fields do not parse, or does not hold one release of its product's files, and `CloudFractionTimeMismatchError` when CF-CAM rows do not line up with the L1B times.
@@ -19,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `DataProductIdentifier.anc_modis_igbp` and `anc_nsidc_land_ocean_mask` are partitioned by `PartitionScheme.VERSION`, not `DAILY`. (#107)
+- `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
 - Every `AncillaryReader` sets `PRODUCT_ID`, the `DataLevel.ANC` product it reads; a reader without one raises `TypeError` when defined. (#92)
 - `AncillaryReader.granule_span(path)` is public (was `PassReader._granule_span`), and `GRANULE_DATE_WINDOW` is a class attribute, one day by default and `None` for IGBP. A reader with a window and no `granule_span` raises `TypeError` when defined. (#92)
 - `FMATCH_WORKERS` defaults to `"auto"`, sizing the aggregation pool from the available CPUs and memory (`FMATCH_WORKER_MEMORY_BYTES`). (#92)
@@ -27,25 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 - The FMATCH variables with no source in CERES SSF Edition1C, each with its `_Standard_Deviation` companion: `Aerosol_Optical_Depth` from FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, and `Match_AOT` and `Aerosol_Type_Percentage_Type0`–`Type6` from FMATCH-IMAGER. (#92)
 - The footprint-matching demonstration notebooks, `notebooks/01_geometry_psf.ipynb` through `09_runners.ipynb`. (#92)
-
-## [6.0.0] - 2026-11-19
-
-### Added
-
-- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
-- `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, archived under `<ProductID>/<version>/<production YYYYMMDD>`. IGBP's version is its three-digit MCD12Q1 collection. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), gives `None` for a file not in that form, and raises `ValueError` for one in that form whose fields do not parse. (#107)
-- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the version archives it staged but cannot verify. Until the Data Ingester ingests external products (LIBSDC-859), their files are staged but not ingested, and `--verify` times out on the daily ones. (#107)
-
-### Changed
-
-- **BREAKING:** `DataProductIdentifier.anc_modis_igbp` and `anc_nsidc_land_ocean_mask` are partitioned by `PartitionScheme.VERSION`, not `DAILY`. (#107)
-- `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
-
-### Removed
-
-- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 
 ## [5.27.0] - 2026-11-18
 
@@ -1163,9 +1156,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/6.1.0...HEAD
-[6.1.0]: https://github.com/LASP-Libera/libera_utils/compare/6.0.0...6.1.0
-[6.0.0]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...6.0.0
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.28.0...HEAD
+[5.28.0]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...5.28.0
 [5.27.0]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...5.27.0
 [5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
