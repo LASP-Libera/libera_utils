@@ -5,9 +5,9 @@ import warnings
 from abc import ABC, abstractmethod
 from datetime import UTC, date, datetime, timedelta
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import ulid
 from cloudpathlib import AnyPath, CloudPath, S3Path
@@ -148,6 +148,106 @@ LIBERA_VERSION_PARTITIONED_DATA_PRODUCT_REGEX = re.compile(
     r"\.(?P<extension>nc)$"
 )
 
+# External ancillary products are ingested under the names their upstream providers give them. Each pattern below
+# is the provider's distribution name, as on the files in tests/test_data/footprint_matching, except ERA5, whose
+# downloads the SDC names (see Era5Filename). The CERES and VIIRS patterns fix the NOAA-20 platform their
+# identifiers name.
+
+# NOAA-20 CERES Level 2 products from NASA Langley ASDC: the collection part of the name, mapped to its identifier.
+# The footprint matching CERES SSF reader consumes the CER_SSF files and its CLDPIX reader the CER_CLDPIX files.
+_CERES_PRODUCTS = {
+    "CER_SSF_NOAA20-FM6-VIIRS": DataProductIdentifier.anc_ceres_noaa20_ssf,
+    "CER_CLDPIX_NOAA20-VIIRS": DataProductIdentifier.anc_ceres_noaa20_cldpix,
+}
+
+CERES_REGEX = re.compile(
+    rf"^(?P<product>{'|'.join(map(re.escape, _CERES_PRODUCTS))})"
+    r"_(?P<version>[A-Za-z0-9]+)"
+    r"_(?P<configuration_code>[0-9]{6})"
+    r"\.(?P<utc_start>[0-9]{10})"
+    r"\.nc$"
+)
+
+# MODIS and VIIRS products from NASA LAADS DAAC (Deep Blue aerosol, cloud properties) and LP DAAC (BRDF/albedo,
+# IGBP land cover), in the EOSDIS short-name form: the short name, mapped to its identifier, the extension the
+# provider gives it, and whether the name carries a sinusoidal tile (``h21v07``). MCD12Q1 is a yearly tiled map;
+# the others are daily global grids.
+_MODIS_VIIRS_PRODUCTS = {
+    "AERDB_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_aod, "nc", False),
+    "CLDPROP_D3_VIIRS_NOAA20": (DataProductIdentifier.anc_viirs_noaa20_cloud_properties, "nc", False),
+    "VJ143C1": (DataProductIdentifier.anc_viirs_noaa20_brdf, "h5", False),
+    "MCD12Q1": (DataProductIdentifier.anc_modis_igbp, "hdf", True),
+}
+
+MODIS_VIIRS_REGEX = re.compile(
+    rf"^(?P<short_name>{'|'.join(map(re.escape, _MODIS_VIIRS_PRODUCTS))})"
+    r"\.A(?P<year>[0-9]{4})(?P<doy>[0-9]{3})"
+    r"(?:\.(?P<tile>h[0-9]{2}v[0-9]{2}))?"
+    r"\.(?P<version>[0-9]{3})"
+    r"\.(?P<production_time>[0-9]{13})"
+    r"\.(?P<extension>nc|h5|hdf)$"
+)
+
+# NOAA-20 (j01) unaggregated VIIRS M-band SDR files from NOAA CLASS, in JPSS IDPS HDF5 naming (as described in the
+# JPSS VIIRS SDR Data Dictionary): radiances (IVCDB) and geolocation (ICDBG), operational (ops) domain only.
+VIIRS_SDR_REGEX = re.compile(
+    r"^(?P<kind>IVCDB|ICDBG)_j01"
+    r"_d(?P<start_date>[0-9]{8})"
+    r"_t(?P<start_time>[0-9]{7})"
+    r"_e(?P<end_time>[0-9]{7})"
+    r"_b(?P<orbit>[0-9]{5})"
+    r"_c(?P<creation_time>[0-9]{20})"
+    r"_(?P<origin>[a-z]{4})_ops"
+    r"\.h5$"
+)
+
+# NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2). The name carries no version; NISE_VERSION is the
+# collection's VERSIONID from the files' core metadata.
+NSIDC_NISE_REGEX = re.compile(r"^NISE_AMSR2_(?P<date>[0-9]{8})\.HDFEOS$")
+NISE_VERSION = "1"
+
+# NSIDC EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609), global (M) grids only, at the resolutions the
+# dataset provides. The name carries no version; NSIDC_LAND_OCEAN_MASK_VERSION is the dataset version.
+NSIDC_LAND_OCEAN_MASK_REGEX = re.compile(
+    r"^EASE2_M(?P<resolution_km>03|6\.25|09|12\.5|25|36)km"
+    r"\.LOCImask_land50_coast0km"
+    r"\.(?P<columns>[0-9]+)x(?P<rows>[0-9]+)"
+    r"\.bin$"
+)
+NSIDC_LAND_OCEAN_MASK_VERSION = "1"
+
+# The version-partitioned ancillary products (IGBP and the land/ocean mask) are ingested as one zip archive per
+# version, holding every file of that version, named by the SDC:
+# ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip``, archived under
+# ``<ProductID>/<version>/<production YYYYMMDD>``. The products are the DataProductIdentifier members at
+# DataLevel.ANC partitioned by PartitionScheme.VERSION.
+_ANCILLARY_ARCHIVE_PRODUCTS = tuple(
+    product
+    for product in DataProductIdentifier
+    if product.data_level is DataLevel.ANC and product.partition_scheme is PartitionScheme.VERSION
+)
+
+ANCILLARY_VERSION_ARCHIVE_REGEX = re.compile(
+    rf"^(?P<product_name>{'|'.join(re.escape(str(product)) for product in _ANCILLARY_ARCHIVE_PRODUCTS)})"
+    r"_(?P<version>[A-Za-z0-9]+)"
+    r"_(?P<production_date>[0-9]{8})"
+    rf"_(?P<revision>{_REVISION_REGEX})"
+    r"\.zip$"
+)
+
+# ERA5 files from the Copernicus Climate Data Store, named by the SDC in the Libera data product form; the version
+# is the stream, ERA5 (final) or ERA5T (preliminary).
+_ERA5_PRODUCTS = (DataProductIdentifier.anc_era5_pressure_level, DataProductIdentifier.anc_era5_single_level)
+
+ERA5_REGEX = re.compile(
+    rf"^ECMWF_(?P<product_name>{'|'.join(str(product) for product in _ERA5_PRODUCTS)})"
+    r"_(?P<version>ERA5T?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{8}T[0-9]{12})"
+    r"\.nc$"
+)
+
 
 class AbstractValidFilename(ABC):
     """Filename class that ensures validity of a filename based on regex pattern.
@@ -180,27 +280,29 @@ class AbstractValidFilename(ABC):
 
     @classmethod
     def from_file_path(cls, *args, **kwargs):
-        """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)
+        """Factory method to produce an AbstractValidFilename from a file path (str or Path) of any known form.
+
+        The forms are L0, ground CCSDS, Libera data product, manifest, and the external ancillary products' names.
 
         Parameters
         ----------
         *args
-            Positional arguments passed unchanged to each candidate class, normally the single file path as a
-            ``str``, ``pathlib.Path``, or ``cloudpathlib.S3Path``.
+            The file path (str, Path or S3Path), and any further positional arguments, passed to each candidate
+            class's constructor and on to ``AnyPath``.
         **kwargs
-            Keyword arguments passed unchanged to each candidate class.
+            Keyword arguments passed to each candidate class's constructor and on to ``AnyPath``.
 
         Returns
         -------
-        AbstractValidFilename
-            An instance of the first class that accepts the path, trying in order L0Filename,
-            LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename, and
-            ManifestFilename.
+        : AbstractValidFilename
+            An instance of the first filename class that accepts the path.
 
         Raises
         ------
         ValueError
-            If none of the candidate classes accepts the path.
+            If no filename class accepts the path. A loose file of a version-partitioned ancillary product (an
+            MCD12Q1 tile or an NSIDC-0609 grid) is rejected with a message naming the version archive it is
+            ingested in.
         """
         for CandidateClass in (
             L0Filename,
@@ -208,6 +310,12 @@ class AbstractValidFilename(ABC):
             LiberaDataProductFilename,
             LiberaVersionPartitionedDataProductFilename,
             ManifestFilename,
+            CeresFilename,
+            ModisViirsDailyFilename,
+            ViirsSdrFilename,
+            NsidcNiseFilename,
+            Era5Filename,
+            AncillaryVersionArchiveFilename,
         ):
             try:
                 filename = CandidateClass(*args, **kwargs)
@@ -215,8 +323,20 @@ class AbstractValidFilename(ABC):
             except ValueError:
                 continue
 
+        for product, member_class in ANCILLARY_ARCHIVE_MEMBER_CLASSES.items():
+            try:
+                member = member_class(*args, **kwargs)
+            except ValueError:
+                continue
+            raise ValueError(
+                f"{member.path.name} is a {product} file, ingested only inside its version archive "
+                f"{_version_archive_form(product)}; zip the version's files and ingest the archive."
+            )
+
         raise ValueError(
-            f"Unable to create a valid filename from {args}. Are you sure this is a valid Libera file name?"
+            f"Unable to create a valid filename from {args}. The name is not an L0, ground CCSDS, Libera data "
+            "product, manifest or external ancillary product filename; see the File Naming Conventions "
+            "documentation for the accepted forms."
         )
 
     @property
@@ -530,8 +650,8 @@ def _validate_ccsds_apid(apid: int) -> int:
     return apid
 
 
-def _parse_ground_ccsds_bin_start(year: int, doy: int, hour: int, minute: int, second: int) -> datetime:
-    """Build the UTC bin start for a ground CCSDS file from its filename fields.
+def _parse_doy_datetime(year: int, doy: int, hour: int = 0, minute: int = 0, second: int = 0) -> datetime:
+    """Build a UTC datetime from year, day-of-year and time-of-day filename fields.
 
     Raises
     ------
@@ -539,10 +659,47 @@ def _parse_ground_ccsds_bin_start(year: int, doy: int, hour: int, minute: int, s
         If the fields do not name a real instant. This includes DOY 366 in a common year,
         which ``strptime`` rolls into 1 January of the following year rather than rejecting.
     """
-    bin_start = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
-    if bin_start.year != year:
+    instant = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+    if instant.year != year:
         raise ValueError(f"Day of year {doy} does not exist in {year}")
-    return _ensure_utc_timezone(bin_start)
+    return _ensure_utc_timezone(instant)
+
+
+def _parse_sdr_time_of_day(hhmmss_tenths: str) -> timedelta:
+    """Convert a JPSS IDPS ``HHMMSSs`` time field (tenths of a second) to an offset from midnight.
+
+    Raises
+    ------
+    ValueError
+        If the hour, minute or second is out of range.
+    """
+    clock = datetime.strptime(hhmmss_tenths[:6], "%H%M%S")
+    return timedelta(
+        hours=clock.hour, minutes=clock.minute, seconds=clock.second, milliseconds=100 * int(hhmmss_tenths[6])
+    )
+
+
+class _NamedFormError(ValueError):
+    """A name rejected for its form rather than a field, whose message already states the next action.
+
+    The ancillary path setter adds no "Correct the field in the name." suffix to it.
+    """
+
+
+def _version_archive_form(product: DataProductIdentifier) -> str:
+    """The name form of a version-partitioned ancillary product's version archive, for error messages.
+
+    Parameters
+    ----------
+    product : DataProductIdentifier
+        A version-partitioned ancillary product.
+
+    Returns
+    -------
+    : str
+        ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`` with the product's ID filled in.
+    """
+    return f"{product}_<version>_<production YYYYMMDD>_<revision>.zip"
 
 
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
@@ -649,7 +806,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     ):
         """Construct a basename from filename parts."""
         _validate_ccsds_apid(apid)
-        _parse_ground_ccsds_bin_start(year, doy, hour, minute, second)
+        _parse_doy_datetime(year, doy, hour, minute, second)
         return cls._fmt.format(apid=apid, year=year, doy=doy, hour=hour, minute=minute, second=second)
 
     def _parse_filename_parts(self):
@@ -668,7 +825,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
             hour=hour,
             minute=minute,
             second=second,
-            bin_start=_parse_ground_ccsds_bin_start(year, doy, hour, minute, second),
+            bin_start=_parse_doy_datetime(year, doy, hour, minute, second),
         )
 
 
@@ -1254,6 +1411,717 @@ class ManifestFilename(AbstractValidFilename):
         d["manifest_type"] = ManifestType(d["manifest_type"].upper())
         d["ulid_code"] = ulid.ULID.from_str(d["ulid_code"])
         return SimpleNamespace(**d)
+
+
+class AncillaryDataProductFilename(AbstractDataProductFilename):
+    """Abstract base for the filenames of external ancillary products, named by their upstream provider.
+
+    The SDC ingests these files under the names their providers give them, so these classes parse names but do
+    not build them. Setting the path parses every field, so a name whose fields match the pattern but do not form
+    a real date or time is rejected when the object is created.
+
+    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string) and
+    ``utc_start`` / ``utc_end``, the UTC period the file is used for. CERES gives its hour, and VIIRS L3 and NISE
+    their day, each ending at the start of the next hour or day (end exclusive); the VJ143C1 BRDF composite gives
+    its nominal day, although it spans 16 days; a VIIRS SDR granule gives its ``t`` and ``e`` times; ERA5 gives its
+    first and last hourly steps (end inclusive). They are ``None`` for a version archive and the files inside it,
+    whose names give no period.
+    """
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a name whose date or time fields do not form a real UTC instant.
+
+        The name is parsed before it is assigned, so a rejected path leaves the previous path in place.
+
+        Parameters
+        ----------
+        new_path : str | PathType
+            Path to the ancillary file.
+
+        Raises
+        ------
+        ValueError
+            If the name does not match the class's pattern, or a date or time field is not a real UTC instant.
+        """
+        if isinstance(new_path, str):
+            _new_path: PathType = cast(PathType, AnyPath(new_path))
+        else:
+            _new_path = new_path
+        parts = self.regex_match(_new_path)
+        try:
+            self._parse_match(parts)
+        except ValueError as err:
+            next_action = "" if isinstance(err, _NamedFormError) else " Correct the field in the name."
+            raise ValueError(
+                f"Proposed path {_new_path} is not a valid {type(self).__name__}: {err}.{next_action}"
+            ) from err
+        self._path = _new_path
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+        """
+        return self._parse_match(self.regex_match(self.path))
+
+    @staticmethod
+    @abstractmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects, including ``data_product_id`` and
+            ``version``
+
+        Raises
+        ------
+        ValueError
+            If a field does not parse to a valid value.
+        """
+        raise NotImplementedError()
+
+    @property
+    def data_product_id(self) -> DataProductIdentifier:
+        """Property that contains the DataProductIdentifier the filename names"""
+        return self.filename_parts.data_product_id
+
+    @classmethod
+    def from_filename_parts(cls, *args: Any, **kwargs: Any) -> NoReturn:
+        """Not supported: upstream names are parsed, not built.
+
+        Raises
+        ------
+        NotImplementedError
+            Always.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} parses names given by an upstream provider and cannot build one. "
+            "Construct it from an existing file path instead."
+        )
+
+    @classmethod
+    def _format_filename_parts(cls, *args: Any, **kwargs: Any) -> NoReturn:
+        """Not supported: upstream names are parsed, not built.
+
+        Raises
+        ------
+        NotImplementedError
+            Always.
+        """
+        raise NotImplementedError(f"{cls.__name__} parses names given by an upstream provider and cannot build one.")
+
+
+class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
+    """Abstract base for ancillary products whose filename names the UTC day the data apply to.
+
+    The file is archived under ``<ProductID>/YYYY/MM/DD`` for that day, keeping its upstream name. ``utc_start`` /
+    ``utc_end`` are the period the file is used for: the applicable day where the name carries no span (VIIRS L3,
+    NISE), and the span the name carries otherwise (the CERES hour, the VIIRS SDR granule, the ERA5 steps).
+    """
+
+    @property
+    def applicable_date(self) -> date:
+        """The UTC date the file's data apply to, as named in the filename.
+
+        A granule shorter than a day (hourly CERES, an ~85 s VIIRS SDR granule) or longer (the 16-day VIIRS BRDF
+        composite) takes the date its name gives: the start date, or the BRDF composite's nominal date.
+        """
+        return self.filename_parts.applicable_date
+
+    @property
+    def archive_prefix(self) -> str:
+        """Archive prefix ``<ProductID>/YYYY/MM/DD`` from the applicable date"""
+        applicable_date = self.applicable_date
+        return (
+            f"{self.data_product_id}/{applicable_date.year:04d}/{applicable_date.month:02d}/{applicable_date.day:02d}"
+        )
+
+
+class CeresFilename(DailyAncillaryDataProductFilename):
+    """Filename class for NOAA-20 CERES Level 2 products from NASA Langley ASDC.
+
+    Form: ``CER_<product>_<platform and instruments>_<production strategy>_<configuration code>.<YYYYMMDDHH>.nc``,
+    e.g. ``CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`` (SSF) or
+    ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc`` (CLDPIX). One file holds one hour of footprints.
+
+    - ``version`` is the production strategy, e.g. ``Edition1C`` for SSF or ``1P9test`` for CLDPIX.
+    - ``configuration_code`` is the six-digit CERES configuration code.
+    - ``utc_start`` is the start of the hour and ``utc_end`` the start of the next; ``applicable_date`` is the UTC
+      date of ``utc_start``.
+    """
+
+    _regex = CERES_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If the hour field is not a real UTC hour.
+        """
+        utc_start = datetime.strptime(d["utc_start"], "%Y%m%d%H").replace(tzinfo=UTC)
+        return SimpleNamespace(
+            data_product_id=_CERES_PRODUCTS[d["product"]],
+            version=d["version"],
+            configuration_code=d["configuration_code"],
+            utc_start=utc_start,
+            utc_end=utc_start + timedelta(hours=1),
+            applicable_date=utc_start.date(),
+        )
+
+
+def _parse_modis_viirs_name(d: dict[str, Any]) -> SimpleNamespace:
+    """Parse the fields of an EOSDIS short-name filename into objects.
+
+    Parameters
+    ----------
+    d : dict
+        Named groups from matching ``MODIS_VIIRS_REGEX``
+
+    Returns
+    -------
+    : types.SimpleNamespace
+        ``short_name``, ``data_product_id``, ``version`` (the collection), ``tile`` (``None`` for a global grid),
+        ``acquisition_date`` (the ``A`` date) and ``production_time``
+
+    Raises
+    ------
+    ValueError
+        If the extension is not its product's, the name carries a tile its product does not or lacks the tile its
+        product carries, or a date field is not a real UTC instant.
+    """
+    data_product_id, extension, tiled = _MODIS_VIIRS_PRODUCTS[d["short_name"]]
+    if d["extension"] != extension:
+        raise ValueError(
+            f"the extension is .{d['extension']}, but {d['short_name']} files are .{extension}. "
+            "Check that the file is the product its name says"
+        )
+    if (d["tile"] is not None) != tiled:
+        raise ValueError(
+            f"{d['short_name']} files {'carry' if tiled else 'do not carry'} a sinusoidal tile field "
+            f"(e.g. h21v07), but this name {'does not' if tiled else 'does'}. "
+            "Check that the file is the product its name says"
+        )
+    production = d["production_time"]
+    return SimpleNamespace(
+        short_name=d["short_name"],
+        data_product_id=data_product_id,
+        version=d["version"],
+        tile=d["tile"],
+        acquisition_date=_parse_doy_datetime(int(d["year"]), int(d["doy"])).date(),
+        production_time=_parse_doy_datetime(
+            int(production[:4]),
+            int(production[4:7]),
+            int(production[7:9]),
+            int(production[9:11]),
+            int(production[11:13]),
+        ),
+    )
+
+
+class ModisViirsDailyFilename(DailyAncillaryDataProductFilename):
+    """Filename class for the daily MODIS and VIIRS products from NASA LAADS DAAC and LP DAAC.
+
+    Form (EOSDIS short name): ``<short name>.A<YYYYDDD>.<collection>.<production YYYYDDDHHMMSS>.<extension>``,
+    e.g. ``AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc``. The products are the NOAA-20 VIIRS Deep Blue
+    aerosol (``AERDB_D3_VIIRS_NOAA20``), cloud properties (``CLDPROP_D3_VIIRS_NOAA20``) and BRDF (``VJ143C1``)
+    daily grids; the yearly MCD12Q1 land cover map in the same form is named by
+    :class:`~libera_utils.io.filenaming.ModisIgbpFilename`.
+
+    - ``applicable_date`` is the ``A`` date, and ``utc_start`` / ``utc_end`` span that day. For the 16-day BRDF
+      composite (``VJ143C1``) it is the composite's nominal date, which the provider issues daily.
+    - ``version`` is the three-digit collection.
+    - ``production_time`` is the UTC time the provider produced the file.
+    """
+
+    _regex = MODIS_VIIRS_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If the name is the yearly MCD12Q1 product, its extension or tile field is not its product's, or a date
+            field is not a real UTC instant.
+        """
+        parts = _parse_modis_viirs_name(d)
+        if parts.data_product_id is DataProductIdentifier.anc_modis_igbp:
+            raise _NamedFormError(
+                f"{parts.short_name} is the yearly IGBP land cover map, which has no applicable date. Parse a tile "
+                "with ModisIgbpFilename, and ingest the version's tiles in its version archive, "
+                f"{_version_archive_form(parts.data_product_id)} (AncillaryVersionArchiveFilename)"
+            )
+        parts.applicable_date = parts.acquisition_date
+        parts.utc_start = datetime(
+            parts.applicable_date.year, parts.applicable_date.month, parts.applicable_date.day, tzinfo=UTC
+        )
+        parts.utc_end = parts.utc_start + timedelta(days=1)
+        return parts
+
+
+class AncillaryArchiveMemberFilename(AncillaryDataProductFilename):
+    """Abstract base for the files of a version-partitioned ancillary product, held in its version archive.
+
+    IGBP and the land/ocean mask are ingested and archived as one zip per version, named by
+    :class:`~libera_utils.io.filenaming.AncillaryVersionArchiveFilename`. These classes parse the provider's name of
+    a file inside that zip, so a reader can pick out the files it reads; a file of this kind is not ingested on its
+    own, so :meth:`~libera_utils.io.filenaming.AbstractValidFilename.from_file_path` does not return one.
+    ``utc_start`` / ``utc_end`` are ``None``: the name gives no coverage.
+    """
+
+    @property
+    def archive_prefix(self) -> NoReturn:
+        """Not supported, since the file is archived inside its version archive, not on its own.
+
+        Raises
+        ------
+        TypeError
+            Always.
+        """
+        raise TypeError(
+            f"{type(self).__name__} names a file inside a version archive, which is archived as a whole. Use the "
+            "archive_prefix of the AncillaryVersionArchiveFilename that holds it."
+        )
+
+
+class ModisIgbpFilename(AncillaryArchiveMemberFilename):
+    """Filename class for a tile of the MODIS land cover type map (MCD12Q1) from NASA LP DAAC, the IGBP source.
+
+    Form (EOSDIS short name): ``MCD12Q1.A<YYYYDDD>.<tile>.<collection>.<production YYYYDDDHHMMSS>.hdf``,
+    e.g. ``MCD12Q1.A2024001.h21v07.061.2025205222320.hdf``, one sinusoidal tile of the yearly map.
+
+    The map is yearly, not daily, so the product is version-partitioned (``PartitionScheme.VERSION``): its tiles are
+    ingested in one version archive, and a tile has no applicable date.
+
+    - ``acquisition_date`` is the ``A`` date, 1 January of the year the map describes.
+    - ``tile`` is the sinusoidal tile, e.g. ``h21v07``.
+    - ``version`` is the three-digit collection.
+    - ``production_time`` is the UTC time the provider produced the file.
+    """
+
+    _regex = MODIS_VIIRS_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If the name is not the MCD12Q1 product, its extension or tile field is not MCD12Q1's, or a date field
+            is not a real UTC instant.
+        """
+        parts = _parse_modis_viirs_name(d)
+        if parts.data_product_id is not DataProductIdentifier.anc_modis_igbp:
+            raise _NamedFormError(
+                f"{parts.short_name} is a daily product. Construct it with ModisViirsDailyFilename, or use "
+                "AbstractValidFilename.from_file_path"
+            )
+        parts.utc_start = None
+        parts.utc_end = None
+        return parts
+
+
+class ViirsSdrFilename(DailyAncillaryDataProductFilename):
+    """Filename class for NOAA-20 unaggregated VIIRS M-band SDR files from NOAA CLASS.
+
+    Form (JPSS IDPS HDF5 naming):
+    ``<kind>_j01_d<YYYYMMDD>_t<HHMMSSs>_e<HHMMSSs>_b<orbit>_c<YYYYMMDDHHMMSSffffff>_<origin>_ops.h5``,
+    e.g. ``IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5``.
+
+    - ``kind`` is ``IVCDB`` (radiances, VIIRS-DualGain-Cal-IP) or ``ICDBG`` (geolocation, VIIRS-MOD-UNAGG-GEO).
+      Both are the one product ``VIIRS-NOAA20-M4-SDR``, as single granules or aggregates.
+    - ``utc_start`` and ``utc_end`` carry tenths of a second; an end earlier than the start is on the next day.
+    - ``applicable_date`` is the ``d`` (start) date.
+    - ``version`` is the ``c`` creation time, as its 20 digits.
+    """
+
+    _regex = VIIRS_SDR_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If a date or time field is not a real UTC instant.
+        """
+        start_date = datetime.strptime(d["start_date"], "%Y%m%d").replace(tzinfo=UTC)
+        utc_start = start_date + _parse_sdr_time_of_day(d["start_time"])
+        utc_end = start_date + _parse_sdr_time_of_day(d["end_time"])
+        if utc_end < utc_start:
+            utc_end += timedelta(days=1)
+        return SimpleNamespace(
+            kind=d["kind"],
+            data_product_id=DataProductIdentifier.anc_viirs_noaa20_m4_sdr,
+            version=d["creation_time"],
+            utc_start=utc_start,
+            utc_end=utc_end,
+            applicable_date=start_date.date(),
+            orbit=int(d["orbit"]),
+            creation_time=datetime.strptime(d["creation_time"], "%Y%m%d%H%M%S%f").replace(tzinfo=UTC),
+            origin=d["origin"],
+        )
+
+
+class NsidcNiseFilename(DailyAncillaryDataProductFilename):
+    """Filename class for the NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2).
+
+    Form: ``NISE_AMSR2_<YYYYMMDD>.HDFEOS``, e.g. ``NISE_AMSR2_20260610.HDFEOS``. ``applicable_date`` is the named
+    date, which ``utc_start`` / ``utc_end`` span. The name carries no version, so ``version`` is the NISE_A2
+    collection version, ``"1"``, the ``VERSIONID`` in the files' core metadata.
+    """
+
+    _regex = NSIDC_NISE_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If the date is not a real date.
+        """
+        utc_start = datetime.strptime(d["date"], "%Y%m%d").replace(tzinfo=UTC)
+        applicable_date = utc_start.date()
+        utc_end = utc_start + timedelta(days=1)
+        return SimpleNamespace(
+            data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
+            # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
+            version=NISE_VERSION,
+            applicable_date=applicable_date,
+            utc_start=utc_start,
+            utc_end=utc_end,
+        )
+
+
+class NsidcLandOceanMaskFilename(AncillaryArchiveMemberFilename):
+    """Filename class for a grid of the NSIDC EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609).
+
+    Form: ``EASE2_M<resolution>km.LOCImask_land50_coast0km.<columns>x<rows>.bin``, a global (``M``) grid at
+    3, 6.25, 9, 12.5, 25 or 36 km, e.g. ``EASE2_M36km.LOCImask_land50_coast0km.964x406.bin``. The browse images
+    (``.png``) and the temperate (``T``) grids are not accepted.
+
+    The mask is version-partitioned (``PartitionScheme.VERSION``): its grids are ingested in one version archive,
+    and a grid has no applicable date. The name carries no version, so ``version`` is the NSIDC-0609 dataset
+    version, ``"1"``.
+    """
+
+    _regex = NSIDC_LAND_OCEAN_MASK_REGEX
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+        """
+        return SimpleNamespace(
+            data_product_id=DataProductIdentifier.anc_nsidc_land_ocean_mask,
+            # TODO[LIBSDC-859]: Confirm the version Data Availability keys the mask on; its archive is keyed on the
+            # version in the zip's name
+            version=NSIDC_LAND_OCEAN_MASK_VERSION,
+            utc_start=None,
+            utc_end=None,
+            resolution_km=float(d["resolution_km"]),
+            columns=int(d["columns"]),
+            rows=int(d["rows"]),
+        )
+
+
+class AncillaryVersionArchiveFilename(AncillaryDataProductFilename):
+    """Filename class for the zip archive that holds every file of one version of a version-partitioned product.
+
+    IGBP (MCD12Q1 tiles) and the land/ocean mask (NSIDC-0609 grids) have no file per day, and one version is many
+    files, so the SDC ingests each version as one zip and names it
+    ``<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip``, e.g.
+    ``MODIS-IGBP_061_20250724_R20261020T120000000000.zip``.
+
+    - ``data_product_id`` is the product, one of the ``DataLevel.ANC`` products partitioned by
+      ``PartitionScheme.VERSION``.
+    - ``version`` is the version the archive holds: for IGBP the three-digit MCD12Q1 collection (``061``), for the
+      mask letters and digits.
+    - ``production_date`` is the UTC date the provider produced the version's files: for IGBP, one map year per
+      archive, the oldest tile's production date; for the mask, the date NSIDC produced that version.
+    - ``revision`` is the UTC time the SDC built the archive, ``R`` followed by ``YYYYMMDDTHHMMSSffffff``.
+    - ``utc_start`` / ``utc_end`` are ``None``: the name gives no period.
+
+    The archive is stored under ``<ProductID>/<version>/<production YYYYMMDD>``. The files inside it keep their
+    providers' names; :meth:`member_filename` parses one with the product's
+    :class:`~libera_utils.io.filenaming.AncillaryArchiveMemberFilename` class.
+    """
+
+    _regex = ANCILLARY_VERSION_ARCHIVE_REGEX
+
+    @property
+    def archive_prefix(self) -> str:
+        """Archive prefix ``<ProductID>/<version>/<production YYYYMMDD>``"""
+        parts = self.filename_parts
+        return f"{self.data_product_id}/{parts.version}/{parts.production_date:%Y%m%d}"
+
+    def member_filename(self, name: str) -> AncillaryArchiveMemberFilename | None:
+        """Parse the name of a file in the archive as one of the product's files.
+
+        Parameters
+        ----------
+        name : str
+            The file's name inside the archive. Only its last path component is parsed, so a file in a directory
+            of the archive is matched by its own name.
+
+        Returns
+        -------
+        : AncillaryArchiveMemberFilename | None
+            The parsed name, or ``None`` if the name is not in the form of the product's files (a browse image, a
+            README the provider ships alongside them, or another product's file).
+
+        Raises
+        ------
+        ValueError
+            If the name is in the form of the product's files but a field does not parse, such as a day of year
+            that does not exist.
+        """
+        member_class = ANCILLARY_ARCHIVE_MEMBER_CLASSES[self.data_product_id]
+        member_name = PurePosixPath(name).name
+        if member_class._regex.match(member_name) is None:
+            return None
+        return member_class(member_name)
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If an IGBP archive's version is not a three-digit MCD12Q1 collection, or the production date or the
+            revision is not a real UTC date or time.
+        """
+        data_product_id = DataProductIdentifier(d["product_name"])
+        if data_product_id is DataProductIdentifier.anc_modis_igbp and re.fullmatch(r"[0-9]{3}", d["version"]) is None:
+            raise _NamedFormError(
+                f"an IGBP archive's version is its three-digit MCD12Q1 collection (e.g. 061), not {d['version']}. "
+                f"Name it {_version_archive_form(data_product_id)}"
+            )
+        return SimpleNamespace(
+            data_product_id=data_product_id,
+            version=d["version"],
+            production_date=datetime.strptime(d["production_date"], "%Y%m%d").date(),
+            revision=_parse_revision(d["revision"]),
+            utc_start=None,
+            utc_end=None,
+        )
+
+
+# The filename class of the files each version-partitioned ancillary product's archive holds, keyed by product.
+ANCILLARY_ARCHIVE_MEMBER_CLASSES: dict[DataProductIdentifier, type[AncillaryArchiveMemberFilename]] = {
+    DataProductIdentifier.anc_modis_igbp: ModisIgbpFilename,
+    DataProductIdentifier.anc_nsidc_land_ocean_mask: NsidcLandOceanMaskFilename,
+}
+
+
+class Era5Filename(DailyAncillaryDataProductFilename):
+    """Filename class for ERA5 files the SDC requests from the Copernicus Climate Data Store (CDS).
+
+    The CDS gives downloads no consistent name, so the SDC names them, following the Libera data product form:
+    ``ECMWF_<product_name>_<version>_<utc_start>_<utc_end>_<revision>.nc``, e.g.
+    ``ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc``.
+
+    - ``product_name`` is ``ERA5-PRESSURE-LEVEL`` or ``ERA5-SINGLE-LEVEL``.
+    - ``version`` is the stream: ``ERA5`` (final) or ``ERA5T`` (preliminary).
+    - ``utc_start`` / ``utc_end`` are the first and last hourly steps in the file (end inclusive), formatted
+      ``YYYYMMDDTHHMMSS``.
+    - ``revision`` is the UTC time the SDC named the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff``.
+    - ``applicable_date`` is the UTC date of ``utc_start``, also for a file whose steps run into the next day.
+    """
+
+    _regex = ERA5_REGEX
+    _fmt = "ECMWF_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.nc"
+
+    @classmethod
+    def from_filename_parts(  # type: ignore[override]
+        cls,  # noqa pylint: disable=arguments-differ
+        *,
+        product_name: str | DataProductIdentifier,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime | None = None,
+        basepath: str | Path | S3Path | None = None,
+    ) -> "Era5Filename":
+        """Create instance from filename parts.
+
+        Parameters
+        ----------
+        product_name : str | DataProductIdentifier
+            ``ERA5-PRESSURE-LEVEL`` or ``ERA5-SINGLE-LEVEL``.
+        version : str
+            Stream: ``ERA5`` (final) or ``ERA5T`` (preliminary).
+        utc_start : datetime.datetime
+            Time of the first hourly step in the file. A naive datetime is taken as UTC.
+        utc_end : datetime.datetime
+            Time of the last hourly step in the file. A naive datetime is taken as UTC.
+        revision : datetime.datetime | None
+            Time the file was named. Default None uses the current UTC time.
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
+
+        Returns
+        -------
+        : Era5Filename
+
+        Raises
+        ------
+        ValueError
+            If ``product_name`` is not an ERA5 product, ``version`` is not ``ERA5`` or ``ERA5T``, or ``utc_end`` is
+            before ``utc_start``.
+        """
+        if revision is None:
+            revision = datetime.now(tz=UTC)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            product_name=str(DataProductIdentifier(product_name)),
+            version=version,
+            utc_start=_ensure_utc_timezone(utc_start),
+            utc_end=_ensure_utc_timezone(utc_end),
+            revision=_ensure_utc_timezone(revision),
+        )
+
+    @classmethod
+    def _format_filename_parts(  # type: ignore[override]
+        cls,
+        *,
+        product_name: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+    ) -> str:
+        """Construct a basename from filename parts
+
+        Returns
+        -------
+        : str
+            Formatted filename
+        """
+        return cls._fmt.format(
+            product_name=product_name,
+            version=version,
+            utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
+            utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+            revision=revision.strftime(REVISION_TS_FORMAT),
+        )
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If a time field is not a real UTC time, or ``utc_end`` is before ``utc_start``.
+        """
+        parts = LiberaDataProductFilename._parse_match(d)
+        if parts.utc_end < parts.utc_start:
+            raise ValueError(
+                f"utc_end {parts.utc_end:%Y-%m-%dT%H:%M:%S} is before utc_start {parts.utc_start:%Y-%m-%dT%H:%M:%S}"
+            )
+        parts.data_product_id = DataProductIdentifier(parts.product_name)
+        parts.applicable_date = parts.utc_start.date()
+        return parts
 
 
 def check_version_number_format(version: str) -> bool:

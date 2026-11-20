@@ -50,6 +50,62 @@ midpoint of the time range, except for a calibration event file (a calibration O
 CAL product, which holds one event), which is dated by the day its `utc_start` falls on. See
 [the ObsID Registry page](obsid_registry.md#calibration-event-files).
 
+## Ancillary Product Filenames
+
+External ancillary products (`DataLevel.ANC`) are ingested under the names their upstream providers give them, so
+their classes parse those names and do not build them. ERA5 is the exception: the SDC names its CDS downloads.
+`AbstractValidFilename.from_file_path` recognizes every form below.
+
+| Class                             | Products                                         | Form                                                                                           | `version`                                       | Applicable date                           | `utc_start` / `utc_end`         |
+| --------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------- | ------------------------------- |
+| `CeresFilename`                   | `CERES-NOAA20-SSF`, `-CLDPIX`                    | `CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc`                                      | Production strategy (`Edition1C`, `1P9test`)    | Date of the granule's start hour          | The hour                        |
+| `ModisViirsDailyFilename`         | `VIIRS-NOAA20-AOD`, `-CLOUD-PROPERTIES`, `-BRDF` | `AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc`                                          | Collection (`021`)                              | The `A` date (BRDF: the composite's date) | The applicable day              |
+| `ViirsSdrFilename`                | `VIIRS-NOAA20-M4-SDR`                            | `IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5` (or `ICDBG_`) | Creation time (`c` field)                       | The `d` (start) date                      | The `t` and `e` times           |
+| `NsidcNiseFilename`               | `NSIDC-ICE-SNOW`                                 | `NISE_AMSR2_20260610.HDFEOS`                                                                   | `1` (NISE_A2 collection version)                | The named date                            | The applicable day              |
+| `AncillaryVersionArchiveFilename` | `MODIS-IGBP`, `NSIDC-LAND-OCEAN-MASK`            | `MODIS-IGBP_061_20250724_R20261020T120000000000.zip`                                           | IGBP: collection (`061`); mask: its version     | None: the product is version-partitioned  | None                            |
+| `Era5Filename`                    | `ERA5-PRESSURE-LEVEL`, `ERA5-SINGLE-LEVEL`       | `ECMWF_ERA5-SINGLE-LEVEL_ERA5T_20250101T000000_20250101T230000_R20251028T120000000000.nc`      | Stream: `ERA5` (final) or `ERA5T` (preliminary) | Date of `utc_start`                       | The first and last hourly steps |
+
+Every class gives `filename_parts.utc_start` and `utc_end`, the UTC period the file is used for. CERES gives its
+hour, and VIIRS L3 and NISE their day, each ending at the start of the next hour or day (end exclusive); the VJ143C1
+BRDF composite gives its nominal day, although it spans 16 days; a VIIRS SDR granule gives its `t` and `e` times; ERA5
+gives its first and last hourly steps (end inclusive). They are `None` for a version archive and the files inside it,
+whose names give no period. The CERES and VIIRS forms fix the NOAA-20 platform their products name: other platforms' files are
+rejected.
+
+A daily product is archived under `<ProductID>/YYYY/MM/DD` for its applicable date.
+
+### Version archives
+
+IGBP and the land/ocean mask are version-partitioned (`PartitionScheme.VERSION`): neither has a file per day, and
+one version is many files. Each version is ingested as one zip archive holding every file of that version, named by
+the SDC `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, and stored under
+`<ProductID>/<version>/<production YYYYMMDD>`:
+
+- `version` is, for IGBP, the three-digit MCD12Q1 collection (`061`); for the mask, letters and digits.
+- `production YYYYMMDD` is the UTC date the provider produced the version's files. An IGBP archive holds one map
+  year and is dated by its oldest tile's production date; a mask archive is dated by the date NSIDC produced that
+  version.
+- `revision` is the time the SDC built the archive, `R` followed by `YYYYMMDDTHHMMSSffffff`.
+
+For example, `MODIS-IGBP_061_20250724_R20261020T120000000000.zip` is stored under `MODIS-IGBP/061/20250724`.
+
+The files inside an archive keep their providers' names, in any directory of the zip. Their classes parse those
+names so a reader can pick out the files it reads, but a loose tile or grid is not ingested on its own:
+`from_file_path` rejects one with a message naming its version archive. `AncillaryVersionArchiveFilename.member_filename`
+parses a file's name with its product's class, gives `None` for a file not in that form, such as a README or a browse
+image, and raises `ValueError` for a name in that form whose fields do not parse.
+
+| Class                        | Product                 | Form                                               | `version`                        |
+| ---------------------------- | ----------------------- | -------------------------------------------------- | -------------------------------- |
+| `ModisIgbpFilename`          | `MODIS-IGBP`            | `MCD12Q1.A2024001.h21v07.061.2025205222320.hdf`    | Collection (`061`)               |
+| `NsidcLandOceanMaskFilename` | `NSIDC-LAND-OCEAN-MASK` | `EASE2_M36km.LOCImask_land50_coast0km.964x406.bin` | `1` (NSIDC-0609 dataset version) |
+
+Only the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
+
+The ERA5 name follows the Libera data product form: `utc_start` and `utc_end` are the first and last hourly steps in
+the file (`YYYYMMDDTHHMMSS`), and `revision` is the time the SDC named it, `R` followed by `YYYYMMDDTHHMMSSffffff`.
+`Era5Filename.from_filename_parts` builds one.
+
 ## Hashing and Equality
 
 All `Filename` classes are hashable and compare equal when their paths are equal, so they can be used as dictionary

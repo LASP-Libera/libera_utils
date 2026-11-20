@@ -22,6 +22,9 @@ from libera_utils.aws.utils import (
 )
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
+    AbstractValidFilename,
+    AncillaryDataProductFilename,
+    DailyAncillaryDataProductFilename,
     L0Filename,
     LiberaDataProductFilename,
     LiberaGroundCcsdsFilename,
@@ -55,12 +58,21 @@ VERIFY_POLL_INTERVAL_SECONDS = 10.0
 MAX_FILES_PER_INGEST_EVENT = 5
 
 ManualIngestFilename = (
-    L0Filename | LiberaDataProductFilename | LiberaVersionPartitionedDataProductFilename | LiberaGroundCcsdsFilename
+    L0Filename
+    | LiberaDataProductFilename
+    | LiberaVersionPartitionedDataProductFilename
+    | LiberaGroundCcsdsFilename
+    | AncillaryDataProductFilename
 )
 
-# The filename types whose ingestion verify_ingestion can confirm.
-# TODO[LIBSDC-880]: add LiberaVersionPartitionedDataProductFilename once verification supports it.
-VerifiableIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
+# The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata and Data Availability
+# records are keyed on its applicable date, and an L0 or ground CCSDS file has its own record rules. A non-daily
+# file (a version-partitioned data product, or the version archive of IGBP or the land/ocean mask) has no
+# applicable date, so ``put --verify`` stages it but cannot verify it.
+# TODO[LIBSDC-880]: verify non-daily products once the ingester defines their records
+VerifiableIngestFilename = (
+    L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | DailyAncillaryDataProductFilename
+)
 
 
 class IngestionNotVerifiedError(RuntimeError):
@@ -72,9 +84,10 @@ class IngestionNotVerifiedError(RuntimeError):
 
 
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
-    """Validate a path as a Libera filename eligible for manual ingest.
+    """Validate a path as a filename eligible for manual ingest.
 
-    Eligible filenames are L0, ground CCSDS, daily data product, and version-partitioned data product filenames.
+    Eligible filenames are L0, ground CCSDS, daily data product, version-partitioned data product and external
+    ancillary product filenames.
 
     Manifest and any other filename types are rejected.
 
@@ -85,28 +98,25 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
 
     Returns
     -------
-    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaVersionPartitionedDataProductFilename
+    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename, or AncillaryDataProductFilename
         The parsed filename object.
 
     Raises
     ------
     ValueError
-        If the path is not a valid filename of any of these types.
+        If the name is not one of the ingestable forms.
     """
-    for filename_class in (
-        L0Filename,
-        LiberaGroundCcsdsFilename,
-        LiberaDataProductFilename,
-        LiberaVersionPartitionedDataProductFilename,
-    ):
-        try:
-            return filename_class(path)
-        except ValueError:
-            continue
-    raise ValueError(
-        f"File {path} is not a valid Libera L0, ground CCSDS, or data product filename and cannot be manually ingested."
-        " Rename it to one of those forms, or check that its product ID is a known DataProductIdentifier."
-    )
+    try:
+        filename = AbstractValidFilename.from_file_path(path)
+    except ValueError as err:
+        raise ValueError(f"File {path} cannot be manually ingested: {err}") from err
+    if not isinstance(filename, ManualIngestFilename):
+        raise ValueError(
+            f"File {path} is not an L0, ground CCSDS, daily or version-partitioned Libera data product, or external "
+            "ancillary product filename and cannot be manually ingested. Check the name against the File Naming "
+            "Conventions documentation."
+        )
+    return filename
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -117,15 +127,15 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
 
-    With ``--verify``, every file is staged and the ingestion of each daily data product, L0, and ground CCSDS file is
-    verified. Version-partitioned data product files are staged but not verified, and the handler then raises naming
-    them.
+    With ``--verify``, every file is staged and the ingestion of each L0, ground CCSDS, daily Libera data product and
+    daily ancillary file is verified. A non-daily file (a version-partitioned data product, or the version archive
+    of IGBP or the land/ocean mask) is staged but not verified, and the handler then raises naming it.
 
     Raises
     ------
     IngestionNotVerifiedError
-        If ``--verify`` is given and any of the files is a version-partitioned data product file, which ingestion
-        verification does not yet support. Every file has still been staged.
+        If ``--verify`` is given and any file is non-daily (a version-partitioned data product or a non-daily
+        ancillary product), which ingestion verification does not yet support. Every file has still been staged.
     TimeoutError
         If ``--verify`` is given and the verifiable files are not fully ingested within ``--timeout`` seconds.
     """
@@ -145,14 +155,12 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 
     if parsed_args.verify:
-        # TODO[LIBSDC-880]: verify ingestion of version-partitioned data products, then verify every staged file.
+        # TODO[LIBSDC-880]: verify ingestion of non-daily files, then verify every staged file.
         verifiable = [f for f in libera_filenames if isinstance(f, VerifiableIngestFilename)]
-        unverified = [f for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
+        unverified = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
         if unverified:
             logger.warning(
-                "Staged %d version-partitioned data product file(s) that --verify cannot yet verify: %s",
-                len(unverified),
-                [f.path.name for f in unverified],
+                "Staged %d non-daily file(s) that --verify cannot yet verify: %s", len(unverified), unverified
             )
         if verifiable:
             logger.info(
@@ -162,10 +170,9 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
             logger.info("Verified full ingestion of %d file(s).", len(verifiable))
         if unverified:
             raise IngestionNotVerifiedError(
-                f"Staged {len(unverified)} version-partitioned data product file(s) whose ingestion --verify cannot "
-                "yet confirm: "
-                f"{[f.path.name for f in unverified]}. Their NewFilesAvailable events were emitted. Confirm each one "
-                "is archived under its <ProductID>/<Version> prefix in the archive bucket."
+                f"Staged {len(unverified)} non-daily file(s) whose ingestion --verify cannot yet confirm: "
+                f"{unverified}. Their NewFilesAvailable events were emitted. Confirm each one is archived under its "
+                "archive prefix in its archive bucket."
             )
     else:
         logger.info(
@@ -193,21 +200,21 @@ def manual_ingest_data_products(
     Parameters
     ----------
     paths_to_files : list of Path
-        Local filesystem paths to the files to ingest. Each must be a validly named Libera L0, ground CCSDS, or
-        daily or version-partitioned data product file.
+        Local filesystem paths to the files to ingest. Each must be a validly named L0, ground CCSDS, daily or
+        version-partitioned Libera data product, or external ancillary product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.
 
     Returns
     -------
-    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaVersionPartitionedDataProductFilename
+    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, LiberaVersionPartitionedDataProductFilename, or AncillaryDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
 
     Raises
     ------
     ValueError
-        If a filename is not a valid Libera ingest filename, which is checked before anything is staged, or if
+        If a filename is not an ingestable filename, which is checked before anything is staged, or if
         the dropbox bucket or the event bus cannot be identified by name.
     RuntimeError
         If EventBridge rejects an event. The events before it were already emitted; running the command again
@@ -358,6 +365,11 @@ def verify_ingestion(
        ground CCSDS files, which the SDC does not write availability records for).
     3. A File Metadata record exists for the file basename.
 
+    A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
+    its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary file
+    (the version archive of IGBP or the land/ocean mask) has no applicable date and no checks here, so it is
+    rejected before any lookup; ``s3_put_cli_handler`` keeps such files out of the list it verifies.
+
     A ground CCSDS capture passes on its base File Metadata row alone, so a successful
     verification does not mean its packet time span was indexed into a searchable row.
 
@@ -368,8 +380,9 @@ def verify_ingestion(
 
     Parameters
     ----------
-    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
-        The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``).
+    libera_filenames : list of AbstractDataProductFilename
+        The L0, ground CCSDS, Libera data product and daily ancillary filenames staged for ingest, as returned by
+        ``manual_ingest_data_products`` less any non-daily ancillary file.
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
     timeout : float, optional
@@ -379,15 +392,27 @@ def verify_ingestion(
 
     Raises
     ------
+    TypeError
+        If any file is not an L0, ground CCSDS, Libera data product or daily ancillary filename, such as a
+        non-daily ancillary file.
     TimeoutError
         If any expected record/object is still missing when the timeout elapses.
     """
+    unverifiable = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
+    if unverifiable:
+        raise TypeError(
+            f"Cannot verify ingestion of {unverifiable}: only L0, ground CCSDS, Libera data product and daily "
+            "ancillary files have records to check. Ingest a non-daily file without --verify and confirm it in "
+            "its archive bucket."
+        )
+
     s3_client = boto_session.client("s3")
     dynamodb = boto_session.resource("dynamodb")
 
     # Resolve all required resources once. Any 0/>1 match raises immediately (Libera Utils / SDC mismatch).
     archive_bucket_by_level: dict = {}
-    needs_availability = any(isinstance(f, LiberaDataProductFilename) for f in libera_filenames)
+    dated_product_types = (LiberaDataProductFilename, DailyAncillaryDataProductFilename)
+    needs_availability = any(isinstance(f, dated_product_types) for f in libera_filenames)
     file_specs = []
     for libera_filename in libera_filenames:
         data_level = libera_filename.data_product_id.data_level
@@ -399,7 +424,7 @@ def verify_ingestion(
             "name": libera_filename.path.name,
             "bucket": archive_bucket_by_level[data_level],
             "key": f"{libera_filename.archive_prefix}/{libera_filename.path.name}",
-            "is_data_product": isinstance(libera_filename, LiberaDataProductFilename),
+            "is_data_product": isinstance(libera_filename, dated_product_types),
         }
         if spec["is_data_product"]:
             spec["applicable_date"] = libera_filename.applicable_date.isoformat()
