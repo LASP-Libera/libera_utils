@@ -714,7 +714,9 @@ class FootprintData:
         FileNotFoundError
             If ``fmatch_path`` does not exist.
         ValueError
-            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file. If no footprint has an ``IGBP_Surface_Type`` (every value is fill). If a finite ``Cloud_Fraction_Camera`` lies outside [0, 100] percent, or no footprint has a finite one.
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file; if no footprint has an
+            ``IGBP_Surface_Type`` (every value is fill); or if a finite ``Cloud_Fraction_Camera`` lies outside
+            [0, 100] percent or no footprint has a finite one.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -753,8 +755,9 @@ class FootprintData:
         FileNotFoundError
             If ``fmatch_path`` does not exist.
         ValueError
-            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
-            If a finite ``Cloud_Fraction_Camera`` lies outside [0, 100] percent, or no footprint has a finite one.
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file; if no footprint
+            has an ``IGBP_Surface_Type`` (every value is fill); or if a finite ``Cloud_Fraction_Camera`` lies outside
+            [0, 100] percent or no footprint has a finite one.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -792,7 +795,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM file, which has no
-            CERES SSF or CLDPIX variables. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
+            CERES SSF or CLDPIX variables; or if no footprint has an ``IGBP_Surface_Type`` (every value is fill).
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -838,7 +841,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM-CAMTIME file, which has no
-            CERES SSF or CLDPIX variables. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
+            CERES SSF or CLDPIX variables; or if no footprint has an ``IGBP_Surface_Type`` (every value is fill).
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -926,7 +929,6 @@ class FootprintData:
                 )
             # Decode only the variables the reader uses, not the whole product.
             fmatch_dataset = opened_dataset[names].load()
-        del fmatch_bytes
 
         data_variables: dict[str, tuple[list[str], NDArray]] = {}
         for target, column in column_map.items():

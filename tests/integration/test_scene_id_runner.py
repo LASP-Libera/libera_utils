@@ -16,7 +16,13 @@ from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, O
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_definitions import SCENE_ID_INTEGER_FILL_VALUE
-from libera_utils.scene_identification.scene_id import standard_scene_definitions
+from libera_utils.scene_identification.scene_id import (
+    _FMATCH_CAM_COLUMN_MAP,
+    _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+    _FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
+    _FMATCH_IMAGER_COLUMN_MAP,
+    standard_scene_definitions,
+)
 from libera_utils.scene_identification.scene_id_algorithm import (
     CAM_CAMTIME_CONFIG,
     RUNNER_CONFIGS,
@@ -136,6 +142,35 @@ class TestFmatchReaders:
 
         for required in ("IGBP_Surface_Type", "Cloud_Fraction", "Solar_Zenith_Surface", "RADIOMETER_TIME"):
             assert required in dataset.variables
+
+    @pytest.mark.parametrize(
+        ("reader", "mode", "column_map", "passthrough", "time_variable"),
+        [
+            pytest.param(
+                "from_fmatch_cam",
+                OperationalMode.CAM,
+                _FMATCH_CAM_COLUMN_MAP,
+                _FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
+                "RADIOMETER_TIME",
+                id="cam",
+            ),
+            pytest.param(
+                "from_fmatch_imager_camtime",
+                OperationalMode.IMAGER_CAMTIME,
+                _FMATCH_IMAGER_COLUMN_MAP,
+                _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+                "CAMERA_TIME",
+                id="imager-camtime",
+            ),
+        ],
+    )
+    def test_reader_keeps_only_the_variables_it_uses(
+        self, fmatch_product_file_factory, reader, mode, column_map, passthrough, time_variable
+    ):
+        """A reader carries its classification columns, its passthroughs and the time, and none of FMATCH's others."""
+        footprint_data = getattr(FootprintData, reader)(fmatch_product_file_factory(mode, n_footprints=3))
+
+        assert set(footprint_data._data.variables) == {*column_map, *passthrough, time_variable}
 
     def test_from_fmatch_cam_camtime_reads_records_on_camera_grid(self, fmatch_product_file_factory, tmp_path):
         """from_fmatch_cam_camtime reads FMATCH-CAM-CAMTIME onto the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid, carrying

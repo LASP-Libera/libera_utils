@@ -52,15 +52,10 @@ coordinates:
 
 variables:
   # ===========================================================================================================
-  # Footprint identifiers (passed straight through from FMATCH-IMAGER-CAMTIME)
+  # Footprint identifiers, copied unchanged from FMATCH-IMAGER-CAMTIME as fmatch_imager_camtime.yml declares them
   # ===========================================================================================================
-  # Copied unchanged from the FMATCH-IMAGER-CAMTIME input, declared exactly as fmatch_imager_camtime.yml
-  # declares them, so a consumer can trace each classified subsection back to its ground footprint and camera
-  # pixels. Scene identification does not read them.
 
-  # --- Boresight geolocation -----------------------------------------------------------------------------------------
-  # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
-  # geolocation via FMATCH-IMAGER-CAMTIME.
+  # --- Geolocation at the pseudo-footprint's center pixel ------------------------------------------------------------
   Latitude:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -114,13 +109,7 @@ variables:
       comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
 
   # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
-  # Each pseudo-footprint is a contiguous block of L1B camera pixels, segmented by the Camera Cloud Fraction algorithm
-  # (types.PseudoFootprint). These four
-  # inclusive bounds trace a subsection back to its source pixels in the L1B Daily Camera grid (dimensions
-  # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y): x_min..x_max along the column axis and y_min..y_max along the row
-  # axis, both endpoints inclusive. NOTE: this (x_min, x_max, y_min, y_max) representation assumes each footprint is a
-  # square (an axis-aligned rectangular pixel block), so a single min/max pair per axis fully describes it.
-  # Subsections may overlap in pixel space. Passed through verbatim from FMATCH-IMAGER-CAMTIME.
+  # Inclusive column (X) and row (Y) bounds of the pseudo-footprint's block in the L1B Daily Camera pixel grid.
   Camera_Pixel_X_Min:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]

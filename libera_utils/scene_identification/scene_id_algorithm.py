@@ -102,10 +102,9 @@ CAM_CONFIG = SceneIdRunnerConfig(
     log_prefix="scene_id_cam",
 )
 
-# SCENE-ID-CAM-CAMTIME (camera timescale): reads FMATCH-CAM-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
-# Runs ERBE only: unfiltering runs on the radiometer timescale, not the camera timescale. It also carries the FMATCH footprint *identifier* variables (inclusive camera pixel-block
-# bounds, PSF bounding box, boresight geolocation) straight through from the input via from_fmatch_cam_camtime and
-# scene_id_cam_camtime.yml, so a classified scene traces back to the exact camera pixels and ground footprint.
+# SCENE-ID-CAM-CAMTIME (camera timescale): reads FMATCH-CAM-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid
+# and runs ERBE only; unfiltering runs on the radiometer timescale. It carries FMATCH's footprint identifiers (camera
+# pixel-block bounds, PSF bounding box, geolocation) through unchanged.
 CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     output_product_id=DataProductIdentifier.aux_scene_id_cam_camtime,
@@ -131,13 +130,9 @@ IMAGER_CONFIG = SceneIdRunnerConfig(
     log_prefix="scene_id_imager",
 )
 
-# SCENE-ID-IMAGER-CAMTIME (camera timescale): the camera-timescale counterpart of SCENE-ID-IMAGER. Reads
-# FMATCH-IMAGER-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid; like SCENE-ID-IMAGER it runs full TRMM (the
-# input carries the CLDPIX optical depth/phase, ERA5 winds, CERES SSF clear coverage, and IGBP surface type) but not
-# unfiltering, which runs on the radiometer timescale only, and,
-# like SCENE-ID-CAM-CAMTIME, passes the FMATCH footprint identifier variables straight through (from_fmatch_imager_
-# camtime + scene_id_imager_camtime.yml). from_fmatch_imager_camtime raises if the CERES_SSF/CLDPIX variables are
-# absent.
+# SCENE-ID-IMAGER-CAMTIME (camera timescale): reads FMATCH-IMAGER-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT)
+# grid and runs ERBE and TRMM; unfiltering runs on the radiometer timescale. Like SCENE-ID-CAM-CAMTIME it carries
+# FMATCH's footprint identifiers through unchanged.
 IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
     output_product_id=DataProductIdentifier.aux_scene_id_imager_camtime,
@@ -352,14 +347,14 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     """
     logger.info("Running scene identification on %s", fmatch_file_path)
     footprint_data = config.reader(fmatch_file_path)
-    # Run the config's classifications (scene_types). With report_bin_bounds=True (the default), the property-bin bounds of each matched scene are
-    # also recorded. Both scene IDs and their bin bounds are part of the SCENE-ID product definition.
+    # Run the config's classifications. identify_scenes also records each matched scene's property-bin bounds, which
+    # the SCENE-ID product definitions declare.
     footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(config.scene_types))
     return footprint_data
 
 
 def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: LiberaDataProductDefinition) -> xr.Dataset:
-    """Cast float-held integer variables to their declared dtype, writing the declared ``_FillValue`` where they are NaN.
+    """Cast float-held integer variables to their declared dtype, writing the declared ``_FillValue`` where NaN.
 
     Classification carries integer categories such as ``Surface_Type`` as float so a footprint with a missing input
     can hold NaN, and such a footprint is unmatched. Each integer variable that can be missing declares its
