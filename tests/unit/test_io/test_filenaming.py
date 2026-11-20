@@ -1013,7 +1013,8 @@ def test_LiberaGroundCcsdsFilename_rejects_a_field_with_its_own_message(basename
     fix, and from_file_path gives that message rather than a generic one.
 
     A name that constructs but blows up later passes ingest validation and only fails at staging, when the archive
-    prefix is computed. A capture named by its write time, as DITL captures were, gets the rename instruction.
+    prefix is computed. A demuxed capture given its raw SSIM capture's write time, such as 13_16_34, gets the rename
+    instruction.
     """
     with pytest.raises(ValueError, match=message):
         filenaming.LiberaGroundCcsdsFilename(basename)
