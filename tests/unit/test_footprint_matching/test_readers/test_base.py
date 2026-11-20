@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.base import (
     AncillaryReader,
     PassReader,
@@ -48,6 +49,8 @@ class _GridReader(StaticReader):
     """A daily 1 degree global grid whose value is 100 * lat_index + lon_index."""
 
     READER_KEY = "_base_test_grid"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 111.0
@@ -65,6 +68,8 @@ class _HeldReader(StaticReader):
     """A daily reader whose native data, handed in at construction, is served as returned."""
 
     READER_KEY = "_base_test_held"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
@@ -83,6 +88,8 @@ class _HeldPassReader(StaticReader):
     """A nearest-pass reader whose native data, handed in at construction, is served as returned."""
 
     READER_KEY = "_base_test_held_pass"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
@@ -103,6 +110,8 @@ class _GranuleReader(PassReader):
     """Hourly granules handed in as ``{path: (start, end, PointSamples)}``; counts loads."""
 
     READER_KEY = "_base_test_granules"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     RESOLUTION_KM = 1.0
     PASS_WINDOW = np.timedelta64(15, "m")
@@ -129,6 +138,8 @@ class _StepReader(SteppedGridReader):
     """Hourly steps whose grid value is the step index; counts loads."""
 
     READER_KEY = "_base_test_steps"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
@@ -895,6 +906,7 @@ class TestRegistrationValidation:
         """
         namespace = {
             "READER_KEY": f"_base_test_missing{missing}",
+            "PRODUCT_ID": DataProductIdentifier.anc_era5_single_level,
             "INSTRUMENT": "FAKE",
             "RESOLUTION_KM": 1.0,
             "VARIABLES": (_SPEC,),
@@ -964,6 +976,7 @@ class TestRegistrationValidation:
         """
         namespace = {
             "READER_KEY": f"_base_test_{request.node.callspec.id}",
+            "PRODUCT_ID": DataProductIdentifier.anc_era5_single_level,
             "INSTRUMENT": "FAKE",
             "RESOLUTION_KM": 1.0,
             "VARIABLES": (_SPEC,),
@@ -993,6 +1006,7 @@ class TestRegistrationValidation:
         key = f"_base_test_{request.node.callspec.id}"
         namespace = {
             "READER_KEY": key,
+            "PRODUCT_ID": DataProductIdentifier.anc_era5_single_level,
             "INSTRUMENT": "FAKE",
             "RESOLUTION_KM": 1.0,
             "VARIABLES": (_SPEC,),
@@ -1036,6 +1050,8 @@ class _Stacked(StaticReader):
     """Stacks the continuous ``t_1``/``t_2`` into ``t``."""
 
     READER_KEY = "_base_test_stacked"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
@@ -1051,6 +1067,8 @@ class _CategoricalStack(StaticReader):
     """Stacks only the categorical ``c_1`` into ``c``."""
 
     READER_KEY = "_base_test_categorical_stack"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "FAKE"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 1.0
@@ -1116,6 +1134,7 @@ class TestProductStacks:
 
             class _BadStacks(StaticReader):
                 READER_KEY = "_base_test_bad_stacks"
+                PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
                 INSTRUMENT = "FAKE"
                 GRANULE_DATE_WINDOW = None
                 RESOLUTION_KM = 1.0
@@ -1194,6 +1213,7 @@ class TestProductVariableSpecs:
 
         class _Companions(_GridReader):
             READER_KEY = "_base_test_companions"
+            PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
             VARIABLES = (_SPEC, categorical)
             ADDITIONAL_PRODUCT_VARIABLES = (ranked,)
 

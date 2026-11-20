@@ -57,8 +57,8 @@ The `libera-utils-fmatch` target of the repository's `Dockerfile` builds an imag
 
 ### The input manifest
 
-The manifest (see [Manifest Files](manifest_files.md)) lists every file the run reads in `files`, and two
-`configuration` keys say what to do with them:
+The manifest (see [Manifest Files](manifest_files.md)) lists every file the run reads in `files`, and its
+`configuration` names the product to write:
 
 ```json
 {
@@ -66,19 +66,12 @@ The manifest (see [Manifest Files](manifest_files.md)) lists every file the run 
   "files": [
     "s3://dropbox/LIBERA_L1B_RAD-4CH_V1-0-0_20260611T000000_20260611T235959_R...nc",
     "s3://dropbox/LIBERA_L2_CF-CAM_V1-0-0_20260611T000000_20260611T235959_R...nc",
-    "s3://ancillary/MODIS-IGBP_2025_R20261020T120000000000.zip",
-    "s3://ancillary/NISE_AMSR2_20260610.HDFEOS",
-    "s3://ancillary/CLDPROP_D3_VIIRS_NOAA20.A2026161.011.2026165000710.nc"
+    "s3://ancillary/MODIS-IGBP_061_20250724_R20261020T120000000000.zip",
+    "s3://ancillary/NISE_AMSR2_20260611.HDFEOS",
+    "s3://ancillary/CLDPROP_D3_VIIRS_NOAA20.A2026162.011.2026166000710.nc"
   ],
   "configuration": {
-    "processing_step_id": "aux-fmatch-cam",
-    "ancillary_inputs": {
-      "IGBP": ["s3://ancillary/MODIS-IGBP_2025_R20261020T120000000000.zip"],
-      "NISE": ["s3://ancillary/NISE_AMSR2_20260610.HDFEOS"],
-      "VIIRS_CLDPROP_D3": [
-        "s3://ancillary/CLDPROP_D3_VIIRS_NOAA20.A2026161.011.2026165000710.nc"
-      ]
-    }
+    "processing_step_id": "aux-fmatch-cam"
   }
 }
 ```
@@ -88,16 +81,12 @@ The manifest (see [Manifest Files](manifest_files.md)) lists every file the run 
 given with `--processing_step_id`. When both are given they must match, or the run raises
 `ProcessingStepIdMismatchError`; when neither is, it raises `ValueError`.
 
-`ancillary_inputs`
-: Maps each reader key active for the product to the ancillary granules listed for it. Every path must also be in
-`files`. The mapping must name exactly the readers the product uses (see
-[Ancillary inputs](#ancillary-inputs)), each with at least one granule. A manifest without the key, or with a
-mapping that does not meet these rules, raises `FmatchInputError`.
-
-The runner picks its Libera inputs out of `files` by their parsed product IDs: L1B `RAD-4CH` or `CF-CAM-CAMTIME` as
-the Libera input, and CF-CAM for FMATCH-CAM. Files whose names do not start with `LIBERA_`, such as the ancillary
-granules, are skipped there; a `LIBERA_` name that does not parse as a Libera product filename raises
-`FmatchInputError`.
+The runner parses every name in `files` once, as a Libera product or an external ancillary product (see the File
+Naming page), and picks its inputs by product ID: L1B `RAD-4CH` or `CF-CAM-CAMTIME` as the Libera input, CF-CAM for
+FMATCH-CAM, and for each reader the product uses, every granule of that reader's product (see
+[Ancillary inputs](#ancillary-inputs)). A file of a product the run does not read is not used. A name that does not
+parse, such as a loose MCD12Q1 tile rather than its version archive, raises `FmatchInputError`, as does a manifest
+that lists no granule of a reader's product.
 
 Every way a run's inputs can fail it, a missing or unusable input in the manifest or an input without a variable
 FMATCH reads, raises `FmatchInputError`, a `ValueError`. The message names the input and what to change.
@@ -124,7 +113,7 @@ When it runs in a forked pool, the PSF aggregation's result is identical to the 
 ### What a run does
 
 1. Reads the input manifest and selects the product from `processing_step_id`.
-2. Locates the ancillary granules the manifest lists in `ancillary_inputs`.
+2. Sorts the manifest's files by product, and gives each reader the product uses the granules of its product.
 3. Selects the Libera inputs from the manifest by product ID. For FMATCH-CAM it also reads every CF-CAM file once
    and matches each L1B footprint to its CF-CAM row by time.
 4. Copies any S3 ancillary granule to a temporary local directory, because the readers open real files, and
@@ -138,19 +127,20 @@ The run logs its steps as structured JSON; the input manifest and the ancillary 
 
 ## Ancillary inputs
 
-Each external source has a reader, registered under its reader key:
+Each external source has a reader, registered under its reader key, that reads one ancillary product, its
+`PRODUCT_ID`. The runner gives a reader every granule of that product listed in the manifest's `files`.
 
-| Reader key         | Source                                         | Instrument |
-| ------------------ | ---------------------------------------------- | ---------- |
-| `ERA5_Surface`     | ERA5 single-level reanalysis                   | ECMWF      |
-| `ERA5_Pressure`    | ERA5 pressure-level reanalysis                 | ECMWF      |
-| `IGBP`             | MODIS MCD12Q1 land cover                       | MODIS      |
-| `NISE`             | NISE snow and sea ice extent                   | AMSR2      |
-| `VIIRS_BRDF`       | VIIRS BRDF (VJ143C1)                           | NOAA20     |
-| `VIIRS_CLDPROP_D3` | VIIRS daily L3 cloud properties                | NOAA20     |
-| `VIIRS_AOD`        | VIIRS Deep Blue aerosol optical depth and type | NOAA20     |
-| `CLDPIX`           | CERES CLDPIX imager-pixel swath                | NOAA20     |
-| `CERES_SSF`        | CERES SSF footprint swath                      | NOAA20     |
+| Reader key         | Product (`PRODUCT_ID`)          | Source                                         | Instrument |
+| ------------------ | ------------------------------- | ---------------------------------------------- | ---------- |
+| `ERA5_Surface`     | `ERA5-SINGLE-LEVEL`             | ERA5 single-level reanalysis                   | ECMWF      |
+| `ERA5_Pressure`    | `ERA5-PRESSURE-LEVEL`           | ERA5 pressure-level reanalysis                 | ECMWF      |
+| `IGBP`             | `MODIS-IGBP`                    | MODIS MCD12Q1 land cover                       | MODIS      |
+| `NISE`             | `NSIDC-ICE-SNOW`                | NISE snow and sea ice extent                   | AMSR2      |
+| `VIIRS_BRDF`       | `VIIRS-NOAA20-BRDF`             | VIIRS BRDF (VJ143C1)                           | NOAA20     |
+| `VIIRS_CLDPROP_D3` | `VIIRS-NOAA20-CLOUD-PROPERTIES` | VIIRS daily L3 cloud properties                | NOAA20     |
+| `VIIRS_AOD`        | `VIIRS-NOAA20-AOD`              | VIIRS Deep Blue aerosol optical depth and type | NOAA20     |
+| `CLDPIX`           | `CERES-NOAA20-CLDPIX`           | CERES CLDPIX imager-pixel swath                | NOAA20     |
+| `CERES_SSF`        | `CERES-NOAA20-SSF`              | CERES SSF footprint swath                      | NOAA20     |
 
 Which readers a product uses is derived from each reader variable's `modes`, and is held in
 `readers.registry.FMATCH_MODE_READERS`. To list them:
@@ -184,11 +174,8 @@ storage, and twice that while an S3 archive is copied.
 
 The run raises `FmatchInputError` when a reader is given an archive alongside any other granule, or when an archive
 is not a zip, holds no file of its product, holds a file in its product's form whose fields do not parse, holds two
-files with one name, or holds files of more than one release (collection, or map year). A reader can still be given
-loose files for a local or development run.
-
-Every run lists its granules in `ancillary_inputs`; the manifest creator will write that key once it selects the
-ingested ancillary granules (LIBSDC-861). For a local or development run, write the manifest yourself.
+files with one name, or holds files of more than one release (collection, or map year). A loose MCD12Q1 tile in
+`files` does not parse as an ingested product name, so even a local or development run lists the archive.
 
 ## Inputs by time axis
 
@@ -259,8 +246,9 @@ For example, moving the VIIRS readers from NOAA-20 to NOAA-21:
    conventions), update the reader's field table and its `_load_granule` or `_load_native`, and add a cut of a real
    granule under `tests/test_data/footprint_matching/` with a test that reads it.
 
-The reader key and the product variable names do not change, so the manifest's `ancillary_inputs` and downstream
-consumers are unaffected unless step 3 changes a variable.
+If the new source is a different ancillary product, set the readers' `PRODUCT_ID` to it, adding its
+`DataProductIdentifier` and filename class if it has none. The reader key and the product variable names do not
+change, so downstream consumers are unaffected unless step 3 changes a variable.
 
 ### Add a variable to an existing reader
 
@@ -277,15 +265,16 @@ consumers are unaffected unless step 3 changes a variable.
 
 ### Add a reader or change which products a reader feeds
 
-1. Write the reader as a subclass of `StaticReader`, `SteppedGridReader` or `PassReader` with a unique `READER_KEY`,
-   and import it in `libera_utils/footprint_matching/readers/__init__.py` to register it.
+1. Write the reader as a subclass of `StaticReader`, `SteppedGridReader` or `PassReader` with a unique `READER_KEY`
+   and the `DataLevel.ANC` product it reads as `PRODUCT_ID`, and import it in
+   `libera_utils/footprint_matching/readers/__init__.py` to register it. A product with no `DataProductIdentifier` or
+   filename class needs both first, so its granules' names parse.
 2. Name the products it feeds in each of its variables' `modes`; `FMATCH_MODE_READERS` is derived from them.
 3. Add its variables to those products' definitions, as above.
-4. List its granules under its reader key in the manifest's `ancillary_inputs`; the runner derives the readers it
-   needs from the registry.
+4. List its product's granules in the manifest's `files`; the runner derives the readers it needs from the registry
+   and gives each the granules of its product.
 
-Renaming a reader key renames its product variables and its `ancillary_inputs` key, so it is a change consumers and
-whatever writes the manifests must follow.
+Renaming a reader key renames its product variables, so it is a change consumers must follow.
 
 ### Add a product variant
 

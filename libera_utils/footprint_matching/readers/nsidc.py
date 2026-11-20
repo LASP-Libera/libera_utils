@@ -112,6 +112,7 @@ import numpy as np
 import pyhdf.SD as sd
 import pyproj
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
 from libera_utils.footprint_matching.readers._hdf4_io import read_hdf4_granule_span, read_hdf4_struct_metadata
 from libera_utils.footprint_matching.readers.base import StaticReader
@@ -252,6 +253,7 @@ class NISEReader(StaticReader):
     """
 
     READER_KEY: str = "NISE"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_nsidc_ice_snow
     # The pipeline ingests NISE_A2, built from AMSR-2 passive microwave radiometry,
     # so provenance is tagged AMSR2.
     INSTRUMENT: str = "AMSR2"

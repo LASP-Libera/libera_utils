@@ -1376,6 +1376,8 @@ class FakeMeanReader(StaticReader):
     """Multi-variable reader: two continuous fields with constant values 5 and 2."""
 
     READER_KEY = "_fake_agg_mean"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "TEST"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
@@ -1400,6 +1402,8 @@ class FakeCatReader(StaticReader):
     """Single-variable categorical reader: every sample is class 3, plus ranked extras."""
 
     READER_KEY = "_fake_agg_cat"
+
+    PRODUCT_ID = DataProductIdentifier.anc_nsidc_ice_snow
     INSTRUMENT = "TEST"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0
@@ -1521,7 +1525,7 @@ def l1b_radiometer_file_factory(tmp_path: Path) -> Callable[..., Path]:
     the variable names, dtypes and time encoding are the contract under test.
 
     The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
-    with :func:`libera_utils.footprint_matching.footprint_match_algorithm.select_manifest_files_by_product_id`.
+    by product with :func:`libera_utils.footprint_matching.footprint_match_algorithm.manifest_files_by_product_id`.
 
     The returned writer takes:
 
@@ -1759,7 +1763,7 @@ def cf_cam_camtime_file_factory(
     """Factory writing synthetic CF-CAM-CAMTIME NetCDF files (input to the camera-timescale FMATCH runners).
 
     The file is written under a proper Libera ``CF-CAM-CAMTIME`` filename so that the manifest-driven runners select
-    it with :func:`libera_utils.footprint_matching.footprint_match_algorithm.select_manifest_files_by_product_id`.
+    it by product with :func:`libera_utils.footprint_matching.footprint_match_algorithm.manifest_files_by_product_id`.
 
     The returned writer takes a keyword-only ``directory`` (defaults to the test's ``tmp_path``) and passes every
     other keyword argument to the ``cf_cam_camtime_dataset_factory`` builder; it returns the path of the written file.

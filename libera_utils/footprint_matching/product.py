@@ -1618,10 +1618,10 @@ class FmatchInputError(ValueError):
     """An FMATCH run's inputs cannot produce its product.
 
     Raised when the input manifest leaves out an input the run requires or lists one it cannot use, or when an input
-    lacks a variable FMATCH reads: a missing Libera input or CF-CAM product, an ``ancillary_inputs`` mapping that is
-    absent, malformed or incomplete, a ``LIBERA_`` file name that does not parse, an ancillary granule dated outside
-    its reader's window, or a CF-CAM or CF-CAM-CAMTIME input without a variable FMATCH reads from it. The message
-    names the input and what to change.
+    lacks a variable FMATCH reads: a missing Libera input or CF-CAM product, no granule of an active reader's product,
+    a file name that does not parse as a data product, an ancillary granule dated outside its reader's window, or a
+    CF-CAM or CF-CAM-CAMTIME input without a variable FMATCH reads from it. The message names the input and what to
+    change.
     """
 
 

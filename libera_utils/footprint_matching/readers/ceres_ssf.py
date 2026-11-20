@@ -68,6 +68,7 @@ from typing import NamedTuple
 import netCDF4
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
     decode_cf_times,
@@ -496,6 +497,7 @@ class CeresSsfReader(PassReader):
     """
 
     READER_KEY: str = "CERES_SSF"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_ceres_noaa20_ssf
     # The SSF product read here is the NOAA-20 stream (FM6, VIIRS imager).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
     # a second reader.

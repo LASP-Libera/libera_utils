@@ -17,6 +17,7 @@ import pytest
 
 import libera_utils
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers import (
     CeresSsfReader,
     CLDPIXReader,
@@ -248,6 +249,7 @@ def _stub_reader(key: str, modes: frozenset[OperationalMode]) -> type[StaticRead
 
     class _Stub(StaticReader):
         READER_KEY = key
+        PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
         INSTRUMENT = "FAKE"
         GRANULE_DATE_WINDOW = None
         RESOLUTION_KM = 1.0
@@ -495,6 +497,7 @@ class TestDuplicateKey:
 
         class _First(StaticReader):
             READER_KEY = "_registry_test_duplicate"
+            PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
             INSTRUMENT = "FAKE"
             GRANULE_DATE_WINDOW = None
             RESOLUTION_KM = 1.0
@@ -509,6 +512,7 @@ class TestDuplicateKey:
 
             class _Second(StaticReader):
                 READER_KEY = "_registry_test_duplicate"
+                PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
                 INSTRUMENT = "FAKE"
                 GRANULE_DATE_WINDOW = None
                 RESOLUTION_KM = 1.0
@@ -519,6 +523,32 @@ class TestDuplicateKey:
                     raise NotImplementedError
 
         assert ReaderRegistry.get("_registry_test_duplicate") is _First
+
+    @pytest.mark.parametrize(
+        "product_id", [None, "ERA5-SINGLE-LEVEL", DataProductIdentifier.l1b_rad], ids=["absent", "string", "not-anc"]
+    )
+    def test_product_id_must_be_an_ancillary_product(self, monkeypatch, product_id):
+        """The runner hands a reader the manifest's files of its PRODUCT_ID, so a reader without a DataLevel.ANC
+        product fails at definition, not when a run looks its granules up."""
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        attributes = {} if product_id is None else {"PRODUCT_ID": product_id}
+
+        with pytest.raises(TypeError, match="READER_KEY='_registry_test_product'.*must set PRODUCT_ID"):
+            type(
+                "_NoProduct",
+                (StaticReader,),
+                {
+                    "READER_KEY": "_registry_test_product",
+                    "INSTRUMENT": "FAKE",
+                    "GRANULE_DATE_WINDOW": None,
+                    "RESOLUTION_KM": 1.0,
+                    "TIME_MATCH": TimeMatch.DAILY,
+                    "VARIABLES": (_SPEC,),
+                    "_load_native": lambda self: None,
+                    **attributes,
+                },
+            )
+        assert "_registry_test_product" not in ReaderRegistry._registry
 
 
 # The shipped FMATCH product definition of each operational mode.

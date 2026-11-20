@@ -3,8 +3,8 @@
 One runner, :func:`run_algorithm`, writes all four FMATCH products (CAM, CAM-CAMTIME, IMAGER, IMAGER-CAMTIME) from an
 input manifest. The product is chosen by the manifest's ``configuration["processing_step_id"]``, or the
 ``--processing_step_id`` option of ``libera-utils fmatch``, which names one of the ``ProcessingStepIdentifier``
-members keyed in ``RUNNER_CONFIGS``. The ancillary granules come from the manifest's
-``configuration["ancillary_inputs"]``.
+members keyed in ``RUNNER_CONFIGS``. Every input, the ancillary granules included, is picked out of the manifest's
+``files`` by the product its filename parses to.
 
 See the FMATCH user guide (``doc/source/user-docs/fmatch.md``) for the manifest contract, the environment, ancillary
 staging and how to add a variant.
@@ -48,6 +48,8 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import (
     ANCILLARY_ARCHIVE_MEMBER_CLASSES,
+    AbstractDataProductFilename,
+    AbstractValidFilename,
     AncillaryVersionArchiveFilename,
     LiberaDataProductFilename,
 )
@@ -69,9 +71,6 @@ logger = logging.getLogger(__name__)
 
 # Input manifest configuration key naming the processing step, and so the FMATCH product, a run writes.
 PROCESSING_STEP_ID_CONFIGURATION_KEY: str = "processing_step_id"
-
-# Input manifest configuration key mapping each ancillary reader key to the granules listed in the manifest for it.
-ANCILLARY_INPUTS_CONFIGURATION_KEY: str = "ancillary_inputs"
 
 # Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
 # its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
@@ -451,7 +450,7 @@ def run_algorithm(
     Parameters
     ----------
     manifest_path : Path | S3Path
-        Path to the input manifest file listing the input file(s) and, optionally, the ancillary granules.
+        Path to the input manifest file listing the input file(s) and the ancillary granules.
     processing_step_id : str | ProcessingStepIdentifier, optional
         The FMATCH processing step to run, when the manifest's ``configuration["processing_step_id"]`` does not name
         it; see :func:`resolve_runner_config`.
@@ -466,11 +465,11 @@ def run_algorithm(
     ProcessingStepIdMismatchError
         If the manifest and ``processing_step_id`` name different processing steps.
     FmatchInputError
-        If the manifest lists no file of the runner's input product; if a FMATCH-CAM manifest lists no CF-CAM input;
-        if the manifest's ``configuration["ancillary_inputs"]`` is absent, malformed or incomplete for the mode; if a
-        ``LIBERA_`` file in the manifest has a name that does not parse; if a version archive is not its reader's only
-        granule or does not hold one release of its product's files; if an ancillary granule is dated outside its
-        reader's window; or if a CF-CAM or CF-CAM-CAMTIME input lacks a variable FMATCH reads from it.
+        If a file in the manifest has a name that does not parse as a data product filename; if the manifest lists
+        no file of the runner's input product; if a FMATCH-CAM manifest lists no CF-CAM input; if it lists no granule
+        of the product of a reader the mode uses; if a version archive is not its reader's only granule or does not
+        hold one release of its product's files; if an ancillary granule is dated outside its reader's window; or if a
+        CF-CAM or CF-CAM-CAMTIME input lacks a variable FMATCH reads from it.
     ValueError
         If no FMATCH processing step is named; if ``PROCESSING_PATH`` is not set; if an L1B input has no usable
         footprints; or if an ancillary granule's metadata does not give its time span.
@@ -493,9 +492,10 @@ def run_algorithm(
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
-    # Step 2: Locate the ancillary granules the manifest lists for this mode.
+    # Step 2: Sort the manifest's files by product, and locate the ancillary granules of this mode's readers.
     logger.info("Step 2: Locating ancillary inputs")
-    ancillary_inputs = ancillary_inputs_from_manifest(input_manifest, config.mode)
+    files_by_product = manifest_files_by_product_id(input_manifest)
+    ancillary_inputs = ancillary_inputs_by_reader(files_by_product, config.mode)
     logger.info(
         {
             "msg": "Ancillary inputs",
@@ -508,7 +508,7 @@ def run_algorithm(
     # Step 3: Collect the input file(s) from the manifest.
     input_label = config.input_product_id.value
     logger.info("Step 3: Collecting %s input files from the manifest", input_label)
-    input_file_paths = select_manifest_files_by_product_id(input_manifest, config.input_product_id)
+    input_file_paths = files_by_product.get(config.input_product_id, [])
     if not input_file_paths:
         raise FmatchInputError(
             f"The input manifest lists no {input_label} file, which {config.mode.value} reads its footprints from. "
@@ -518,9 +518,7 @@ def run_algorithm(
     # The CF-CAM inputs are read once here and matched to each L1B input below.
     cloud_fraction = None
     if config.cloud_fraction_product_id is not None:
-        cloud_fraction = load_cf_cam_cloud_fraction(
-            select_manifest_files_by_product_id(input_manifest, config.cloud_fraction_product_id)
-        )
+        cloud_fraction = load_cf_cam_cloud_fraction(files_by_product.get(config.cloud_fraction_product_id, []))
 
     # Step 4: Run footprint matching and write data products. S3 ancillary granules are copied to local disk once for
     # the whole run, because the readers (and the aggregation's worker processes) open real files.
@@ -624,71 +622,45 @@ def load_cf_cam_cloud_fraction(cf_cam_file_paths: list[str] | list[Path]) -> Rad
     )
 
 
-def ancillary_inputs_from_manifest(manifest: Manifest, mode: OperationalMode) -> dict[str, list[Path | S3Path]]:
-    """Map each reader active for ``mode`` to the ancillary granules the input manifest lists for it.
+def ancillary_inputs_by_reader(
+    files_by_product: dict[DataProductIdentifier, list[str]], mode: OperationalMode
+) -> dict[str, list[Path | S3Path]]:
+    """Map each reader active for ``mode`` to the manifest's granules of the product it reads.
 
-    The ancillary granules have third-party names, so the manifest says which reader each is for: its
-    ``configuration["ancillary_inputs"]`` maps a reader registry key to a list of granule paths, local or S3, each of
-    which is also listed in the manifest's ``files``::
-
-        {"ancillary_inputs": {"ERA5_Surface": ["s3://bucket/era5_single_levels_20260611.nc"], "IGBP": [...], ...}}
+    Each reader reads one ancillary product, its ``PRODUCT_ID``, and is given every granule of that product in the
+    manifest, in manifest order. Granules of products no active reader reads are not used.
 
     Parameters
     ----------
-    manifest : Manifest
-        The run's input manifest.
+    files_by_product : dict[DataProductIdentifier, list[str]]
+        The manifest's files by product, from :func:`manifest_files_by_product_id`.
     mode : OperationalMode
         The FMATCH operational mode being run, which sets the active readers.
 
     Returns
     -------
     dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        Reader key to its granules, in the order listed.
+        Reader key to its granules, local or S3, sorted by reader key.
 
     Raises
     ------
     FmatchInputError
-        If the manifest has no ``configuration["ancillary_inputs"]``, or it is not an object of reader key to a list of path strings, names a
-        reader that is not active for ``mode``, leaves out an active reader or gives it no granule, or lists a path
-        that is not in the manifest's ``files``.
+        If the manifest lists no granule of the product of one or more active readers.
     """
-    # TODO[LIBSDC-861]: an FMATCH manifest creator selects the ingested ancillary granules into the input manifest
-    #  once Data Ingester handles them.
-    key = f'configuration["{ANCILLARY_INPUTS_CONFIGURATION_KEY}"]'
-    mapping = manifest.configuration.get(ANCILLARY_INPUTS_CONFIGURATION_KEY)
-    if mapping is None:
-        raise FmatchInputError(
-            f"The input manifest has no {key}, which names the ancillary granules {mode.value} reads. Map each of "
-            f"{sorted(ReaderRegistry.get_readers_for_mode(mode))} to its granule paths there, and list every granule "
-            "in the manifest's files too."
-        )
-    if not isinstance(mapping, dict) or not all(
-        isinstance(paths, list) and all(isinstance(path, str) for path in paths) for paths in mapping.values()
-    ):
-        raise FmatchInputError(
-            f"The input manifest's {key} must map each reader key to a list of granule paths, got {mapping!r}."
-        )
-    active_readers = set(ReaderRegistry.get_readers_for_mode(mode))
-    inactive = sorted(set(mapping) - active_readers)
-    if inactive:
-        raise FmatchInputError(
-            f"The input manifest's {key} lists readers {inactive} that {mode.value} does not use. List only "
-            f"{sorted(active_readers)}."
-        )
-    missing = sorted(reader_key for reader_key in active_readers if not mapping.get(reader_key))
+    ancillary_inputs: dict[str, list[Path | S3Path]] = {}
+    missing: list[str] = []
+    for reader_key in sorted(ReaderRegistry.get_readers_for_mode(mode)):
+        product_id = ReaderRegistry.get(reader_key).PRODUCT_ID
+        granules = files_by_product.get(product_id, [])
+        if not granules:
+            missing.append(f"{product_id.value} (reader {reader_key})")
+        ancillary_inputs[reader_key] = [AnyPath(granule) for granule in granules]
     if missing:
         raise FmatchInputError(
-            f"The input manifest's {key} gives no granule for readers {missing}, which {mode.value} needs. Add at "
-            "least one granule for each."
+            f"The input manifest lists no granule of {', '.join(missing)}, which {mode.value} reads. Add the "
+            "granule(s) of each to the manifest's files."
         )
-    listed = set(manifest.files)
-    unlisted = sorted(path for paths in mapping.values() for path in paths if path not in listed)
-    if unlisted:
-        raise FmatchInputError(
-            f"The input manifest's {key} names granules that are not in its files: {unlisted}. List every ancillary "
-            "granule in the manifest's files too."
-        )
-    return {reader_key: [AnyPath(path) for path in mapping[reader_key]] for reader_key in sorted(active_readers)}
+    return ancillary_inputs
 
 
 def _materialize_ancillary_inputs(
@@ -705,7 +677,7 @@ def _materialize_ancillary_inputs(
     Parameters
     ----------
     ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        Reader key to its granules, from :func:`ancillary_inputs_from_manifest`.
+        Reader key to its granules, from :func:`ancillary_inputs_by_reader`.
     local_dir : pathlib.Path
         Directory the S3 granules are copied and the archives unpacked under. It must outlive every use of the
         returned paths.
@@ -914,7 +886,7 @@ def _ancillary_source_file_paths(
 ) -> dict[str, list[Path]]:
     """Reduce the ancillary inventory to the per-reader local granule lists assembly needs.
 
-    :func:`ancillary_inputs_from_manifest` gives a *list* of granules per reader, and each reader takes the
+    :func:`ancillary_inputs_by_reader` gives a *list* of granules per reader, and each reader takes the
     granule(s) of its source for the period (a reader that reads one granule per period raises when handed more).
     This keeps every granule as a local path.
 
@@ -935,15 +907,15 @@ def _ancillary_source_file_paths(
     """
     if not ancillary_inputs:
         raise ValueError(
-            "No ancillary inputs were given, so the external variables cannot be computed. List the granules in the "
-            f'input manifest\'s configuration["{ANCILLARY_INPUTS_CONFIGURATION_KEY}"].'
+            "No ancillary inputs were given, so the external variables cannot be computed. List the granules of "
+            "each active reader's product in the input manifest's files."
         )
     source_file_paths: dict[str, list[Path]] = {}
     for reader_key, files in ancillary_inputs.items():
         if not files:
             raise ValueError(
-                f"Ancillary source {reader_key!r} has no granule. List at least one for it in the input manifest's "
-                f'configuration["{ANCILLARY_INPUTS_CONFIGURATION_KEY}"].'
+                f"Ancillary source {reader_key!r} has no granule. List at least one granule of its product in the input "
+                "manifest's files."
             )
         remote = [f for f in files if is_s3(f)]
         if remote:
@@ -1016,9 +988,8 @@ def check_ancillary_granule_dates(source_file_paths: dict[str, list[Path]], foot
         raise FmatchInputError(
             f"{len(outside)} ancillary granule(s) are dated outside their reader's window around the Libera input's "
             f"footprint times, {_format_utc(t_min)} to {_format_utc(t_max)}, so their values would be applied to the "
-            f"wrong day:\n{listing}\nList in the input manifest's "
-            f'configuration["{ANCILLARY_INPUTS_CONFIGURATION_KEY}"] granules that overlap the range given for each '
-            "reader, from the input's own, previous or next day, instead of these."
+            f"wrong day:\n{listing}\nList in the input manifest's files granules that overlap the range given for "
+            "each reader, from the input's own, previous or next day, instead of these."
         )
 
 
@@ -1041,7 +1012,7 @@ def create_and_write_data_product(
     config : FmatchRunnerConfig
         Runner parameters supplying the mode and input products.
     ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
-        Reader key to its granules, from :func:`ancillary_inputs_from_manifest`: at least one local granule for
+        Reader key to its granules, from :func:`ancillary_inputs_by_reader`: at least one local granule for
         every reader active for the mode.
     cloud_fraction : RadiometerCloudFraction, optional
         The CF-CAM cloud fraction from :func:`load_cf_cam_cloud_fraction`. Required when
@@ -1123,65 +1094,48 @@ def create_and_write_data_product(
     return output_file_path
 
 
-def select_manifest_files_by_product_id(manifest: Manifest, product_id: DataProductIdentifier) -> list[str]:
-    """Select the files referenced by a manifest that belong to one Libera data product.
+def manifest_files_by_product_id(manifest: Manifest) -> dict[DataProductIdentifier, list[str]]:
+    """Group the files a manifest lists by the data product their names parse to.
 
-    A runner receives one manifest listing every file staged for the processing step, which in
-    general contains more than the runner consumes (an L1B input, a cloud-fraction product,
-    ancillary granules, sibling products). This helper keeps exactly the records whose parsed Libera
-    product id is ``product_id``, in manifest order.
-
-    Files whose names do not start with ``LIBERA_`` are skipped: the manifest also lists the third-party ancillary
-    granules, which :func:`ancillary_inputs_from_manifest` selects by reader key. A ``LIBERA_`` name that does not
-    parse as a :class:`~libera_utils.io.filenaming.LiberaDataProductFilename` raises, since skipping it would drop a
-    listed Libera input without a word.
+    A runner receives one manifest listing every file staged for the processing step: its Libera inputs and the
+    external ancillary granules, each named in a form
+    :meth:`~libera_utils.io.filenaming.AbstractValidFilename.from_file_path` parses. Each file is parsed once here,
+    and the runner looks its inputs up by product.
 
     Parameters
     ----------
     manifest : Manifest
         The manifest to inspect.
-    product_id : DataProductIdentifier
-        The Libera product id to keep.
 
     Returns
     -------
-    list[str]
-        The matching manifest filenames, in manifest order. Empty when the manifest references none of
-        the product's files.
+    dict[DataProductIdentifier, list[str]]
+        Each product listed to its files, in manifest order.
 
     Raises
     ------
     FmatchInputError
-        If a file whose name starts with ``LIBERA_`` does not parse as a Libera product filename.
+        If a file's name does not parse as a data product filename, Libera or ancillary, such as a loose MCD12Q1
+        tile rather than its version archive.
     """
-    # TODO[LIBSDC-779]: select inputs through the manifest API once it carries each file's product id (and the
-    #  ancillary_inputs reader keys).
-    selected: list[str] = []
+    files_by_product: dict[DataProductIdentifier, list[str]] = {}
     for filename in manifest.files:
+        name = AnyPath(filename).name
         try:
-            libera_filename = LiberaDataProductFilename.from_file_path(filename)
+            parsed = AbstractValidFilename.from_file_path(filename)
         except ValueError as error:
-            name = AnyPath(filename).name
-            if name.startswith("LIBERA_"):
-                raise FmatchInputError(
-                    f"The input manifest lists {name}, which is named like a Libera product but does not parse as a "
-                    f"Libera product filename ({error}). Rename it to a valid Libera product filename, or remove it "
-                    "from the manifest's files."
-                ) from error
-            # Not a Libera product name, so it cannot be the requested product.
-            logger.info("Skipping non-Libera-product file (not a %s input): %s", product_id.value, filename)
-            continue
-        if libera_filename.data_product_id == product_id:
-            logger.info("Recording %s input file: %s", product_id.value, filename)
-            selected.append(filename)
-        else:
-            logger.info(
-                "Skipping Libera product '%s' (not %s): %s",
-                libera_filename.data_product_id.value,
-                product_id.value,
-                filename,
+            raise FmatchInputError(
+                f"The input manifest lists {name}, whose name does not parse as a Libera or ancillary data product "
+                f"filename: {error} Rename the file to its product's form, or remove it from the manifest's files."
+            ) from error
+        if not isinstance(parsed, AbstractDataProductFilename):
+            raise FmatchInputError(
+                f"The input manifest lists {name}, a {type(parsed).__name__}, which is not a data product FMATCH "
+                "reads. Remove it from the manifest's files."
             )
-    return selected
+        logger.info("Recording %s file: %s", parsed.data_product_id.value, filename)
+        files_by_product.setdefault(parsed.data_product_id, []).append(filename)
+    return files_by_product
 
 
 def load_l1b_radiometer_inputs(l1b_file: str | Path | S3Path) -> dict[str, np.ndarray]:

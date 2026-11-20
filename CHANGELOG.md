@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AncillaryReader.PRODUCT_ID`, the `DataLevel.ANC` product a reader reads. A reader without one raises `TypeError` when defined. (#92)
+
+### Changed
+
+- **BREAKING:** The FMATCH runner picks its ancillary granules out of the input manifest's `files` by the product each name parses to, as it picks its Libera inputs, and gives each reader the granules of its `PRODUCT_ID`. The manifest no longer carries `configuration["ancillary_inputs"]`, and its granules must be named in their product's ingested form, so IGBP is listed as its version archive. Every file in `files` must parse as a Libera or ancillary data product name, or the run raises `FmatchInputError`. (#92)
+
+### Removed
+
+- **BREAKING:** `footprint_match_algorithm.ancillary_inputs_from_manifest`, `select_manifest_files_by_product_id` and `ANCILLARY_INPUTS_CONFIGURATION_KEY`, replaced by `manifest_files_by_product_id` and `ancillary_inputs_by_reader`. (#92)
+
 ## [6.1.0] - 2026-11-19
 
 ### Added

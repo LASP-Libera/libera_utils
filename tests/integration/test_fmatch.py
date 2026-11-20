@@ -3,12 +3,14 @@
 Each test gives the run only what a processing step gives the container: the ``PROCESSING_PATH`` environment variable
 and an input manifest, passed to the ``libera-utils fmatch <manifest>`` entrypoint. The manifest names the processing
 step in its configuration and lists the input products and the shortened real ancillary granules from
-``tests/test_data/footprint_matching``, mapped to their readers, so every reader opens a file in its distributed format.
-Nothing in the runner is patched. The manifest, every input and the dropbox are on local disk or in mocked S3; the
-runner copies S3 ancillary granules to local disk for the readers.
+``tests/test_data/footprint_matching``, each under a name in its product's ingested form, which the runner selects it
+by, so every reader opens a file in its distributed format. The manifest, every input and the dropbox are on local disk
+or in mocked S3; the runner copies S3 ancillary granules to local disk for the readers.
 
-The shortened granules come from different days and regions, so most of a product's external columns are fill. These
-tests check that a run gets from manifest to product, not the aggregated values, which the product tests check.
+The shortened granules come from different days and regions, so most of a product's external columns are fill. No one
+input lies within a day of them all, so each reader's ``GRANULE_DATE_WINDOW`` is widened to let the run reach the
+product; nothing else in the runner is patched. ``TestCheckAncillaryGranuleDates`` tests the window on these granules.
+These tests check that a run gets from manifest to product, not the aggregated values, which the product tests check.
 """
 
 from pathlib import Path
@@ -19,6 +21,7 @@ import xarray as xr
 from cloudpathlib import S3Path
 
 from libera_utils import cli
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     L1B_TIME_VARIABLE,
     RUNNER_CONFIGS,
@@ -29,6 +32,7 @@ from libera_utils.io.filenaming import MANIFEST_FILE_REGEX, LiberaDataProductFil
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.version import version
+from tests.plugins.manifest_fixtures import FMATCH_STAGED_GRANULE_NAMES, FMATCH_STAGED_IGBP_TILE_NAME
 
 pytestmark = pytest.mark.integration
 
@@ -37,6 +41,10 @@ CAMERA_TIMESCALE_STEPS = [step for step, config in RUNNER_CONFIGS.items() if con
 
 # Leading L1B samples written as NaN, as the real files mark samples whose boresight misses the Earth.
 N_OFF_EARTH = 2
+
+# A granule date window wide enough to accept every shortened granule, whose dates run from 2020 to 2026, for an input
+# dated 2026-06-11.
+WIDE_GRANULE_DATE_WINDOW = np.timedelta64(10 * 366, "D")
 
 
 @pytest.fixture(params=["local", "s3"])
@@ -56,9 +64,14 @@ def fmatch_environment(monkeypatch, processing_area, fmatch_input_manifest):
     """Set up a processing step's environment, returning a function that writes a step's input manifest.
 
     The returned function sets ``PROCESSING_PATH`` and writes the input manifest for the step, ancillary granules
-    included, with ``fmatch_input_manifest``.
+    included, with ``fmatch_input_manifest``. Every reader with a granule date window has it widened to
+    ``WIDE_GRANULE_DATE_WINDOW``.
     """
     input_dir, dropbox = processing_area
+    for reader_key in ReaderRegistry.list_readers():
+        reader = ReaderRegistry.get(reader_key)
+        if reader.GRANULE_DATE_WINDOW is not None:
+            monkeypatch.setattr(reader, "GRANULE_DATE_WINDOW", WIDE_GRANULE_DATE_WINDOW)
 
     def _stage(processing_step_id, *input_products: Path) -> Path | S3Path:
         monkeypatch.setenv("PROCESSING_PATH", str(dropbox))
@@ -73,7 +86,6 @@ def test_radiometer_timescale_run_writes_product_and_output_manifest(
     tmp_path,
     processing_area,
     fmatch_environment,
-    fmatch_real_ancillary_granules,
     l1b_radiometer_file_factory,
     cf_cam_file_factory,
 ):
@@ -113,8 +125,13 @@ def test_radiometer_timescale_run_writes_product_and_output_manifest(
         input_granules = product.attrs["InputGranules"].split(",")
         assert input_granules[: len(input_files)] == [path.name for path in input_files]
         assert sorted(input_granules[len(input_files) :]) == sorted(
-            fmatch_real_ancillary_granules[reader_key].name
-            for reader_key in ReaderRegistry.get_readers_for_mode(config.mode)
+            FMATCH_STAGED_IGBP_TILE_NAME
+            if product_id is DataProductIdentifier.anc_modis_igbp
+            else FMATCH_STAGED_GRANULE_NAMES[product_id]
+            for product_id in (
+                ReaderRegistry.get(reader_key).PRODUCT_ID
+                for reader_key in ReaderRegistry.get_readers_for_mode(config.mode)
+            )
         )
         assert product.attrs["algorithm_version"] == version()
 

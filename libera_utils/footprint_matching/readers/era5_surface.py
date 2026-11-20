@@ -38,6 +38,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
@@ -244,6 +245,7 @@ class ERA5SurfaceReader(ERA5ReaderBase):
     """
 
     READER_KEY: str = "ERA5_Surface"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_era5_single_level
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
     # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"

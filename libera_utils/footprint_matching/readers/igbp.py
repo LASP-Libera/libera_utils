@@ -24,6 +24,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._hdf4_io import _SinusoidalGeometry, read_modis_sinusoidal_hdf4
 from libera_utils.footprint_matching.readers.base import StaticReader, in_box
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch, VariableSpec
@@ -93,6 +94,7 @@ class IGBPReader(StaticReader):
     """
 
     READER_KEY: str = "IGBP"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_modis_igbp
     # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
     # TODO[LIBSDC-899]: decide the land-cover source once Terra and Aqua MODIS end: a successor product on this
     # sinusoidal grid (this reader, a new INSTRUMENT) or a new reader.

@@ -71,6 +71,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
+from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.types import (
     STANDARD_DEVIATION_SUFFIX,
     BoundingBox,
@@ -278,6 +279,9 @@ class AncillaryReader(abc.ABC):
         prefix of its product variable names, spelled as in the product (Camel_Case,
         acronyms in capitals). Examples: ``"IGBP"``, ``"NISE"``, ``"ERA5_Surface"``,
         ``"VIIRS_AOD"``.
+    PRODUCT_ID : DataProductIdentifier
+        The ``DataLevel.ANC`` product whose granules the reader reads. The FMATCH runner hands the reader every
+        granule of this product listed in the input manifest's ``files``, picked by the granule's parsed filename.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
         for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
@@ -339,6 +343,7 @@ class AncillaryReader(abc.ABC):
     """
 
     READER_KEY: str
+    PRODUCT_ID: DataProductIdentifier
     INSTRUMENT: str
     RESOLUTION_KM: float
     VARIABLES: tuple[VariableSpec, ...]
@@ -354,7 +359,7 @@ class AncillaryReader(abc.ABC):
         """Validate and register every concrete subclass in ReaderRegistry.
 
         Abstract intermediates (classes that still have ``abc.abstractmethod`` members)
-        are skipped. A concrete reader missing ``INSTRUMENT``, ``TIME_MATCH``, or the
+        are skipped. A concrete reader missing ``PRODUCT_ID``, ``INSTRUMENT``, ``TIME_MATCH``, or the
         time-window attributes its policy needs fails here, at import, rather than on
         the first footprint. So does a second class registering a ``READER_KEY`` that
         another class already holds; re-executing a reader module (``importlib.reload``,
@@ -363,7 +368,8 @@ class AncillaryReader(abc.ABC):
         Raises
         ------
         TypeError
-            If a concrete subclass lacks a required class attribute, declares a window
+            If a concrete subclass lacks a required class attribute, sets ``PRODUCT_ID`` to anything but a
+            ``DataLevel.ANC`` product, declares a window
             attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
             registered to a different class, sets ``GRANULE_DATE_WINDOW`` without implementing
             :meth:`granule_span`, or declares a ``PRODUCT_STACKS`` entry that names
@@ -380,6 +386,13 @@ class AncillaryReader(abc.ABC):
             return
 
         key = cls.READER_KEY
+        product_id = getattr(cls, "PRODUCT_ID", None)
+        if not isinstance(product_id, DataProductIdentifier) or product_id.data_level is not DataLevel.ANC:
+            raise TypeError(
+                f"Reader {cls.__name__!r} (READER_KEY={key!r}) must set PRODUCT_ID to the DataLevel.ANC "
+                f"DataProductIdentifier whose granules it reads; got {product_id!r}. The runner hands the reader the "
+                "manifest's files of that product."
+            )
         if getattr(cls, "INSTRUMENT", None) is None:
             raise TypeError(
                 f"Reader {cls.__name__!r} (READER_KEY={key!r}) must define an INSTRUMENT class attribute; "

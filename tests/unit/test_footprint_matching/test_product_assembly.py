@@ -494,6 +494,8 @@ class _WestHalfReader(StaticReader):
     """Serves the fake grid's western columns only, so it covers well under 75% of a footprint box."""
 
     READER_KEY = "_fake_west_half"
+
+    PRODUCT_ID = DataProductIdentifier.anc_era5_single_level
     INSTRUMENT = "TEST"
     GRANULE_DATE_WINDOW = None
     RESOLUTION_KM = 25.0

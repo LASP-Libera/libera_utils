@@ -54,6 +54,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.era5_surface import ERA5ReaderBase
 from libera_utils.footprint_matching.types import OperationalMode, ProductStack, VariableSpec
 
@@ -196,6 +197,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     """
 
     READER_KEY: str = "ERA5_Pressure"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_era5_pressure_level
     # Same producing-center token as the single-level reader so the long_name
     # provenance tag stays uniform: "Air temperature on ERA5 pressure levels (ECMWF)" etc.
     # Product variable names are ERA5_Pressure_Temperature etc. (no instrument token).

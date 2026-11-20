@@ -62,6 +62,7 @@ from typing import NamedTuple
 import netCDF4
 import numpy as np
 
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
     decode_hours_of_day,
@@ -247,6 +248,7 @@ class CLDPIXReader(PassReader):
     """
 
     READER_KEY: str = "CLDPIX"
+    PRODUCT_ID: DataProductIdentifier = DataProductIdentifier.anc_ceres_noaa20_cldpix
     # CLDPIX imager-pixel cloud retrievals read here are the NOAA-20 stream
     # (CER_CLDPIX_NOAA20-VIIRS).
     # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets

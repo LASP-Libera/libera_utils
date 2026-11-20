@@ -1,9 +1,10 @@
-"""Unit tests for ``footprint_match_algorithm``: the processing step dispatch, the ancillary inputs, the
+"""Unit tests for ``footprint_match_algorithm``: the processing step dispatch, the input selection, the
 camera-timescale inputs and the manifest-driven runner."""
 
 import dataclasses
 import functools
 import logging
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -17,7 +18,6 @@ from cloudpathlib import S3Path
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.footprint_matching import footprint_match_algorithm, product
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    ANCILLARY_INPUTS_CONFIGURATION_KEY,
     CAM_CAMTIME_CONFIG,
     PROCESSING_STEP_ID_CONFIGURATION_KEY,
     RUNNER_CONFIGS,
@@ -28,21 +28,22 @@ from libera_utils.footprint_matching.footprint_match_algorithm import (
     _load_cam_camtime_footprints,
     _load_imager_camtime_footprints,
     _materialize_ancillary_inputs,
-    ancillary_inputs_from_manifest,
+    ancillary_inputs_by_reader,
     check_ancillary_granule_dates,
     create_and_write_data_product,
     load_cf_cam_cloud_fraction,
     load_l1b_radiometer_inputs,
+    manifest_files_by_product_id,
     resolve_runner_config,
     run_algorithm,
     run_footprint_matching,
-    select_manifest_files_by_product_id,
 )
 from libera_utils.footprint_matching.product import FmatchInputError
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
+from tests.plugins.manifest_fixtures import FMATCH_STAGED_GRANULE_NAMES, FMATCH_STAGED_IGBP_TILE_NAME
 
 # The shortened real CF-CAM granule under tests/test_data/footprint_matching; its README says what was kept.
 REAL_CF_CAM_FILE = "LIBERA_L2_CF-CAM_V0-1-0_20260712T032817_20260712T032827_R26294210139_subset.nc"
@@ -53,25 +54,15 @@ IMAGER = ProcessingStepIdentifier.aux_fmatch_imager
 IMAGER_CAMTIME = ProcessingStepIdentifier.aux_fmatch_imager_camtime
 
 
-def _empty_granules(root: Path, mode: OperationalMode) -> dict[str, list[str]]:
-    """Write one empty granule per reader active for ``mode``, and return the ``ancillary_inputs`` mapping to them."""
-    root.mkdir(parents=True, exist_ok=True)
-    mapping = {}
-    for reader_key in ReaderRegistry.get_readers_for_mode(mode):
-        granule = root / f"{reader_key}.nc"
-        granule.touch()
-        mapping[reader_key] = [str(granule)]
-    return mapping
+@pytest.fixture
+def ancillary_manifest(tmp_path, generate_input_manifest_local, stage_fmatch_ancillary_granules):
+    """Factory writing an input manifest for a step, listing the given inputs and an empty granule per active reader."""
 
+    def _write(step: ProcessingStepIdentifier, *input_files):
+        granules = stage_fmatch_ancillary_granules(tmp_path / "ancillary", RUNNER_CONFIGS[step].mode, empty=True)
+        return generate_input_manifest_local(*input_files, *granules.values(), configuration=_step_configuration(step))
 
-def _ancillary_manifest(generate_input_manifest_local, root: Path, step: ProcessingStepIdentifier, *input_files):
-    """Write an input manifest for ``step`` listing ``input_files`` and one empty granule per active reader."""
-    ancillary = _empty_granules(root, RUNNER_CONFIGS[step].mode)
-    return generate_input_manifest_local(
-        *input_files,
-        *(path for paths in ancillary.values() for path in paths),
-        configuration={**_step_configuration(step), ANCILLARY_INPUTS_CONFIGURATION_KEY: ancillary},
-    )
+    return _write
 
 
 @pytest.fixture
@@ -173,15 +164,15 @@ class TestCameraTimescaleInputs:
     @pytest.mark.usefixtures("fake_aggregation")
     @pytest.mark.parametrize("step", [CAM_CAMTIME, IMAGER_CAMTIME])
     def test_camtime_product_raises_until_pseudofootprints_carry_ephemeris(
-        self, tmp_path, step, cf_cam_camtime_file_factory
+        self, tmp_path, step, cf_cam_camtime_file_factory, stage_fmatch_ancillary_granules
     ):
         # TODO[LIBSDC-943]: write the product once CF-CAM-CAMTIME carries the camera ephemeris.
         cf_file = cf_cam_camtime_file_factory(n_images=2)
         config = RUNNER_CONFIGS[step]
-        ancillary_inputs = {
-            key: [Path(path) for path in paths]
-            for key, paths in _empty_granules(tmp_path / "ancillary", config.mode).items()
-        }
+        staged = stage_fmatch_ancillary_granules(tmp_path / "ancillary", config.mode, empty=True)
+        ancillary_inputs = ancillary_inputs_by_reader(
+            {product_id: [str(path)] for product_id, path in staged.items()}, config.mode
+        )
 
         with pytest.raises(ValueError, match="Camera pseudo-footprints carry no L1B ephemeris"):
             create_and_write_data_product(cf_file, tmp_path, config, ancillary_inputs)
@@ -216,77 +207,53 @@ class TestAncillarySourceFilePaths:
         assert _ancillary_source_file_paths({"ERA5_Surface": granules}) == {"ERA5_Surface": granules}
 
 
-class TestAncillaryInputsFromManifest:
-    """The input manifest can list the ancillary granules, mapped to their readers."""
+class TestAncillaryInputsByReader:
+    """Each active reader is given the manifest's granules of the product it reads."""
 
     MODE = OperationalMode.CAM
 
     @pytest.fixture
-    def granules(self, tmp_path) -> dict[str, list[str]]:
-        """One empty local granule per reader active for ``MODE``."""
-        mapping = {}
-        for reader_key in ReaderRegistry.get_readers_for_mode(self.MODE):
-            granule = tmp_path / f"{reader_key}.nc"
-            granule.touch()
-            mapping[reader_key] = [str(granule)]
-        return mapping
+    def files_by_product(self) -> dict[DataProductIdentifier, list[str]]:
+        """One S3 granule of the product of each reader active for ``MODE``, named in the product's form."""
+        return {
+            product_id: [f"s3://bucket/{FMATCH_STAGED_GRANULE_NAMES[product_id]}"]
+            for product_id in (
+                ReaderRegistry.get(reader_key).PRODUCT_ID
+                for reader_key in ReaderRegistry.get_readers_for_mode(self.MODE)
+            )
+        }
 
-    @staticmethod
-    def _manifest(mapping, files) -> Manifest:
-        return Manifest(
-            manifest_type=ManifestType.INPUT,
-            files=files,
-            configuration={ANCILLARY_INPUTS_CONFIGURATION_KEY: mapping},
-        )
+    def test_every_active_reader_gets_its_products_granules(self, files_by_product):
+        resolved = ancillary_inputs_by_reader(files_by_product, self.MODE)
 
-    def test_absent_key_raises(self):
-        with pytest.raises(FmatchInputError, match='has no configuration\\["ancillary_inputs"\\]'):
-            ancillary_inputs_from_manifest(Manifest(manifest_type=ManifestType.INPUT), self.MODE)
+        assert list(resolved) == sorted(ReaderRegistry.get_readers_for_mode(self.MODE))
+        for reader_key, granules in resolved.items():
+            assert granules == [S3Path(path) for path in files_by_product[ReaderRegistry.get(reader_key).PRODUCT_ID]]
 
-    def test_mapping_lists_every_active_reader(self, granules):
-        manifest = self._manifest(granules, [path for paths in granules.values() for path in paths])
+    def test_every_granule_of_the_product_is_kept_in_order(self, files_by_product, tmp_path):
+        local = tmp_path / "NISE_AMSR2_20260611.HDFEOS"
+        files_by_product[DataProductIdentifier.anc_nsidc_ice_snow].append(str(local))
 
-        resolved = ancillary_inputs_from_manifest(manifest, self.MODE)
+        resolved = ancillary_inputs_by_reader(files_by_product, self.MODE)
 
-        assert resolved == {key: [Path(paths[0])] for key, paths in sorted(granules.items())}
+        assert resolved["NISE"] == [
+            S3Path(f"s3://bucket/{FMATCH_STAGED_GRANULE_NAMES[DataProductIdentifier.anc_nsidc_ice_snow]}"),
+            local,
+        ]
 
-    def test_s3_granule_is_kept_as_an_s3_path(self, granules):
-        granules["IGBP"] = ["s3://bucket/igbp/tile.hdf"]
-        manifest = self._manifest(granules, [path for paths in granules.values() for path in paths])
+    def test_product_no_active_reader_reads_is_not_used(self, files_by_product):
+        files_by_product[DataProductIdentifier.anc_ceres_noaa20_cldpix] = ["s3://bucket/cldpix.nc"]
 
-        assert ancillary_inputs_from_manifest(manifest, self.MODE)["IGBP"] == [S3Path("s3://bucket/igbp/tile.hdf")]
+        assert "CLDPIX" not in ancillary_inputs_by_reader(files_by_product, self.MODE)
 
-    @pytest.mark.parametrize("mapping", [["ERA5_Surface"], {"ERA5_Surface": "granule.nc"}, {"ERA5_Surface": [1]}])
-    def test_malformed_mapping_raises(self, mapping):
-        with pytest.raises(FmatchInputError, match="must map each reader key"):
-            ancillary_inputs_from_manifest(self._manifest(mapping, []), self.MODE)
+    def test_active_readers_without_granules_raise_naming_each_product(self, files_by_product):
+        del files_by_product[DataProductIdentifier.anc_nsidc_ice_snow]
+        del files_by_product[DataProductIdentifier.anc_modis_igbp]
 
-    def test_reader_not_active_for_the_mode_raises(self, granules, tmp_path):
-        (tmp_path / "CLDPIX.nc").touch()
-        granules["CLDPIX"] = [str(tmp_path / "CLDPIX.nc")]
-        manifest = self._manifest(granules, [path for paths in granules.values() for path in paths])
-
-        with pytest.raises(FmatchInputError, match="CLDPIX"):
-            ancillary_inputs_from_manifest(manifest, self.MODE)
-
-    @pytest.mark.parametrize("problem", ["missing", "empty"])
-    def test_active_reader_without_granule_raises(self, granules, problem):
-        if problem == "missing":
-            del granules["NISE"]
-        else:
-            granules["NISE"] = []
-        manifest = self._manifest(granules, [path for paths in granules.values() for path in paths])
-
-        with pytest.raises(FmatchInputError, match="no granule for readers \\['NISE'\\]"):
-            ancillary_inputs_from_manifest(manifest, self.MODE)
-
-    def test_granule_not_in_files_raises(self, granules):
-        manifest = self._manifest(
-            granules, [path for key, paths in granules.items() if key != "IGBP" for path in paths]
-        )
-
-        with pytest.raises(FmatchInputError, match="not in its files"):
-            ancillary_inputs_from_manifest(manifest, self.MODE)
+        with pytest.raises(
+            FmatchInputError, match=r"no granule of MODIS-IGBP \(reader IGBP\), NSIDC-ICE-SNOW \(reader NISE\)"
+        ):
+            ancillary_inputs_by_reader(files_by_product, self.MODE)
 
 
 class TestMaterializeAncillaryInputs:
@@ -453,32 +420,40 @@ class TestUnpackVersionArchives:
         assert not (tmp_path / tile_name).exists()
 
 
-class TestSelectManifestFilesByProductId:
-    """Libera inputs are selected by product id; a misnamed Libera file stops the run rather than vanishing."""
+class TestManifestFilesByProductId:
+    """Every file in the manifest is sorted by the product its name parses to; a name that does not parse stops the
+    run rather than vanishing."""
 
     @staticmethod
-    def _manifest(tmp_path, *names) -> Manifest:
-        files = []
-        for name in names:
-            path = tmp_path / name
-            path.touch()
-            files.append(str(path))
-        return Manifest(manifest_type=ManifestType.INPUT, files=files)
+    def _manifest(*files) -> Manifest:
+        return Manifest(manifest_type=ManifestType.INPUT, files=[str(path) for path in files])
 
-    def test_selects_the_product_and_skips_third_party_names(self, tmp_path, l1b_radiometer_file_factory):
+    def test_groups_libera_and_ancillary_files_by_product(self, l1b_radiometer_file_factory):
         l1b_file = l1b_radiometer_file_factory()
-        manifest = self._manifest(tmp_path, "NISE_AMSR2_20260610_subset.HDFEOS")
-        manifest.add_files(str(l1b_file))
+        nise = [f"s3://bucket/NISE_AMSR2_2026061{day}.HDFEOS" for day in (1, 0)]
+        igbp = f"s3://bucket/{FMATCH_STAGED_GRANULE_NAMES[DataProductIdentifier.anc_modis_igbp]}"
 
-        selected = select_manifest_files_by_product_id(manifest, DataProductIdentifier.l1b_rad)
+        grouped = manifest_files_by_product_id(self._manifest(nise[0], l1b_file, igbp, nise[1]))
 
-        assert selected == [str(l1b_file)]
+        assert grouped == {
+            DataProductIdentifier.anc_nsidc_ice_snow: nise,
+            DataProductIdentifier.l1b_rad: [str(l1b_file)],
+            DataProductIdentifier.anc_modis_igbp: [igbp],
+        }
 
-    def test_libera_name_that_does_not_parse_raises(self, tmp_path):
-        manifest = self._manifest(tmp_path, REAL_CF_CAM_FILE)
+    @pytest.mark.parametrize("name", [REAL_CF_CAM_FILE, "era5_single_levels_20250101T00.nc", "notes.txt"])
+    def test_name_that_does_not_parse_raises(self, name):
+        with pytest.raises(FmatchInputError, match=f"lists {re.escape(name)}, whose name does not parse"):
+            manifest_files_by_product_id(self._manifest(f"s3://bucket/{name}"))
 
-        with pytest.raises(FmatchInputError, match=REAL_CF_CAM_FILE):
-            select_manifest_files_by_product_id(manifest, DataProductIdentifier.l2_cf_cam)
+    def test_loose_igbp_tile_raises_naming_its_archive(self):
+        with pytest.raises(FmatchInputError, match="ingested only inside its version archive"):
+            manifest_files_by_product_id(self._manifest(f"s3://bucket/{FMATCH_STAGED_IGBP_TILE_NAME}"))
+
+    def test_file_that_is_not_a_data_product_raises(self):
+        name = "LIBERA_INPUT_MANIFEST_01J0000000000000000000000A.json"
+        with pytest.raises(FmatchInputError, match="a ManifestFilename, which is not a data product"):
+            manifest_files_by_product_id(self._manifest(f"s3://bucket/{name}"))
 
 
 class TestRunAlgorithm:
@@ -515,27 +490,19 @@ class TestRunAlgorithm:
             l1b_radiometer_file_factory(), configuration=_step_configuration(CAM)
         )
 
-        with pytest.raises(FmatchInputError, match=ANCILLARY_INPUTS_CONFIGURATION_KEY):
+        with pytest.raises(FmatchInputError, match="lists no granule of"):
             run_algorithm(manifest_path)
 
     @pytest.mark.usefixtures("dropbox")
-    def test_raises_when_manifest_has_no_input(
-        self, tmp_path, generate_input_manifest_local, cf_cam_camtime_file_factory
-    ):
-        manifest_path = _ancillary_manifest(
-            generate_input_manifest_local, tmp_path / "ancillary", IMAGER, cf_cam_camtime_file_factory()
-        )
+    def test_raises_when_manifest_has_no_input(self, ancillary_manifest, cf_cam_camtime_file_factory):
+        manifest_path = ancillary_manifest(IMAGER, cf_cam_camtime_file_factory())
 
         with pytest.raises(FmatchInputError, match="lists no RAD-4CH file"):
             run_algorithm(manifest_path)
 
     @pytest.mark.usefixtures("dropbox")
-    def test_cam_raises_when_manifest_has_no_cf_cam(
-        self, tmp_path, generate_input_manifest_local, l1b_radiometer_file_factory
-    ):
-        manifest_path = _ancillary_manifest(
-            generate_input_manifest_local, tmp_path / "ancillary", CAM, l1b_radiometer_file_factory()
-        )
+    def test_cam_raises_when_manifest_has_no_cf_cam(self, ancillary_manifest, l1b_radiometer_file_factory):
+        manifest_path = ancillary_manifest(CAM, l1b_radiometer_file_factory())
 
         with pytest.raises(FmatchInputError, match="lists no CF-CAM product"):
             run_algorithm(manifest_path)
@@ -543,13 +510,7 @@ class TestRunAlgorithm:
     @pytest.mark.usefixtures("fake_aggregation")
     @pytest.mark.parametrize("step", [CAM, IMAGER])
     def test_writes_one_product_per_input(
-        self,
-        tmp_path,
-        dropbox,
-        step,
-        generate_input_manifest_local,
-        l1b_radiometer_file_factory,
-        cf_cam_file_factory,
+        self, dropbox, step, ancillary_manifest, l1b_radiometer_file_factory, cf_cam_file_factory
     ):
         config = RUNNER_CONFIGS[step]
         input_file = l1b_radiometer_file_factory()
@@ -557,9 +518,7 @@ class TestRunAlgorithm:
         if config.cloud_fraction_product_id is not None:
             with xr.open_dataset(input_file) as l1b:
                 manifest_files.append(cf_cam_file_factory(l1b["radiometer_time"].values))
-        manifest_path = _ancillary_manifest(
-            generate_input_manifest_local, tmp_path / "ancillary", step, *manifest_files
-        )
+        manifest_path = ancillary_manifest(step, *manifest_files)
 
         output_manifest = Manifest.from_file(run_algorithm(manifest_path))
 
@@ -575,16 +534,14 @@ class TestRunAlgorithm:
 
     @pytest.mark.usefixtures("fake_aggregation", "dropbox")
     def test_cam_writes_cf_cam_cloud_fraction_matched_by_time(
-        self, tmp_path, generate_input_manifest_local, l1b_radiometer_file_factory, cf_cam_file_factory
+        self, ancillary_manifest, l1b_radiometer_file_factory, cf_cam_file_factory
     ):
         input_file = l1b_radiometer_file_factory(n_footprints=8)
         with xr.open_dataset(input_file) as l1b:
             times = l1b["radiometer_time"].values
         # CF-CAM covers only some footprints, listed out of time order, and writes one as fill.
         cf_cam_file = cf_cam_file_factory(times[[5, 1, 2]], np.array([50.0, 10.0, np.nan]))
-        manifest_path = _ancillary_manifest(
-            generate_input_manifest_local, tmp_path / "ancillary", CAM, input_file, cf_cam_file
-        )
+        manifest_path = ancillary_manifest(CAM, input_file, cf_cam_file)
 
         output_manifest = Manifest.from_file(run_algorithm(manifest_path))
 
@@ -596,16 +553,14 @@ class TestRunAlgorithm:
 
     @pytest.mark.usefixtures("fake_aggregation", "dropbox")
     def test_cam_ignores_a_cf_cam_row_at_a_dropped_footprint(
-        self, tmp_path, generate_input_manifest_local, l1b_radiometer_file_factory, cf_cam_file_factory
+        self, ancillary_manifest, l1b_radiometer_file_factory, cf_cam_file_factory
     ):
         input_file = l1b_radiometer_file_factory(n_footprints=8, n_invalid=2)
         with xr.open_dataset(input_file) as l1b:
             times = l1b["radiometer_time"].values
         # CF-CAM has a value at the first footprint, which the L1B read drops for its non-finite geolocation.
         cf_cam_file = cf_cam_file_factory(times[[0, 3]], np.array([70.0, 30.0]))
-        manifest_path = _ancillary_manifest(
-            generate_input_manifest_local, tmp_path / "ancillary", CAM, input_file, cf_cam_file
-        )
+        manifest_path = ancillary_manifest(CAM, input_file, cf_cam_file)
 
         output_manifest = Manifest.from_file(run_algorithm(manifest_path))
 
@@ -617,10 +572,10 @@ class TestRunAlgorithm:
 
     @pytest.mark.usefixtures("fake_aggregation", "dropbox")
     def test_input_manifest_is_logged_as_structured_data(
-        self, tmp_path, monkeypatch, caplog, generate_input_manifest_local, l1b_radiometer_file_factory
+        self, monkeypatch, caplog, ancillary_manifest, l1b_radiometer_file_factory
     ):
         input_file = l1b_radiometer_file_factory()
-        manifest_path = _ancillary_manifest(generate_input_manifest_local, tmp_path / "ancillary", IMAGER, input_file)
+        manifest_path = ancillary_manifest(IMAGER, input_file)
 
         # Task logging replaces the root handlers, which would drop caplog's.
         monkeypatch.setattr(footprint_match_algorithm, "configure_task_logging", lambda task_id: None)
@@ -725,7 +680,7 @@ class TestCheckAncillaryGranuleDates:
         assert f"VIIRS_BRDF: {fmatch_real_ancillary_granules['VIIRS_BRDF'].name}" in message
         assert f"VIIRS_AOD: {fmatch_real_ancillary_granules['VIIRS_AOD'].name}" in message
         assert "NISE:" not in message
-        assert 'configuration["ancillary_inputs"]' in message
+        assert "List in the input manifest's files granules" in message
 
     @pytest.mark.parametrize("date", ["2010-01-01", "2026-06-11", "2040-12-31"])
     def test_igbp_granule_of_any_year_passes(self, fmatch_real_ancillary_granules, date):
@@ -772,7 +727,14 @@ class TestCheckAncillaryGranuleDates:
     @pytest.mark.usefixtures("fake_aggregation")
     @pytest.mark.parametrize("step", [CAM, IMAGER_CAMTIME])
     def test_run_checks_the_input_footprint_times(
-        self, tmp_path, monkeypatch, step, l1b_radiometer_file_factory, cf_cam_file_factory, cf_cam_camtime_file_factory
+        self,
+        tmp_path,
+        monkeypatch,
+        step,
+        l1b_radiometer_file_factory,
+        cf_cam_file_factory,
+        cf_cam_camtime_file_factory,
+        stage_fmatch_ancillary_granules,
     ):
         """``create_and_write_data_product`` checks the granules against the radiometer times of an L1B input, or the
         pseudo-footprints' camera times of a CF-CAM-CAMTIME input, before writing the product."""
@@ -786,10 +748,10 @@ class TestCheckAncillaryGranuleDates:
             input_file = l1b_radiometer_file_factory()
             expected_times = load_l1b_radiometer_inputs(input_file)["RADIOMETER_TIME"]
             cloud_fraction = load_cf_cam_cloud_fraction([cf_cam_file_factory(expected_times)])
-        ancillary_inputs = {
-            key: [Path(path) for path in paths]
-            for key, paths in _empty_granules(tmp_path / "ancillary", config.mode).items()
-        }
+        staged = stage_fmatch_ancillary_granules(tmp_path / "ancillary", config.mode, empty=True)
+        ancillary_inputs = ancillary_inputs_by_reader(
+            {product_id: [str(path)] for product_id, path in staged.items()}, config.mode
+        )
         checked = {}
 
         def reject(source_file_paths, footprint_time):
