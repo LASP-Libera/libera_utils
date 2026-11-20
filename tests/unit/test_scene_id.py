@@ -8,6 +8,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.config import config
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.product import load_fmatch_definition
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -31,6 +32,13 @@ from libera_utils.scene_identification.scene_id import (
     map_cldpix_phase_to_trmm,
 )
 from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS
+
+_FMATCH_MODE_BY_INPUT = {
+    DataProductIdentifier.aux_fmatch_cam: OperationalMode.CAM,
+    DataProductIdentifier.aux_fmatch_cam_camtime: OperationalMode.CAM_CAMTIME,
+    DataProductIdentifier.aux_fmatch_imager: OperationalMode.IMAGER,
+    DataProductIdentifier.aux_fmatch_imager_camtime: OperationalMode.IMAGER_CAMTIME,
+}
 
 
 class TestIGBPSurfaceType:
@@ -560,11 +568,11 @@ class TestSceneIdCamProductDtypes:
         )
         return LiberaDataProductDefinition.from_yaml(definition_path)
 
-    def test_categorical_variables_are_single_byte(self):
-        """The surface-type variables are int8, so they can hold -1, and the scene IDs are uint8."""
+    def test_categorical_variable_dtypes(self):
+        """Surface_Type is int8, IGBP_Surface_Type int16 as FMATCH declares it, and the scene IDs are uint8."""
         definition = self._scene_id_cam_definition()
         assert definition.variables["Surface_Type"].dtype == "int8"
-        assert definition.variables["IGBP_Surface_Type"].dtype == "int8"
+        assert definition.variables["IGBP_Surface_Type"].dtype == "int16"
         assert definition.variables["Scene_ID_ERBE"].dtype == "uint8"
         assert definition.variables["Scene_ID_Unfiltering"].dtype == "uint8"
 
@@ -587,11 +595,37 @@ class TestSceneIdCamProductDtypes:
         assert definition.variables["Scene_Bin_Unfiltering_Surface_Type_Max"].dtype == "int8"
 
     @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
-    def test_no_variable_declares_a_fill_value(self, variant):
-        """No SCENE-ID product definition declares a _FillValue on any variable or coordinate."""
+    def test_integer_variables_declare_the_scene_id_fill(self, variant):
+        """Every integer variable that can be missing declares _FillValue SCENE_ID_INTEGER_FILL_VALUE; the scene IDs
+        (0 = unmatched), Quality_Flag (a bitmask) and the dimension coordinates declare none."""
         definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS[variant].product_definition_path)
-        declared = {**definition.coordinates, **definition.variables}
-        assert [name for name, var in declared.items() if "_FillValue" in var.attributes] == []
+        for name, variable in definition.variables.items():
+            if np.dtype(variable.dtype).kind not in "iu":
+                continue
+            if name.startswith("Scene_ID_") or name == "Quality_Flag":
+                assert "_FillValue" not in variable.attributes, name
+            else:
+                assert variable.attributes.get("_FillValue") == SCENE_ID_INTEGER_FILL_VALUE, name
+        for name, coordinate in definition.coordinates.items():
+            assert "_FillValue" not in coordinate.attributes, name
+
+    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
+    def test_fmatch_sourced_variables_match_fmatch(self, variant):
+        """A variable SCENE-ID carries under an FMATCH product name is declared exactly as that FMATCH product declares
+        it. Quality_Flag is SCENE-ID's own."""
+        config = RUNNER_CONFIGS[variant]
+        scene_id = LiberaDataProductDefinition.from_yaml(config.product_definition_path)
+        fmatch = load_fmatch_definition(_FMATCH_MODE_BY_INPUT[config.input_product_id])
+        fmatch_declared = {**fmatch.coordinates, **fmatch.variables}
+        shared = [name for name in scene_id.variables if name in fmatch_declared and name != "Quality_Flag"]
+        assert "IGBP_Surface_Type" in shared
+        for name in shared:
+            ours, theirs = scene_id.variables[name], fmatch_declared[name]
+            assert (ours.dtype, ours.dimensions, ours.attributes) == (
+                theirs.dtype,
+                theirs.dimensions,
+                theirs.attributes,
+            ), name
 
 
 def _absent_bin_mask(array):

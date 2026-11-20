@@ -359,13 +359,13 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 
 
 def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: LiberaDataProductDefinition) -> xr.Dataset:
-    """Cast float-held integer variables to their declared dtype, writing -1 where they are NaN.
+    """Cast float-held integer variables to their declared dtype, writing the declared ``_FillValue`` where they are NaN.
 
     Classification carries integer categories such as ``Surface_Type`` as float so a footprint with a missing input
-    can hold NaN, and such a footprint is unmatched. The SCENE-ID product definitions declare no ``_FillValue``, so
-    an integer variable takes ``SCENE_ID_INTEGER_FILL_VALUE`` (-1) where it is NaN, and a float variable keeps NaN.
-    Every scene bounds ``Surface_Type``, so a footprint with a missing surface type has scene ID 0, which flags the
-    footprint as unmatched.
+    can hold NaN, and such a footprint is unmatched. Each integer variable that can be missing declares its
+    ``_FillValue`` in the SCENE-ID product definition (``SCENE_ID_INTEGER_FILL_VALUE``, -1, as FMATCH declares), and
+    takes it where it is NaN; a float variable keeps NaN. Every scene bounds ``Surface_Type``, so a footprint with a
+    missing surface type has scene ID 0, which flags the footprint as unmatched.
 
     Parameters
     ----------
@@ -382,19 +382,27 @@ def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: Libera
     Raises
     ------
     ValueError
-        If a variable holds NaN and its declared dtype cannot hold ``SCENE_ID_INTEGER_FILL_VALUE``.
+        If an integer variable holds NaN and declares no ``_FillValue``, or declares one its dtype cannot hold.
     """
     for name, variable_definition in definition.variables.items():
         dtype = np.dtype(variable_definition.dtype)
         if dtype.kind in "iu" and name in product_dataset and product_dataset[name].dtype.kind == "f":
             values = product_dataset[name]
-            if values.isnull().any() and fill_in_dtype(SCENE_ID_INTEGER_FILL_VALUE, dtype) is None:
+            if not values.isnull().any():
+                product_dataset[name] = values.astype(dtype)
+                continue
+            fill_value = variable_definition.attributes.get("_FillValue")
+            if fill_value is None:
                 raise ValueError(
-                    f"{name} has missing values, but its declared dtype {dtype} cannot hold the SCENE-ID integer fill "
-                    f"{SCENE_ID_INTEGER_FILL_VALUE}. Declare {name} with a signed integer dtype in the SCENE-ID product "
-                    "definition."
+                    f"{name} has missing values but declares no _FillValue. Declare _FillValue: "
+                    f"{SCENE_ID_INTEGER_FILL_VALUE} on {name} in the SCENE-ID product definition."
                 )
-            product_dataset[name] = values.fillna(SCENE_ID_INTEGER_FILL_VALUE).astype(dtype)
+            if fill_in_dtype(fill_value, dtype) is None:
+                raise ValueError(
+                    f"{name} declares _FillValue {fill_value}, which its dtype {dtype} cannot hold. Declare {name} "
+                    "with a signed integer dtype in the SCENE-ID product definition."
+                )
+            product_dataset[name] = values.fillna(fill_value).astype(dtype)
     return product_dataset
 
 

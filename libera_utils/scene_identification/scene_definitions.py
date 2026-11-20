@@ -9,8 +9,9 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
-#: Value an integer SCENE-ID column, such as ``Surface_Type`` or its bin bounds, holds where it has no value. The
-#: SCENE-ID products declare no ``_FillValue``; a float column holds NaN where it has no value.
+#: Value an integer SCENE-ID column, such as ``Surface_Type`` or its bin bounds, holds where it has no value: the
+#: ``_FillValue`` the SCENE-ID product definitions declare on those columns, as FMATCH's do. A float column holds NaN
+#: where it has no value.
 SCENE_ID_INTEGER_FILL_VALUE = -1
 
 # Storage dtype for each classification variable's property-bin bounds (the Scene_Bin_{type}_{variable}_Min/_Max

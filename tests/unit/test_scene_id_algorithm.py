@@ -112,25 +112,44 @@ class TestResolveRunnerConfig:
 
 
 class TestFillMissingIntegerValues:
-    """_fill_missing_integer_values writes -1 into a NaN integer cell and refuses a dtype that cannot hold it."""
+    """_fill_missing_integer_values writes a variable's declared _FillValue into its NaN cells, and refuses a variable
+    that declares none or one its dtype cannot hold."""
 
     @staticmethod
-    def _definition(surface_type_dtype: str) -> LiberaDataProductDefinition:
-        """The shipped SCENE-ID-IMAGER definition, with Surface_Type declared as ``surface_type_dtype``."""
+    def _definition(surface_type_dtype: str, fill_value: int | None = -1) -> LiberaDataProductDefinition:
+        """The shipped SCENE-ID-IMAGER definition, with Surface_Type declared as ``surface_type_dtype`` and
+        ``_FillValue`` ``fill_value`` (none when ``None``)."""
         definition = LiberaDataProductDefinition.from_yaml(RUNNER_CONFIGS[IMAGER].product_definition_path)
-        surface_type = definition.variables["Surface_Type"].model_copy(update={"dtype": surface_type_dtype})
+        surface_type = definition.variables["Surface_Type"]
+        attributes = {k: v for k, v in surface_type.attributes.items() if k != "_FillValue"}
+        if fill_value is not None:
+            attributes["_FillValue"] = fill_value
+        surface_type = surface_type.model_copy(update={"dtype": surface_type_dtype, "attributes": attributes})
         return definition.model_copy(update={"variables": {"Surface_Type": surface_type}})
 
-    def test_nan_becomes_minus_one_in_the_declared_dtype(self):
+    def test_nan_becomes_the_declared_fill_in_the_declared_dtype(self):
         dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, np.nan], dtype=np.float32))})
 
-        filled = _fill_missing_integer_values(dataset, self._definition("int8"))
+        filled = _fill_missing_integer_values(dataset, self._definition("int8", fill_value=-7))
 
         assert filled["Surface_Type"].dtype == np.int8
-        np.testing.assert_array_equal(filled["Surface_Type"].values, [2, -1])
+        np.testing.assert_array_equal(filled["Surface_Type"].values, [2, -7])
+
+    def test_missing_value_with_no_declared_fill_raises(self):
+        dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, np.nan], dtype=np.float32))})
+
+        with pytest.raises(ValueError, match="Surface_Type has missing values but declares no _FillValue"):
+            _fill_missing_integer_values(dataset, self._definition("int8", fill_value=None))
 
     def test_unsigned_dtype_with_a_missing_value_raises(self):
         dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, np.nan], dtype=np.float32))})
 
-        with pytest.raises(ValueError, match="Surface_Type has missing values.*signed integer dtype"):
+        with pytest.raises(ValueError, match="Surface_Type declares _FillValue -1.*signed integer dtype"):
             _fill_missing_integer_values(dataset, self._definition("uint8"))
+
+    def test_no_missing_value_needs_no_fill(self):
+        dataset = xr.Dataset({"Surface_Type": ("RADIOMETER_TIME", np.array([2.0, 3.0], dtype=np.float32))})
+
+        filled = _fill_missing_integer_values(dataset, self._definition("uint8", fill_value=None))
+
+        np.testing.assert_array_equal(filled["Surface_Type"].values, [2, 3])

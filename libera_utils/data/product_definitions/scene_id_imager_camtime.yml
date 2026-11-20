@@ -2,9 +2,9 @@
 #
 # Camera-timescale counterpart of SCENE-ID-IMAGER. Fed by the FMATCH-IMAGER-CAMTIME product (see
 # FootprintData.from_fmatch_imager_camtime). Like SCENE-ID-IMAGER it runs the full TRMM classification in addition to
-# ERBE (but not unfiltering, which runs on the radiometer timescale only), because the FMATCH-IMAGER-CAMTIME carries the TRMM inputs: surface wind (from
-# ERA5_Surface_Wind_U10 / V10), cloud phase (from CLDPIX_Cloud_Particle_Phase), and cloud optical depth (from
-# CLDPIX_Cloud_Optical_Depth). Unlike the radiometer-timescale
+# ERBE, because the FMATCH-IMAGER-CAMTIME carries the TRMM inputs: surface wind (from ERA5_Surface_Wind_U10 / V10),
+# cloud phase (from CLDPIX_Cloud_Particle_Phase), and cloud optical depth (from CLDPIX_Cloud_Optical_Depth). It does
+# not run unfiltering, which runs on the radiometer timescale only. Unlike the radiometer-timescale
 # SCENE-ID-IMAGER, the product is defined on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid and additionally carries the
 # footprint identifier variables (boresight geolocation, PSF bounding box, and camera pixel-block bounds) straight
 # through from the FMATCH input, exactly like SCENE-ID-CAM-CAMTIME.
@@ -55,28 +55,28 @@ variables:
   # Input scene properties
   ########################
   IGBP_Surface_Type:
-    dtype: int8
+    dtype: int16
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
+      _FillValue: -1
+      long_name: IGBP surface type classification (MODIS)
   Solar_Zenith_Surface:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Solar zenith angle at the footprint surface
+      long_name: Geodetic zenith angle at the Earth point of the Sun
       units: degrees
   Viewing_Zenith_Surface:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Instrument viewing zenith angle at the footprint surface
+      long_name: Geodetic angle at the Earth point to the satellite
       units: degrees
   Relative_Azimuth_Surface:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
+      long_name: Geodetic azimuth angle at the Earth point of the satellite relative to the solar plane (measured clockwise in the plane normal to the geodetic zenith)
       units: degrees
 
   ##########################
@@ -86,7 +86,8 @@ variables:
     dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
+      _FillValue: -1
+      comment: "Fill where the footprint has no surface type; its scene IDs are then 0 (unmatched)."
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
   Cloud_Fraction:
     dtype: float32
@@ -112,7 +113,6 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Cloud optical depth (FMATCH CLDPIX_Cloud_Optical_Depth)
-      units: "1"
 
   ############
   # Scene IDs
@@ -148,13 +148,13 @@ variables:
     dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
+      _FillValue: -1
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Surface_Type_Max:
     dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
+      _FillValue: -1
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched ERBE scene
   Scene_Bin_ERBE_Solar_Zenith_Surface_Min:
     dtype: float32
@@ -200,13 +200,13 @@ variables:
     dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
+      _FillValue: -1
       long_name: Lower bound (inclusive) of the Surface_Type bin of the matched TRMM scene
   Scene_Bin_TRMM_Surface_Type_Max:
     dtype: int8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      comment: "-1 for an unmatched footprint (scene ID 0)."
+      _FillValue: -1
       long_name: Upper bound (exclusive) of the Surface_Type bin of the matched TRMM scene
   Scene_Bin_TRMM_Surface_Wind_Min:
     dtype: float32
@@ -247,13 +247,11 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Lower bound (inclusive) of the Cloud_Optical_Depth bin of the matched TRMM scene
-      units: "1"
   Scene_Bin_TRMM_Cloud_Optical_Depth_Max:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Upper bound (exclusive) of the Cloud_Optical_Depth bin of the matched TRMM scene
-      units: "1"
   Scene_Bin_TRMM_Solar_Zenith_Surface_Min:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -313,21 +311,22 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Footprint boresight latitude
+      long_name: Geodetic latitude. Coordinate Reference System WGS84
       units: degrees_north
   Longitude:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Footprint boresight longitude
+      long_name: Longitude. Coordinate Reference System WGS84
       units: degrees_east
   Altitude:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      # Center-pixel geolocated SURFACE height (terrain elevation above the WGS84 ellipsoid at the footprint
-      # boresight) -- NOT the ~835 km spacecraft altitude.
-      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
+      # This value is the L1B CAM `Altitude` field at the center pixel: the height above the
+      # WGS84 ellipsoid (EPSG:4979) of that pixel's geolocated point -- NOT the ~835 km
+      # spacecraft altitude.
+      long_name: Height above the WGS84 ellipsoid. EPSG:4979
       units: meters
 
   # --- PSF bounding box ----------------------------------------------------------------------------------------------
@@ -351,12 +350,14 @@ variables:
     attributes:
       long_name: Western longitude bound of PSF bounding box
       units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
   PSF_Bbox_Lon_Max:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastern longitude bound of PSF bounding box
       units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
 
   # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
   # Each pseudo-footprint is a contiguous block of L1B camera pixels, segmented by the Camera Cloud Fraction algorithm
@@ -370,19 +371,23 @@ variables:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
   Camera_Pixel_X_Max:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
   Camera_Pixel_Y_Min:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
   Camera_Pixel_Y_Max:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
+      _FillValue: -1
       long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y

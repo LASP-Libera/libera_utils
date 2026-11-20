@@ -348,15 +348,15 @@ class TestPropertyBins:
         assert bins["Scene_Bin_bins_Cloud_Fraction_Min"].dtype == np.float32
         assert bins["Scene_Bin_bins_Cloud_Optical_Depth_Max"].dtype == np.float32
 
-    def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
-        """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
+    def test_surface_type_bin_bounds_are_int8(self, tmp_path):
+        """surface_type bin bounds are stored as compact int8; unmatched footprints get SCENE_ID_INTEGER_FILL_VALUE.
 
-        surface_type is a small categorical code, so its bin bounds are kept as uint8 rather than float32 to save
-        storage. There is no fill value: an unmatched footprint (scene_id 0) simply gets 0 for its bounds, and
-        scene_id == 0 is the authoritative flag that the footprint was not classified.
+        surface_type is a small categorical code, so its bin bounds are kept as int8 rather than float32 to save
+        storage. An unmatched footprint (scene_id 0) gets SCENE_ID_INTEGER_FILL_VALUE (-1), the _FillValue the SCENE-ID
+        product definitions declare, and scene_id == 0 is the authoritative flag that the footprint was not classified.
         """
-        # What: categorical surface_type bin bounds are stored as uint8, and unmatched footprints get 0 (no fill value).
-        # How: assert both bound arrays have uint8 dtype and match expected values, with 0 for the scene_id 0 footprint.
+        # What: categorical surface_type bin bounds are stored as int8, and unmatched footprints get the fill (-1).
+        # How: assert both bound arrays have int8 dtype and match expected values, with -1 for the scene_id 0 footprint.
         # Two contiguous bins covering surface_type [0, 6) so the SceneDefinition coverage check passes.
         csv_content = "scene_id,Surface_Type_Min,Surface_Type_Max\n1,0,3\n2,3,6\n"
         csv_file = tmp_path / "surface.csv"

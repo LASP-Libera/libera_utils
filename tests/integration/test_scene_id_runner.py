@@ -22,6 +22,7 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
+from libera_utils.scene_identification.scene_definitions import SCENE_ID_INTEGER_FILL_VALUE
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     CAM_CAMTIME_CONFIG,
@@ -423,7 +424,8 @@ class TestSceneIdCamCamtimeWrite:
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
 
         assert output_file.path.exists()
-        reopened = xr.open_dataset(output_file.path)
+        # mask_and_scale=False reads the stored dtypes; a default open decodes the int32 bounds' _FillValue to float.
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         # Data lives on the 2-D grid; CAMERA_TIME is a unique, sorted 1-D dimension coordinate.
         assert "CAMERA_TIME" in reopened.sizes
         assert "PSEUDOFOOTPRINT" in reopened.sizes
@@ -629,8 +631,10 @@ class TestMissingIgbpCode:
         assert dataset["Scene_ID_ERBE"].values[2, -1] == 0
         assert (dataset["Scene_ID_ERBE"].values[0] > 0).all()
 
-    def test_written_product_carries_minus_one_for_the_unmatched_footprint(self, fmatch_product_file_factory, tmp_path):
-        """The surface-type columns carry -1, with no _FillValue, for the footprint, and scene_id 0 flags it."""
+    def test_written_product_carries_the_fill_value_for_the_unmatched_footprint(
+        self, fmatch_product_file_factory, tmp_path
+    ):
+        """The surface-type columns carry their declared _FillValue, -1, for the footprint, and scene_id 0 flags it."""
         input_path = _with_missing_igbp(
             fmatch_product_file_factory(OperationalMode.IMAGER, n_footprints=4), tmp_path, 1
         )
@@ -641,12 +645,14 @@ class TestMissingIgbpCode:
         written = create_and_write_data_product(footprint_data, input_path.name, output_dir, RUNNER_CONFIGS[IMAGER])
 
         with xr.open_dataset(written.path, mask_and_scale=False) as product:
-            for name in ("IGBP_Surface_Type", "Surface_Type"):
-                assert product[name].dtype == np.int8
-                assert "_FillValue" not in product[name].attrs
-                assert product[name].values[1] == -1
+            for name, dtype in (("IGBP_Surface_Type", np.int16), ("Surface_Type", np.int8)):
+                assert product[name].dtype == dtype
+                assert product[name].attrs["_FillValue"] == SCENE_ID_INTEGER_FILL_VALUE
+                assert product[name].values[1] == SCENE_ID_INTEGER_FILL_VALUE
             assert product["Scene_ID_TRMM"].values[1] == 0
             assert (product["IGBP_Surface_Type"].values[[0, 2, 3]] > 0).all()
+        with xr.open_dataset(written.path) as decoded:
+            assert np.isnan(decoded["Surface_Type"].values[1])
 
 
 class TestSceneIdContainerRun:

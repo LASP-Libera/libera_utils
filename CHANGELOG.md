@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM instead of CERES SSF, so its step declares FMATCH-CAM as input, and `SceneIdRunnerConfig.input_product_id` no longer accepts `None`. (#93)
 - **BREAKING:** The TRMM variables are `Surface_Wind`, `Cloud_Phase` and `Cloud_Optical_Depth`, and the `TRMM.csv` columns and scene bins follow. (#93)
 - SCENE-ID reads FMATCH variables by their product names, from local or S3 paths, and leaves a footprint with no IGBP code unmatched (scene ID 0) instead of failing the granule. (#93)
-- SCENE-ID integer columns are `int8` with -1 for missing (`SCENE_ID_INTEGER_FILL_VALUE`), and its product definitions declare no `_FillValue`. `calculate_trmm_surface_type` returns float and passes NaN through. (#93)
+- **BREAKING:** SCENE-ID's integer columns declare `_FillValue: -1` (`SCENE_ID_INTEGER_FILL_VALUE`) and hold it where they have no value, as FMATCH's do: `IGBP_Surface_Type` is `int16` as FMATCH declares it, `Surface_Type` and the `Scene_Bin_*_Surface_Type_Min`/`_Max` bounds are `int8` (were `uint8` holding 0), and the camera-timescale `Camera_Pixel_*` bounds declare it too. The variables SCENE-ID copies from FMATCH carry FMATCH's attributes. A footprint with no surface type still has scene ID 0. `calculate_trmm_surface_type` returns float and passes NaN through. (#93)
 
 ### Removed
 
