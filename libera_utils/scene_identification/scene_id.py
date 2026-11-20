@@ -310,11 +310,9 @@ def map_cldpix_phase_to_trmm(cldpix_phase: NDArray) -> NDArray[np.floating]:
     """Map CLDPIX cloud-particle-phase codes to the classifier's ``Cloud_Phase`` (1 = liquid, 2 = ice).
 
     The TRMM scene classifier bins ``Cloud_Phase`` as 1 (liquid) or 2 (ice) -- see the ``Cloud_Phase_Min/_Max``
-    columns of ``TRMM.csv`` and :func:`calculate_cloud_phase`, which likewise emits 1 or 2. FMATCH's
-    ``CLDPIX_Cloud_Particle_Phase`` instead carries the CER_CLDPIX ``Cloud_Particle_Phase`` integer code, of which the
-    CLDPIX reader keeps 1-4 (it drops 5, which the file labels ``bad_data``). This is a *code remap*, deliberately
-    unlike the continuous cloud-fraction-weighted :func:`calculate_cloud_phase`: each CLDPIX code is looked up and
-    collapsed onto {1, 2}.
+    columns of ``TRMM.csv``. FMATCH's ``CLDPIX_Cloud_Particle_Phase`` instead carries the CER_CLDPIX
+    ``Cloud_Particle_Phase`` integer code, of which the CLDPIX reader keeps 1-4 (it drops 5, which the file labels
+    ``bad_data``). This is a code remap: each CLDPIX code is looked up and collapsed onto {1, 2}.
 
     Any code that is not a liquid/ice value (fill/NaN, or CLDPIX codes 3 ``no_cloud_retrieval`` and 4 ``clear``;
     see :class:`CLDPIXCloudPhase`) is mapped to ``NaN``. A ``NaN`` classification value leaves the footprint unmatched
@@ -465,128 +463,6 @@ def calculate_trmm_surface_type(igbp_surface_type: float | NDArray[np.number]) -
     return float(result) if np.ndim(result) == 0 else result
 
 
-def calculate_cloud_fraction_weighted_optical_depth(
-    optical_depth_lower: float | NDArray[np.floating],
-    optical_depth_upper: float | NDArray[np.floating],
-    cloud_fraction_lower: float | NDArray[np.floating],
-    cloud_fraction_upper: float | NDArray[np.floating],
-    cloud_fraction: float | NDArray[np.floating],
-) -> float | NDArray[np.floating]:
-    """Calculate weighted optical depth from upper and lower cloud layers.
-
-    Combines optical depth measurements from two atmospheric layers using cloud fraction weighting to produce a single
-    representative optical depth value.
-
-    Parameters
-    ----------
-    optical_depth_lower : float or ndarray
-        Optical depth for lower cloud layer (dimensionless)
-    optical_depth_upper : float or ndarray
-        Optical depth for upper cloud layer (dimensionless)
-    cloud_fraction_lower : float or ndarray
-        Cloud fraction for lower layer (0-100)
-    cloud_fraction_upper : float or ndarray
-        Cloud fraction for upper layer (0-100)
-    cloud_fraction : float or ndarray
-        Total cloud fraction (0-100)
-
-    Returns
-    -------
-    float or ndarray
-        Optical depth weighted by cloud fraction and summed across layers,
-        or np.nan if no valid data or zero total cloud fraction
-
-    """
-    # Initialize result array
-    result = np.zeros_like(optical_depth_lower, dtype=np.float64)
-
-    # Check where cloud_fraction is non-zero
-    no_clouds = cloud_fraction == 0
-
-    # For each point with clouds, calculate weighted optical depth
-    optical_temp_1 = np.where(
-        (np.isnan(optical_depth_lower) | no_clouds), 0.0, (cloud_fraction_lower / cloud_fraction) * optical_depth_lower
-    )
-
-    optical_temp_2 = np.where(
-        (np.isnan(optical_depth_upper) | no_clouds), 0.0, (cloud_fraction_upper / cloud_fraction) * optical_depth_upper
-    )
-
-    # Sum contributions
-    weighted_optical_depth = optical_temp_1 + optical_temp_2
-
-    # Set to NaN only if BOTH optical_depth values are NaN
-    both_optical_nan = np.isnan(optical_depth_lower) & np.isnan(optical_depth_upper)
-
-    # Apply the logic: NaN if no clouds OR both optical depths are NaN
-    result = np.where(no_clouds | both_optical_nan, np.nan, weighted_optical_depth)
-
-    return result
-
-
-def calculate_cloud_phase(
-    cloud_phase_lower: float | NDArray[np.floating],
-    cloud_phase_upper: float | NDArray[np.floating],
-    cloud_fraction_lower: float | NDArray[np.floating],
-    cloud_fraction_upper: float | NDArray[np.floating],
-    cloud_fraction: float | NDArray[np.floating],
-    optical_depth_lower: float | NDArray[np.floating],
-    optical_depth_upper: float | NDArray[np.floating],
-) -> float | NDArray[np.floating]:
-    """Calculate weighted cloud phase from upper and lower cloud layers.
-
-    Computes the dominant cloud phase by weighting each layer's phase by its cloud fraction contribution and rounding
-    to the nearest integer phase classification (1=liquid, 2=ice).
-
-    Parameters
-    ----------
-    cloud_phase_lower : float or ndarray
-        Cloud phase for lower layer (1=liquid, 2=ice)
-    cloud_phase_upper : float or ndarray
-        Cloud phase for upper layer (1=liquid, 2=ice)
-    cloud_fraction_lower : float or ndarray
-        Cloud fraction for lower layer (0-100)
-    cloud_fraction_upper : float or ndarray
-        Cloud fraction for upper layer (0-100)
-    cloud_fraction : float or ndarray
-        Total cloud fraction (0-100)
-    optical_depth_lower : float or ndarray
-        Optical depth for lower layer (used for NaN check)
-    optical_depth_upper : float or ndarray
-        Optical depth for upper layer (used for NaN check)
-
-    Returns
-    -------
-    float or ndarray
-        Cloud phase weighted by cloud fraction and rounded to nearest integer
-        (1=liquid, 2=ice), or np.nan if no valid data
-    """
-    # Initialize result array
-    result = np.zeros_like(cloud_phase_lower, dtype=np.float64)
-
-    # Check where cloud_fraction is non-zero
-    no_clouds = cloud_fraction == 0
-
-    # For each point with clouds, calculate weighted phase
-    phase_temp_1 = np.where(
-        np.isnan(cloud_phase_lower) | no_clouds, 0.0, (cloud_fraction_lower * cloud_phase_lower) / cloud_fraction
-    )
-    phase_temp_2 = np.where(
-        np.isnan(cloud_phase_upper) | no_clouds, 0.0, (cloud_fraction_upper * cloud_phase_upper) / cloud_fraction
-    )
-    weighted_phase = phase_temp_1 + phase_temp_2
-
-    # Set to NaN only if BOTH optical_depth values are NaN
-    both_optical_nan = np.isnan(optical_depth_lower) & np.isnan(optical_depth_upper)
-    result = np.where(no_clouds | both_optical_nan, np.nan, weighted_phase)
-    rounded_phase = np.round(result)
-
-    # Final validation: cloud phase must be 1 or 2 (or NaN)
-    result = np.where((rounded_phase < 0.5) | (rounded_phase > 2.5) | np.isnan(rounded_phase), np.nan, rounded_phase)
-
-    return result
-
-
 # Scene Property Column Names and Relationships
 
 
@@ -606,18 +482,11 @@ class FootprintVariables(enum.StrEnum):
         V-component of surface wind vector in m/s (input variable)
     CLEAR_AREA : str
         Clear sky area percentage, 0-100% (input variable)
-    OPTICAL_DEPTH_LOWER : str
-        Cloud optical depth for lower atmospheric layer (input variable)
-    OPTICAL_DEPTH_UPPER : str
-        Cloud optical depth for upper atmospheric layer (input variable)
-    CLOUD_FRACTION_LOWER : str
-        Cloud fraction for lower layer, 0-100% (input variable)
-    CLOUD_FRACTION_UPPER : str
-        Cloud fraction for upper layer, 0-100% (input variable)
-    CLOUD_PHASE_LOWER : str
-        Cloud phase for lower layer, 1=liquid, 2=ice (input variable)
-    CLOUD_PHASE_UPPER : str
-        Cloud phase for upper layer, 1=liquid, 2=ice (input variable)
+    CLOUD_OPTICAL_DEPTH : str
+        Cloud optical depth, dimensionless (input variable, from FMATCH's ``CLDPIX_Cloud_Optical_Depth``)
+    CLOUD_PHASE : str
+        Cloud phase, 1=liquid, 2=ice (input variable, mapped from FMATCH's ``CLDPIX_Cloud_Particle_Phase`` by
+        :func:`map_cldpix_phase_to_trmm`)
     SOLAR_ZENITH_ANGLE : str
         Solar zenith angle at the surface, in degrees, 0-180 (input variable)
     VIEWING_ZENITH_ANGLE : str
@@ -627,14 +496,10 @@ class FootprintVariables(enum.StrEnum):
         (input variable)
     CLOUD_FRACTION : str
         Total cloud fraction across all layers (calculated variable)
-    OPTICAL_DEPTH : str
-        Cloud-fraction-weighted optical depth (calculated variable)
     SURFACE_WIND : str
         Total surface wind speed magnitude in m/s (calculated variable)
     SURFACE_TYPE : str
         TRMM-compatible surface type classification (calculated variable)
-    CLOUD_PHASE : str
-        Cloud-fraction-weighted dominant cloud phase (calculated variable)
     """
 
     # Columns from input datasets. A variable the SCENE-ID products write carries its product name (Camel_Case,
@@ -643,12 +508,8 @@ class FootprintVariables(enum.StrEnum):
     SURFACE_WIND_U = "surface_wind_u"
     SURFACE_WIND_V = "surface_wind_v"
     CLEAR_AREA = "clear_area"
-    OPTICAL_DEPTH_LOWER = "optical_depth_lower"
-    OPTICAL_DEPTH_UPPER = "optical_depth_upper"
-    CLOUD_FRACTION_LOWER = "cloud_fraction_lower"
-    CLOUD_FRACTION_UPPER = "cloud_fraction_upper"
-    CLOUD_PHASE_LOWER = "cloud_phase_lower"
-    CLOUD_PHASE_UPPER = "cloud_phase_upper"
+    CLOUD_OPTICAL_DEPTH = "Cloud_Optical_Depth"
+    CLOUD_PHASE = "Cloud_Phase"
 
     # Viewing-geometry angles (input variables), one value per footprint. They are required classification variables
     # for every scene definition (each scene CSV carries Solar_Zenith_Surface/Viewing_Zenith_Surface/
@@ -661,10 +522,8 @@ class FootprintVariables(enum.StrEnum):
 
     # Calculated columns
     CLOUD_FRACTION = "Cloud_Fraction"
-    OPTICAL_DEPTH = "Optical_Depth"
     SURFACE_WIND = "Surface_Wind"
     SURFACE_TYPE = "Surface_Type"
-    CLOUD_PHASE = "Cloud_Phase"
 
 
 @dataclass(frozen=True)
@@ -723,34 +582,6 @@ _CALCULATED_VARIABLE_MAP = {
         function=calculate_trmm_surface_type,
         input_vars=[FootprintVariables.IGBP_SURFACE_TYPE],
         output_datatype=float,
-    ),
-    FootprintVariables.OPTICAL_DEPTH: CalculationSpec(
-        output_var=FootprintVariables.OPTICAL_DEPTH,
-        function=calculate_cloud_fraction_weighted_optical_depth,
-        input_vars=[
-            FootprintVariables.OPTICAL_DEPTH_LOWER,
-            FootprintVariables.OPTICAL_DEPTH_UPPER,
-            FootprintVariables.CLOUD_FRACTION_LOWER,
-            FootprintVariables.CLOUD_FRACTION_UPPER,
-            FootprintVariables.CLOUD_FRACTION,
-        ],
-        output_datatype=float,
-        dependent_calculations=[FootprintVariables.CLOUD_FRACTION],
-    ),
-    FootprintVariables.CLOUD_PHASE: CalculationSpec(
-        output_var=FootprintVariables.CLOUD_PHASE,
-        function=calculate_cloud_phase,
-        input_vars=[
-            FootprintVariables.CLOUD_PHASE_LOWER,
-            FootprintVariables.CLOUD_PHASE_UPPER,
-            FootprintVariables.CLOUD_FRACTION_LOWER,
-            FootprintVariables.CLOUD_FRACTION_UPPER,
-            FootprintVariables.CLOUD_FRACTION,
-            FootprintVariables.OPTICAL_DEPTH_LOWER,
-            FootprintVariables.OPTICAL_DEPTH_UPPER,
-        ],
-        output_datatype=float,
-        dependent_calculations=[FootprintVariables.CLOUD_FRACTION],
     ),
 }
 
@@ -817,7 +648,7 @@ _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("Solar_Zenith_Surface", np.float32),
     FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("Viewing_Zenith_Surface", np.float32),
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("Relative_Azimuth_Surface", np.float32),
-    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("CLDPIX_Cloud_Optical_Depth", np.float32),
+    FootprintVariables.CLOUD_OPTICAL_DEPTH: _FmatchColumn("CLDPIX_Cloud_Optical_Depth", np.float32),
     FootprintVariables.CLOUD_PHASE: _FmatchColumn(
         "CLDPIX_Cloud_Particle_Phase", np.float32, transform=map_cldpix_phase_to_trmm
     ),
@@ -869,7 +700,7 @@ class FootprintData:
     identification, including:
     1. Data extraction from FMATCH NetCDF files
     2. Missing value handling
-    3. Derived field calculation (cloud fraction, optical depth, etc.)
+    3. Derived field calculation (cloud fraction, surface wind, surface type)
     4. Scene ID matching based on classification rules
     """
 
@@ -1220,7 +1051,7 @@ class FootprintData:
         Parameters
         ----------
         result_fields : list of str
-            List of field names to calculate (e.g., 'Cloud_Fraction', 'Optical_Depth')
+            List of field names to calculate (e.g., 'Cloud_Fraction', 'Cloud_Optical_Depth')
 
         Raises
         ------
@@ -1230,8 +1061,8 @@ class FootprintData:
         Notes
         -----
         This method modifies self._data in place to conserve memory. It automatically
-        resolves dependencies between calculated fields (e.g., optical depth depends
-        on cloud fraction being calculated first).
+        resolves dependencies between calculated fields declared in a spec's
+        ``dependent_calculations``.
 
         The calculation order is determined by dependency analysis and may require
         multiple passes. A maximum of 30 iterations is allowed to prevent infinite

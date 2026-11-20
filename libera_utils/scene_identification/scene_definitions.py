@@ -44,12 +44,12 @@ class Scene:
     ...     scene_id=1,
     ...     variable_ranges={
     ...         "Cloud_Fraction": (0.0, 50.0),
-    ...         "Optical_Depth": (0.0, 10.0)
+    ...         "Cloud_Optical_Depth": (0.0, 10.0)
     ...     }
     ... )
-    >>> scene.matches({"Cloud_Fraction": 30.0, "Optical_Depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 30.0, "Cloud_Optical_Depth": 5.0})
     True
-    >>> scene.matches({"Cloud_Fraction": 60.0, "Optical_Depth": 5.0})
+    >>> scene.matches({"Cloud_Fraction": 60.0, "Cloud_Optical_Depth": 5.0})
     False
     """
 
@@ -566,10 +566,10 @@ class SceneDefinition:
         Examples
         --------
         >>> scene_def = SceneDefinition(Path("scenes.csv"))
-        >>> scene_def.required_columns = ['Cloud_Fraction', 'Optical_Depth']
+        >>> scene_def.required_columns = ['Cloud_Fraction', 'Cloud_Optical_Depth']
         >>> data = xr.Dataset({'Cloud_Fraction': [10, 20]})
         >>> scene_def.validate_input_data_columns(data)
-        ValueError: Required columns ['Optical_Depth'] not in input data for TRMM scene identification.
+        ValueError: Required columns ['Cloud_Optical_Depth'] not in input data for TRMM scene identification.
         """
         missing_columns = []
         for column in self.required_columns:

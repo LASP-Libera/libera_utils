@@ -210,7 +210,7 @@ class TestFmatchReaders:
         input_path = fmatch_product_file_factory(OperationalMode.IMAGER)
         dataset = FootprintData.from_fmatch_imager(input_path)._data
 
-        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Optical_Depth", "Cloud_Phase"):
+        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Cloud_Optical_Depth", "Cloud_Phase"):
             assert required in dataset.variables
         # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
         assert set(np.unique(dataset["Cloud_Phase"].values).tolist()) <= {1.0, 2.0}
@@ -229,7 +229,7 @@ class TestFmatchReaders:
         assert "PSEUDOFOOTPRINT" in dataset.sizes
         assert dataset["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         # The full IMAGER classification inputs (incl. a real, mapped cloud_phase) land on the 2-D grid.
-        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Optical_Depth", "Cloud_Phase"):
+        for required in ("IGBP_Surface_Type", "clear_area", "surface_wind_u", "Cloud_Optical_Depth", "Cloud_Phase"):
             assert required in dataset.variables
             assert dataset[required].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         assert set(np.unique(dataset["Cloud_Phase"].values).tolist()) <= {1.0, 2.0}
@@ -365,7 +365,7 @@ def _assert_imager_sources(dataset: xr.Dataset) -> None:
     )
     np.testing.assert_array_equal(dataset["surface_wind_u"].values, 3.0)
     np.testing.assert_array_equal(dataset["surface_wind_v"].values, 4.0)
-    np.testing.assert_array_equal(dataset["Optical_Depth"].values, 7.0)
+    np.testing.assert_array_equal(dataset["Cloud_Optical_Depth"].values, 7.0)
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:

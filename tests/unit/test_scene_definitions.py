@@ -103,7 +103,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def valid_scene_csv(self):
         """Create a temporary CSV file with valid scene definitions."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -119,7 +119,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def overlapping_scene_csv(self):
         """Create a temporary CSV file with overlapping scene definitions."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
     1,0.0,60.0,0.0,10.0
     2,40.0,100.0,0.0,10.0
     """
@@ -133,7 +133,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def gap_scene_csv(self):
         """Create a temporary CSV file with gaps in coverage."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
     1,0.0,40.0,0.0,10.0
     2,60.0,100.0,0.0,10.0
     """
@@ -147,7 +147,7 @@ class TestSceneDefinition:
     @pytest.fixture
     def touching_boundaries_csv(self):
         """Create CSV where scenes touch exactly at boundaries (no overlap)."""
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
     1,0.0,50.0,0.0,10.0
     2,50.0,100.0,0.0,10.0
     3,0.0,50.0,10.0,20.0
@@ -163,20 +163,20 @@ class TestSceneDefinition:
     def test_point_in_scene_inside(self):
         """Test point inside scene bounds."""
 
-        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Optical_Depth": (0.0, 10.0)})
-        point = {"Cloud_Fraction": 25.0, "Optical_Depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Cloud_Optical_Depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 25.0, "Cloud_Optical_Depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Optical_Depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Cloud_Optical_Depth"])
 
         assert result is True
 
     def test_point_in_scene_outside(self):
         """Test point outside scene bounds."""
 
-        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Optical_Depth": (0.0, 10.0)})
-        point = {"Cloud_Fraction": 75.0, "Optical_Depth": 5.0}
+        scene = Scene(1, {"Cloud_Fraction": (0.0, 50.0), "Cloud_Optical_Depth": (0.0, 10.0)})
+        point = {"Cloud_Fraction": 75.0, "Cloud_Optical_Depth": 5.0}
 
-        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Optical_Depth"])
+        result = SceneDefinition._point_in_scene(point, scene, ["Cloud_Fraction", "Cloud_Optical_Depth"])
 
         assert result is False
 
@@ -294,7 +294,7 @@ class TestPropertyBins:
     def scene_definition(self, tmp_path):
         """Create a fully-covering 4-scene definition over two variables."""
         csv_content = (
-            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max\n"
+            "scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max\n"
             "1,0.0,50.0,0.0,10.0\n"
             "2,50.0,100.0,0.0,10.0\n"
             "3,0.0,50.0,10.0,20.0\n"
@@ -307,7 +307,7 @@ class TestPropertyBins:
     def test_get_bin_bounds_for_scene_id(self, scene_definition):
         """Test looking up bin bounds for a known scene ID."""
         bounds = scene_definition.get_bin_bounds_for_scene_id(4)
-        assert bounds == {"Cloud_Fraction": (50.0, 100.0), "Optical_Depth": (10.0, 20.0)}
+        assert bounds == {"Cloud_Fraction": (50.0, 100.0), "Cloud_Optical_Depth": (10.0, 20.0)}
 
     def test_get_bin_bounds_for_unknown_scene_id_raises(self, scene_definition):
         """Test that an unknown scene ID (including 0) raises KeyError."""
@@ -321,8 +321,8 @@ class TestPropertyBins:
 
         np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Min"], [0.0, 50.0, np.nan])
         np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Fraction_Max"], [50.0, 100.0, np.nan])
-        np.testing.assert_array_equal(bins["Scene_Bin_bins_Optical_Depth_Min"], [0.0, 10.0, np.nan])
-        np.testing.assert_array_equal(bins["Scene_Bin_bins_Optical_Depth_Max"], [10.0, 20.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Optical_Depth_Min"], [0.0, 10.0, np.nan])
+        np.testing.assert_array_equal(bins["Scene_Bin_bins_Cloud_Optical_Depth_Max"], [10.0, 20.0, np.nan])
 
     def test_compute_property_bins_unbounded_side_is_nan(self, tmp_path):
         """Test that an unbounded bin side is reported as NaN."""
@@ -342,11 +342,11 @@ class TestPropertyBins:
     def test_continuous_bin_bounds_are_float32(self, scene_definition):
         """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
         # What: continuous bin bounds are stored as compact float32 (not float64).
-        # How: compute the bins and assert the reported cloud_fraction/Optical_Depth bounds carry np.float32 dtype.
+        # How: compute the bins and assert the reported cloud_fraction/Cloud_Optical_Depth bounds carry np.float32 dtype.
         bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
-        # cloud_fraction / Optical_Depth are continuous, so they use the default float32 storage dtype.
+        # cloud_fraction / Cloud_Optical_Depth are continuous, so they use the default float32 storage dtype.
         assert bins["Scene_Bin_bins_Cloud_Fraction_Min"].dtype == np.float32
-        assert bins["Scene_Bin_bins_Optical_Depth_Max"].dtype == np.float32
+        assert bins["Scene_Bin_bins_Cloud_Optical_Depth_Max"].dtype == np.float32
 
     def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
         """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
@@ -419,7 +419,7 @@ class TestSceneDefinitionValidation:
     def test_overlapping_scenes_detection(self, tmp_path):
         """Test detection of overlapping scene definitions."""
         # Create overlapping scene definitions
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
 1,0.0,60.0,0.0,10.0
 2,40.0,100.0,0.0,10.0
 3,0.0,50.0,5.0,15.0
@@ -435,7 +435,7 @@ class TestSceneDefinitionValidation:
     def test_gap_in_coverage_detection(self, tmp_path):
         """Test detection of gaps in scene definition coverage."""
         # Create scene definitions with gaps
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
 1,0.0,30.0,0.0,10.0
 2,70.0,100.0,0.0,10.0
 3,0.0,30.0,20.0,50.0
@@ -474,7 +474,7 @@ class TestSceneDefinitionValidation:
     def test_unbounded_scene_definitions(self, tmp_path):
         """Test scene definitions with unbounded ranges."""
         # Create scenes with unbounded min/max values using very large numbers
-        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Optical_Depth_Min,Optical_Depth_Max
+        csv_content = """scene_id,Cloud_Fraction_Min,Cloud_Fraction_Max,Cloud_Optical_Depth_Min,Cloud_Optical_Depth_Max
 1,0.0,50.0,0.0,10.0
 2,50.0,100.0,0.0,10.0
 3,0.0,50.0,10.0,9999999.0
@@ -489,10 +489,7 @@ class TestSceneDefinitionValidation:
         data = xr.Dataset(
             {
                 str(FootprintVariables.CLEAR_AREA): (["footprint"], [75.0, 25.0, 75.0]),
-                str(FootprintVariables.OPTICAL_DEPTH_LOWER): (["footprint"], [5.0, 100.0, 10000.0]),
-                str(FootprintVariables.OPTICAL_DEPTH_UPPER): (["footprint"], [5.0, 200.0, 50000.0]),
-                str(FootprintVariables.CLOUD_FRACTION_LOWER): (["footprint"], [12.5, 37.5, 12.5]),
-                str(FootprintVariables.CLOUD_FRACTION_UPPER): (["footprint"], [12.5, 37.5, 12.5]),
+                str(FootprintVariables.CLOUD_OPTICAL_DEPTH): (["footprint"], [5.0, 150.0, 30000.0]),
             }
         )
 

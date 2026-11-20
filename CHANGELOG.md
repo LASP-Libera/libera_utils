@@ -18,13 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** SCENE-ID picks its variant from `configuration["processing_step_id"]` or `--processing_step_id`, as FMATCH does. `LIBERA_SCENE_ID_VARIANT`, `SCENE_ID_VARIANT_ENV` and `resolve_runner_config_from_env` are removed, and `RUNNER_CONFIGS` is keyed by `ProcessingStepIdentifier`. (#93)
 - **BREAKING:** `ProcessingStepIdMismatchError` and `PROCESSING_STEP_ID_CONFIGURATION_KEY` move to `libera_utils.io.manifest`. (#93)
 - **BREAKING:** SCENE-ID-CAM reads FMATCH-CAM instead of CERES SSF, so its step declares FMATCH-CAM as input, and `SceneIdRunnerConfig.input_product_id` no longer accepts `None`. (#93)
-- **BREAKING:** The TRMM variables are `Surface_Wind`, `Cloud_Phase` and `Optical_Depth`, and the `TRMM.csv` columns and scene bins follow. (#93)
+- **BREAKING:** The TRMM variables are `Surface_Wind`, `Cloud_Phase` and `Cloud_Optical_Depth`, and the `TRMM.csv` columns and scene bins follow. (#93)
 - SCENE-ID reads FMATCH variables by their product names, from local or S3 paths, and leaves a footprint with no IGBP code unmatched (scene ID 0) instead of failing the granule. (#93)
 - SCENE-ID integer columns are `int8` with -1 for missing (`SCENE_ID_INTEGER_FILL_VALUE`), and its product definitions declare no `_FillValue`. `calculate_trmm_surface_type` returns float and passes NaN through. (#93)
 
 ### Removed
 
 - **BREAKING:** `FootprintData.from_ceres_ssf`; read a FMATCH product with a `FootprintData.from_fmatch_*` reader. (#93)
+- **BREAKING:** `calculate_cloud_fraction_weighted_optical_depth`, `calculate_cloud_phase` and `FootprintVariables`' `OPTICAL_DEPTH_LOWER`/`_UPPER`, `CLOUD_FRACTION_LOWER`/`_UPPER` and `CLOUD_PHASE_LOWER`/`_UPPER`; the FMATCH-IMAGER readers supply `Cloud_Optical_Depth` and `Cloud_Phase`. (#93)
 - **BREAKING:** SCENE-ID-CAM-CAMTIME no longer runs the unfiltering classification, which runs on the radiometer timescale only; its `Scene_ID_Unfiltering` and `Scene_Bin_Unfiltering_*` variables are removed. (#93)
 
 ## [6.1.0] - 2026-11-19

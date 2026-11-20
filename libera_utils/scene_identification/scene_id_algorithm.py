@@ -435,7 +435,7 @@ def create_and_write_data_product(
     product_dataset = footprint_data.to_time_product(config.time_variable)
 
     # Keep only the variables/coordinates declared in the product definition. FootprintData carries intermediate
-    # inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the classification consumes but that are
+    # inputs (e.g. clear_area, surface_wind_u/v) that the classification consumes but that are
     # not part of the SCENE-ID product; dropping them here keeps the written product to exactly its definition
     # rather than leaking undeclared variables (the conformance check does not flag extras).
     definition = LiberaDataProductDefinition.from_yaml(config.product_definition_path)

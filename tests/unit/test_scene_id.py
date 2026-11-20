@@ -26,8 +26,6 @@ from libera_utils.scene_identification.scene_id import (
     TRMMSurfaceType,
     add_placeholder_quality_flag,
     calculate_cloud_fraction,
-    calculate_cloud_fraction_weighted_optical_depth,
-    calculate_cloud_phase,
     calculate_surface_wind,
     calculate_trmm_surface_type,
     map_cldpix_phase_to_trmm,
@@ -123,8 +121,6 @@ class TestCalculatedVariableMap:
             FootprintVariables.CLOUD_FRACTION,
             FootprintVariables.SURFACE_WIND,
             FootprintVariables.SURFACE_TYPE,
-            FootprintVariables.OPTICAL_DEPTH,
-            FootprintVariables.CLOUD_PHASE,
         ]
         for var in expected_vars:
             assert var in _CALCULATED_VARIABLE_MAP
@@ -237,104 +233,6 @@ class TestFootprintDataCalculations:
         with pytest.raises(ValueError, match=r"TRMM surface type: \[1\.5\]"):
             calculate_trmm_surface_type(1.5)  # Not a whole number
 
-    def test_calculate_cloud_fraction_weighted_optical_depth_calculation(self):
-        """Test optical depth calculation."""
-        result = calculate_cloud_fraction_weighted_optical_depth(10.0, 8.0, 25.0, 15.0, 40.0)
-        expected = (10.0 * 25.0 + 8.0 * 15.0) / 40.0
-        assert abs(result - expected) < 1e-10
-
-    def test_calculate_cloud_fraction_weighted_optical_depth_with_nan_values(self):
-        """Test optical depth calculation with NaN values."""
-        # When lower optical depth is NaN, only upper contributes
-        result = calculate_cloud_fraction_weighted_optical_depth(np.nan, 8.0, 25.0, 15.0, 40.0)
-        expected = 8.0 * 15.0 / 40.0  # Only upper layer contributes
-        assert abs(result - expected) < 1e-10
-
-        # When upper optical depth is NaN, only lower contributes
-        result = calculate_cloud_fraction_weighted_optical_depth(10.0, np.nan, 25.0, 15.0, 40.0)
-        expected = 10.0 * 25.0 / 40.0  # Only lower layer contributes
-        assert abs(result - expected) < 1e-10
-
-        # When both are NaN, result is NaN
-        result = calculate_cloud_fraction_weighted_optical_depth(np.nan, np.nan, 25.0, 15.0, 40.0)
-        assert np.isnan(result)
-
-    def test_calculate_cloud_fraction_weighted_optical_depth_array(self):
-        """Test optical depth calculation with array inputs."""
-        optical_lower = np.array([10.0, np.nan, 5.0, np.nan])
-        optical_upper = np.array([8.0, 12.0, np.nan, np.nan])
-        cf_lower = np.array([25.0, 30.0, 40.0, 20.0])
-        cf_upper = np.array([15.0, 20.0, 10.0, 30.0])
-        cf_total = np.array([40.0, 50.0, 50.0, 50.0])
-
-        result = calculate_cloud_fraction_weighted_optical_depth(
-            optical_lower, optical_upper, cf_lower, cf_upper, cf_total
-        )
-
-        # First element: both valid
-        expected_0 = (10.0 * 25.0 + 8.0 * 15.0) / 40.0
-        assert abs(result[0] - expected_0) < 1e-10
-
-        # Second element: only upper valid
-        expected_1 = 12.0 * 20.0 / 50.0
-        assert abs(result[1] - expected_1) < 1e-10
-
-        # Third element: only lower valid
-        expected_2 = 5.0 * 40.0 / 50.0
-        assert abs(result[2] - expected_2) < 1e-10
-
-        # Fourth element: both NaN
-        assert np.isnan(result[3])
-
-    def test_calculate_cloud_phase_calculation(self):
-        """Test cloud phase calculation."""
-        # Note: cloud_phase now requires optical_depth parameters
-        result = calculate_cloud_phase(1.0, 2.0, 30.0, 10.0, 40.0, 5.0, 3.0)
-        expected = round((1.0 * 30.0 + 2.0 * 10.0) / 40.0)
-        assert result == expected
-
-    def test_calculate_cloud_phase_with_nan_optical_depths(self):
-        """Test cloud phase calculation with NaN optical depth values."""
-        # When both optical depths are NaN, result should be NaN
-        result = calculate_cloud_phase(1.0, 2.0, 30.0, 10.0, 40.0, np.nan, np.nan)
-        assert np.isnan(result)
-
-        # When only one optical depth is NaN, result should still be calculated
-        result = calculate_cloud_phase(1.0, 2.0, 30.0, 10.0, 40.0, np.nan, 3.0)
-        assert result == 1.0
-
-        result = calculate_cloud_phase(1.0, 2.0, 30.0, 10.0, 40.0, 5.0, np.nan)
-        expected = round((1.0 * 30.0 + 2.0 * 10.0) / 40.0)
-        assert result == expected
-
-    def test_calculate_cloud_phase_with_nan_phase_values(self):
-        """Test cloud phase calculation with NaN phase values."""
-        # When lower phase is NaN, only upper contributes
-        result = calculate_cloud_phase(np.nan, 2.0, 30.0, 60.0, 90.0, 5.0, 3.0)
-        expected = round(2.0 * 60.0 / 90.0)  # Only upper contributes
-        assert result == expected
-
-        # When upper phase is NaN, only lower contributes
-        result = calculate_cloud_phase(1.0, np.nan, 30.0, 10.0, 40.0, 5.0, 3.0)
-        expected = round(1.0 * 30.0 / 40.0)  # Only lower contributes
-        assert result == expected
-
-        # When both phases are NaN but optical depths are valid
-        result = calculate_cloud_phase(np.nan, np.nan, 30.0, 10.0, 40.0, 5.0, 3.0)
-        assert np.isnan(result)
-
-    def test_calculate_cloud_phase_rounding(self):
-        """Test that cloud phase is rounded to nearest integer."""
-        # Test rounding down
-        result = calculate_cloud_phase(1.0, 2.0, 60.0, 10.0, 70.0, 5.0, 3.0)
-        # (1.0 * 60 + 2.0 * 10) / 70 = 80/70 = 1.14... rounds to 1
-        assert result == 1.0
-
-        # Test rounding up
-        result = calculate_cloud_phase(1.0, 2.0, 20.0, 50.0, 70.0, 5.0, 3.0)
-        # (1.0 * 20 + 2.0 * 50) / 70 = 120/70 = 1.71... rounds to 2
-        assert result == 2.0
-
 
 class TestFootprintDataInstanceMethods:
     """Test cases for FootprintData instance methods."""
@@ -407,23 +305,22 @@ class TestFootprintDataInstanceMethods:
         assert FootprintVariables.SURFACE_WIND in footprint_with_data._data.data_vars
 
     def test_calculate_required_fields_with_dependencies(self):
-        """Test calculating field that depends on another calculated field."""
-        data = xr.Dataset(
-            {
-                FootprintVariables.CLEAR_AREA: (["record"], [60.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["record"], [10.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["record"], [5.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["record"], [25.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["record"], [15.0]),
-            }
-        )
+        """A field whose spec lists dependent_calculations gets its dependency calculated first."""
+        data = xr.Dataset({FootprintVariables.CLEAR_AREA: (["record"], [60.0])})
         fp = FootprintData(data)
+        dependent_spec = CalculationSpec(
+            output_var="doubled_cloud_fraction",
+            function=lambda cloud_fraction: cloud_fraction * 2,
+            input_vars=[FootprintVariables.CLOUD_FRACTION],
+            output_datatype=float,
+            dependent_calculations=[FootprintVariables.CLOUD_FRACTION],
+        )
 
-        fp._calculate_required_fields([FootprintVariables.OPTICAL_DEPTH])
+        with patch.dict(_CALCULATED_VARIABLE_MAP, {"doubled_cloud_fraction": dependent_spec}):
+            fp._calculate_required_fields(["doubled_cloud_fraction"])
 
-        # Should calculate CLOUD_FRACTION first, then OPTICAL_DEPTH
-        assert FootprintVariables.CLOUD_FRACTION in fp._data.data_vars
-        assert FootprintVariables.OPTICAL_DEPTH in fp._data.data_vars
+        np.testing.assert_array_equal(fp._data[FootprintVariables.CLOUD_FRACTION].values, [40.0])
+        np.testing.assert_array_equal(fp._data["doubled_cloud_fraction"].values, [80.0])
 
     def test_calculate_required_fields_unknown_field_error(self, footprint_with_data):
         """Test error when requesting unknown calculated field."""
@@ -431,38 +328,11 @@ class TestFootprintDataInstanceMethods:
             footprint_with_data._calculate_required_fields(["unknown_field"])
 
     def test_calculate_required_fields_missing_dependencies_error(self):
-        """Test error when dependencies are missing."""
-        data = xr.Dataset(
-            {
-                FootprintVariables.CLEAR_AREA: (["record"], [60.0]),
-                # Missing OPTICAL_DEPTH_LOWER, etc.
-            }
-        )
-        fp = FootprintData(data)
+        """A field whose inputs are absent raises."""
+        fp = FootprintData(xr.Dataset({FootprintVariables.SURFACE_WIND_U: (["record"], [3.0])}))
 
         with pytest.raises(ValueError, match="Cannot calculate fields"):
-            fp._calculate_required_fields([FootprintVariables.OPTICAL_DEPTH])
-
-    def test_calculate_required_fields_cloud_phase_dependencies(self):
-        """Test calculating cloud phase which now requires optical depth fields."""
-        data = xr.Dataset(
-            {
-                FootprintVariables.CLEAR_AREA: (["record"], [60.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["record"], [1.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["record"], [2.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["record"], [30.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["record"], [10.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["record"], [5.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["record"], [3.0]),
-            }
-        )
-        fp = FootprintData(data)
-
-        fp._calculate_required_fields([FootprintVariables.CLOUD_PHASE])
-
-        # Should calculate CLOUD_FRACTION first, then CLOUD_PHASE
-        assert FootprintVariables.CLOUD_FRACTION in fp._data.data_vars
-        assert FootprintVariables.CLOUD_PHASE in fp._data.data_vars
+            fp._calculate_required_fields([FootprintVariables.SURFACE_WIND])
 
     def test_calculate_single_field_from_spec(self):
         """Test _calculate_single_field_from_spec method."""
@@ -531,12 +401,8 @@ class TestIdentifyScenes:
                 FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], [3.0, 4.0, 5.0]),
                 FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], [4.0, 3.0, 12.0]),
                 FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], [2.0, 5.0, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], [2.0, 2.0, 2.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: ([RADIOMETER_TIME_DIMENSION], [2.0, 5.0, 3.0]),
+                FootprintVariables.CLOUD_PHASE: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
             }
         )
         return FootprintData(data)
@@ -566,12 +432,8 @@ class TestIdentifyScenes:
                 FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], [3.0, 4.0, np.nan]),
                 FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], [4.0, 3.0, 12.0]),
                 FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 20.0, 50.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], [2.0, np.nan, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], [2.0, 2.0, 2.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: ([RADIOMETER_TIME_DIMENSION], [2.0, np.nan, 3.0]),
+                FootprintVariables.CLOUD_PHASE: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
             }
         )
         footprint_data = FootprintData(data)
@@ -824,12 +686,8 @@ class TestSceneDefinitionBehavior:
                 FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0]),
                 FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
                 FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: (["footprint"], [2.0, 5.0, 3.0]),
+                FootprintVariables.CLOUD_PHASE: (["footprint"], [1.0, 1.0, 2.0]),
             }
         )
         return FootprintData(data)
@@ -858,12 +716,8 @@ class TestDataQualityAndEdgeCases:
                 FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, np.nan, 5.0, 2.0, np.nan]),
                 FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, np.nan, 3.0, 8.0]),
                 FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, np.nan, 20.0, 60.0, 30.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, np.nan, 15.0, 8.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0, np.nan, 12.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, np.nan, 2.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, np.nan, 1.0, 1.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: (["footprint"], [2.0, 5.0, np.nan, 15.0, 8.0]),
+                FootprintVariables.CLOUD_PHASE: (["footprint"], [1.0, np.nan, 2.0, 1.0, 2.0]),
             }
         )
 
@@ -874,8 +728,6 @@ class TestDataQualityAndEdgeCases:
             [
                 FootprintVariables.CLOUD_FRACTION,
                 FootprintVariables.SURFACE_WIND,
-                FootprintVariables.OPTICAL_DEPTH,
-                FootprintVariables.CLOUD_PHASE,
             ]
         )
 
@@ -891,16 +743,6 @@ class TestDataQualityAndEdgeCases:
         assert np.isnan(surface_wind[1])  # U component NaN
         assert np.isnan(surface_wind[2])  # V component NaN
 
-        # Check optical depth with NaN values
-        optical_depth = footprint_data._data[FootprintVariables.OPTICAL_DEPTH].values
-        # First footprint: both valid
-        expected_0 = (2.0 * 10.0 + 3.0 * 10.0) / 20.0
-        assert abs(optical_depth[0] - expected_0) < 1e-10
-
-        # Third footprint: lower is NaN, only upper contributes
-        expected_2 = (7.0 * 40.0) / 80.0
-        assert abs(optical_depth[2] - expected_2) < 1e-10
-
 
 class TestErrorHandling:
     """Tests for error handling and recovery."""
@@ -914,12 +756,8 @@ class TestErrorHandling:
                 FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0, 2.0, 6.0]),
                 FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0, 3.0, 8.0]),
                 FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0, 60.0, 30.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0, 15.0, 8.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0, 20.0, 12.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0, 1.0, 1.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: (["footprint"], [2.0, 5.0, 3.0, 15.0, 8.0]),
+                FootprintVariables.CLOUD_PHASE: (["footprint"], [1.0, 1.0, 2.0, 1.0, 2.0]),
             }
         )
 
@@ -938,12 +776,8 @@ class TestErrorHandling:
                 FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0]),
                 FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
                 FootprintVariables.CLEAR_AREA: (["footprint"], [-10.0, 110.0, 50.0]),  # Invalid values
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+                FootprintVariables.CLOUD_OPTICAL_DEPTH: (["footprint"], [2.0, 5.0, 3.0]),
+                FootprintVariables.CLOUD_PHASE: (["footprint"], [1.0, 1.0, 2.0]),
             }
         )
 
@@ -960,15 +794,15 @@ class TestErrorHandling:
             {
                 FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15]),
                 FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0]),
-                # Missing: OPTICAL_DEPTH_LOWER, OPTICAL_DEPTH_UPPER, CLOUD_FRACTION_LOWER, CLOUD_FRACTION_UPPER
+                # Missing: SURFACE_WIND_U, SURFACE_WIND_V
             }
         )
 
         footprint_data = FootprintData(data)
 
-        # Should raise error when trying to calculate optical depth without required inputs
+        # Should raise error when trying to calculate surface wind without required inputs
         with pytest.raises(ValueError, match="Cannot calculate fields"):
-            footprint_data._calculate_required_fields([FootprintVariables.OPTICAL_DEPTH])
+            footprint_data._calculate_required_fields([FootprintVariables.SURFACE_WIND])
 
 
 class TestFmatchCamCloudFractionPassthrough:
@@ -1054,7 +888,7 @@ class TestSceneIdImagerProductDtypes:
     def test_trmm_input_and_bin_variables_present(self, definition_filename):
         """The extra TRMM inputs and their bin bounds are declared."""
         definition = self._load(definition_filename)
-        for name in ("Surface_Wind", "Cloud_Phase", "Optical_Depth"):
+        for name in ("Surface_Wind", "Cloud_Phase", "Cloud_Optical_Depth"):
             assert name in definition.variables
         assert definition.variables["Scene_Bin_TRMM_Surface_Type_Min"].dtype == "int8"
         assert definition.variables["Scene_Bin_TRMM_Cloud_Phase_Max"].dtype == "float32"

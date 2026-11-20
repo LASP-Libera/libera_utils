@@ -84,7 +84,7 @@ variables:
       # 1 = liquid, 2 = ice, NaN = unknown/unavailable. Mapped from FMATCH's CLDPIX_Cloud_Particle_Phase; a NaN
       # leaves the footprint unmatched for any TRMM scene that bounds Cloud_Phase.
       long_name: Dominant cloud phase (1 = liquid, 2 = ice)
-  Optical_Depth:
+  Cloud_Optical_Depth:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -288,17 +288,17 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the Cloud_Phase bin of the matched TRMM scene
-  Scene_Bin_TRMM_Optical_Depth_Min:
+  Scene_Bin_TRMM_Cloud_Optical_Depth_Min:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Lower bound (inclusive) of the Optical_Depth bin of the matched TRMM scene
+      long_name: Lower bound (inclusive) of the Cloud_Optical_Depth bin of the matched TRMM scene
       units: "1"
-  Scene_Bin_TRMM_Optical_Depth_Max:
+  Scene_Bin_TRMM_Cloud_Optical_Depth_Max:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Upper bound (exclusive) of the Optical_Depth bin of the matched TRMM scene
+      long_name: Upper bound (exclusive) of the Cloud_Optical_Depth bin of the matched TRMM scene
       units: "1"
   Scene_Bin_TRMM_Solar_Zenith_Surface_Min:
     dtype: float32
