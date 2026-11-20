@@ -20,6 +20,23 @@ coordinates:
       dtype: int64
 
 variables:
+  ##############
+  # Geolocation
+  ##############
+  # Footprint boresight geolocation, copied unchanged from the FMATCH-CAM input.
+  Latitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geodetic latitude. Coordinate Reference System WGS84
+      units: degrees_north
+  Longitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Longitude. Coordinate Reference System WGS84
+      units: degrees_east
+
   ########################
   # Input scene properties
   ########################

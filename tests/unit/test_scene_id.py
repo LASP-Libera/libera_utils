@@ -17,6 +17,7 @@ from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
     _FMATCH_CAM_COLUMN_MAP,
     _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+    _FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
     _FMATCH_IMAGER_COLUMN_MAP,
     RADIOMETER_TIME_DIMENSION,
     CalculationSpec,
@@ -844,12 +845,14 @@ class TestFmatchCamCloudFractionPassthrough:
 
     @staticmethod
     def _write_minimal_fmatch_cam(path, cloud_fraction_camera):
-        """Write a minimal FMATCH-CAM-shaped NetCDF carrying just the CAM classification source variables.
+        """Write a minimal FMATCH-CAM-shaped NetCDF carrying just the variables the CAM reader reads.
 
         The variables are written under their product names, as FMATCH writes them.
         """
         n = len(cloud_fraction_camera)
         columns = {
+            "Latitude": np.zeros(n, np.float32),
+            "Longitude": np.zeros(n, np.float32),
             "IGBP_Surface_Type": np.arange(1, n + 1, dtype=np.int16),
             "Cloud_Fraction_Camera": np.asarray(cloud_fraction_camera, np.float32),
             "Solar_Zenith_Surface": np.zeros(n, np.float32),
@@ -959,6 +962,11 @@ class TestFmatchSourceNames:
                 list(_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES),
                 (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME),
                 id="camtime-passthrough",
+            ),
+            pytest.param(
+                list(_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES),
+                (OperationalMode.CAM, OperationalMode.IMAGER),
+                id="radiometer-passthrough",
             ),
         ],
     )

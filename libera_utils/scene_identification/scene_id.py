@@ -40,17 +40,11 @@ RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 # variable hangs on both.
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
-# Product names of the identifier variables that the camera-timescale FMATCH products carry and the camera-timescale
-# SCENE-ID products (SCENE-ID-CAM-CAMTIME, SCENE-ID-IMAGER-CAMTIME) pass straight through -- the four inclusive camera
-# pixel-block bounds (Camera_Pixel_{X,Y}_{Min,Max}), the PSF bounding box, and the boresight geolocation -- each read
-# from the FMATCH file and written to SCENE-ID under the same name, so a scene can be traced back
-# to the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
-# (CAMERA_TIME, PSEUDOFOOTPRINT) grid dimensions) by from_fmatch_cam_camtime / from_fmatch_imager_camtime and are not
-# consumed by the classification; they simply ride along to the written product. The FMATCH-only Center_Pixel_X/Y
-# (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
+# FMATCH variables SCENE-ID copies unchanged under the same names, so a scene traces back to its ground footprint
+# and, on the camera timescale, its camera pixels. The classification does not read them.
+_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES: tuple[str, ...] = ("Latitude", "Longitude")
 _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
-    "Latitude",
-    "Longitude",
+    *_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
     "Altitude",
     "PSF_Bbox_Lat_Min",
     "PSF_Bbox_Lat_Max",
@@ -712,7 +706,8 @@ class FootprintData:
         """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
 
         FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
-        Libera-camera-derived cloud fraction and the scene properties needed for classification. A product whose
+        Libera-camera-derived cloud fraction and the scene properties needed for classification. The footprint
+        ``Latitude`` and ``Longitude`` pass straight through. A product whose
         camera cloud fraction has no finite value is read with a logged warning, since every footprint is then left
         unmatched.
 
@@ -738,6 +733,7 @@ class FootprintData:
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             expected_product=DataProductIdentifier.aux_fmatch_cam,
+            passthrough_variables=_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
         )
         _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
@@ -789,7 +785,8 @@ class FootprintData:
         The FMATCH-IMAGER product is the operational input to SCENE-ID-IMAGER: one footprint per
         ``RADIOMETER_TIME``, carrying the CERES SSF clear coverage (for cloud fraction), the CLDPIX cloud
         optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface wind), and
-        the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
+        the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification. The footprint
+        ``Latitude`` and ``Longitude`` pass straight through.
 
         Parameters
         ----------
@@ -814,6 +811,7 @@ class FootprintData:
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             expected_product=DataProductIdentifier.aux_fmatch_imager,
+            passthrough_variables=_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
         )
         return cls(extracted_data)
 
@@ -905,7 +903,7 @@ class FootprintData:
             The FMATCH product this reader reads, named in the missing-variable error.
         passthrough_variables : tuple of str, optional
             Names of FMATCH variables to copy verbatim onto the output under the same name (e.g. the camera-timescale
-            identifier variables). Empty for the radiometer-timescale products.
+            identifier variables, or the radiometer-timescale geolocation).
 
         Returns
         -------

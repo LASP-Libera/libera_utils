@@ -40,6 +40,101 @@ coordinates:
       dtype: int64
 
 variables:
+  # ===========================================================================================================
+  # Footprint identifiers (passed straight through from FMATCH-CAM-CAMTIME)
+  # ===========================================================================================================
+  # Copied unchanged from the FMATCH-CAM-CAMTIME input, declared exactly as fmatch_cam_camtime.yml
+  # declares them, so a consumer can trace each classified subsection back to its ground footprint and camera
+  # pixels. Scene identification does not read them.
+
+  # --- Boresight geolocation -----------------------------------------------------------------------------------------
+  # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
+  # geolocation via FMATCH-CAM-CAMTIME.
+  Latitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Geodetic latitude. Coordinate Reference System WGS84
+      units: degrees_north
+  Longitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Longitude. Coordinate Reference System WGS84
+      units: degrees_east
+  Altitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # This value is the L1B CAM `Altitude` field at the center pixel: the height above the
+      # WGS84 ellipsoid (EPSG:4979) of that pixel's geolocated point -- NOT the ~835 km
+      # spacecraft altitude.
+      long_name: Height above the WGS84 ellipsoid. EPSG:4979
+      units: meters
+
+  # --- PSF bounding box ----------------------------------------------------------------------------------------------
+  # Geographic extent of the pseudo-footprint's point-spread-function bounding box, passed through from
+  # FMATCH-CAM-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
+  PSF_Bbox_Lat_Min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  PSF_Bbox_Lat_Max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  PSF_Bbox_Lon_Min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
+  PSF_Bbox_Lon_Max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
+
+  # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
+  # Each pseudo-footprint is a contiguous block of L1B camera pixels, segmented by the Camera Cloud Fraction algorithm
+  # (types.PseudoFootprint). These four
+  # inclusive bounds trace a subsection back to its source pixels in the L1B Daily Camera grid (dimensions
+  # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y): x_min..x_max along the column axis and y_min..y_max along the row
+  # axis, both endpoints inclusive. NOTE: this (x_min, x_max, y_min, y_max) representation assumes each footprint is a
+  # square (an axis-aligned rectangular pixel block), so a single min/max pair per axis fully describes it.
+  # Subsections may overlap in pixel space. Passed through verbatim from FMATCH-CAM-CAMTIME.
+  Camera_Pixel_X_Min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  Camera_Pixel_X_Max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  Camera_Pixel_Y_Min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+  Camera_Pixel_Y_Max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      _FillValue: -1
+      long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+
   ########################
   # Input scene properties
   ########################
@@ -168,99 +263,3 @@ variables:
     attributes:
       long_name: Bit flags indicating the quality of the data
       value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.
-
-  # ===========================================================================================================
-  # Footprint identifiers (passed straight through from FMATCH-CAM-CAMTIME)
-  # ===========================================================================================================
-  # These variables are NOT produced by scene identification; they are copied verbatim from the FMATCH-CAM-CAMTIME
-  # input so a consumer can trace each classified subsection back to its source. They are unique to the
-  # camera-timescale product (SCENE-ID-CAM has no equivalent). Definitions mirror fmatch_cam_camtime.yml exactly
-  # (dtype + attributes) so the two products agree bit-for-bit, and all hang on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
-
-  # --- Boresight geolocation -----------------------------------------------------------------------------------------
-  # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
-  # geolocation via FMATCH-CAM-CAMTIME.
-  Latitude:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Geodetic latitude. Coordinate Reference System WGS84
-      units: degrees_north
-  Longitude:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Longitude. Coordinate Reference System WGS84
-      units: degrees_east
-  Altitude:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      # This value is the L1B CAM `Altitude` field at the center pixel: the height above the
-      # WGS84 ellipsoid (EPSG:4979) of that pixel's geolocated point -- NOT the ~835 km
-      # spacecraft altitude.
-      long_name: Height above the WGS84 ellipsoid. EPSG:4979
-      units: meters
-
-  # --- PSF bounding box ----------------------------------------------------------------------------------------------
-  # Geographic extent of the pseudo-footprint's point-spread-function bounding box, passed through from
-  # FMATCH-CAM-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
-  PSF_Bbox_Lat_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Southern latitude bound of PSF bounding box
-      units: degrees_north
-  PSF_Bbox_Lat_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Northern latitude bound of PSF bounding box
-      units: degrees_north
-  PSF_Bbox_Lon_Min:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Western longitude bound of PSF bounding box
-      units: degrees_east
-      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
-  PSF_Bbox_Lon_Max:
-    dtype: float32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      long_name: Eastern longitude bound of PSF bounding box
-      units: degrees_east
-      comment: "In [-180, 180). A box crossing the antimeridian has PSF_Bbox_Lon_Min > PSF_Bbox_Lon_Max."
-
-  # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
-  # Each pseudo-footprint is a contiguous block of L1B camera pixels, segmented by the Camera Cloud Fraction algorithm
-  # (types.PseudoFootprint). These four
-  # inclusive bounds trace a subsection back to its source pixels in the L1B Daily Camera grid (dimensions
-  # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y): x_min..x_max along the column axis and y_min..y_max along the row
-  # axis, both endpoints inclusive. NOTE: this (x_min, x_max, y_min, y_max) representation assumes each footprint is a
-  # square (an axis-aligned rectangular pixel block), so a single min/max pair per axis fully describes it.
-  # Subsections may overlap in pixel space. Passed through verbatim from FMATCH-CAM-CAMTIME.
-  Camera_Pixel_X_Min:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
-  Camera_Pixel_X_Max:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
-  Camera_Pixel_Y_Min:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
-  Camera_Pixel_Y_Max:
-    dtype: int32
-    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
-    attributes:
-      _FillValue: -1
-      long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y

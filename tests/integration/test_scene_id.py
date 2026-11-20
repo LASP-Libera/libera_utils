@@ -15,7 +15,11 @@ from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.scene_identification.scene_id import standard_scene_definitions
+from libera_utils.scene_identification.scene_id import (
+    _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+    _FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
+    standard_scene_definitions,
+)
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
     scene_id_cli_handler,
@@ -23,20 +27,6 @@ from libera_utils.scene_identification.scene_id_algorithm import (
 from libera_utils.version import version
 
 pytestmark = pytest.mark.integration
-
-# The identifier variables a camera-timescale SCENE-ID product passes straight through from its FMATCH input.
-_CAMTIME_PASSTHROUGH = (
-    "Latitude",
-    "Longitude",
-    "PSF_Bbox_Lat_Min",
-    "PSF_Bbox_Lat_Max",
-    "PSF_Bbox_Lon_Min",
-    "PSF_Bbox_Lon_Max",
-    "Camera_Pixel_X_Min",
-    "Camera_Pixel_X_Max",
-    "Camera_Pixel_Y_Min",
-    "Camera_Pixel_Y_Max",
-)
 
 
 class TestSceneIdRunnerEndToEnd:
@@ -105,7 +95,10 @@ class TestSceneIdRunnerEndToEnd:
                 scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
                 assert np.count_nonzero(scene_ids) > 0, f"{step}: no footprint matched a {scene_definition.type} scene"
 
-            # A camera-timescale product carries its FMATCH input's identifiers unchanged.
-            if "camtime" in str(step):
-                for name in _CAMTIME_PASSTHROUGH:
-                    np.testing.assert_allclose(product[name].values, fmatch[name].values, err_msg=name)
+            # The product carries its FMATCH input's geolocation, and on the camera timescale its identifiers, unchanged.
+            camtime = runner_config.time_variable == "CAMERA_TIME"
+            passthrough = (
+                _FMATCH_CAMTIME_PASSTHROUGH_VARIABLES if camtime else _FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES
+            )
+            for name in passthrough:
+                np.testing.assert_allclose(product[name].values, fmatch[name].values, err_msg=name)

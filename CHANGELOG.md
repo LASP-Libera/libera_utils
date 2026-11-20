@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (`aux-scene-id-imager`, `aux-scene-id-imager-camtime`), with their product definitions and the `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. SCENE-ID-IMAGER runs ERBE, unfiltering and TRMM, SCENE-ID-IMAGER-CAMTIME runs ERBE and TRMM, and `Scene_ID_TRMM` is `uint16` for TRMM's IDs up to 650. (#93)
+- SCENE-ID-IMAGER and SCENE-ID-IMAGER-CAMTIME runners (`aux-scene-id-imager`, `aux-scene-id-imager-camtime`), with their product definitions and the `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` readers. SCENE-ID-IMAGER runs ERBE, unfiltering and TRMM, SCENE-ID-IMAGER-CAMTIME runs ERBE and TRMM, and `Scene_ID_TRMM` is `uint16` for TRMM's IDs up to 650. Both carry their FMATCH input's `Latitude` and `Longitude`. (#93)
+- SCENE-ID-CAM carries FMATCH-CAM's `Latitude` and `Longitude`. (#93)
 - `libera_utils.io.manifest.resolve_processing_step_id`, which FMATCH and SCENE-ID share. (#93)
 
 ### Changed
