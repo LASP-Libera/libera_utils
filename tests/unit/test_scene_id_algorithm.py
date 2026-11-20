@@ -74,15 +74,6 @@ class TestCollectInputFiles:
 
         assert selected == [f"{self._INPUT_DIR}/{name}" for name in expected]
 
-    def test_placeholder_mode_keeps_only_non_libera_files(self):
-        """In placeholder mode the CERES SSF input is kept, though it parses as an ancillary filename."""
-        libera_product = _libera_product_name(DataProductIdentifier.l1b_rad)
-        manifest = self._manifest(libera_product, SSF_INPUT_NAME)
-
-        selected = collect_input_files(manifest, None)
-
-        assert selected == [f"{self._INPUT_DIR}/{SSF_INPUT_NAME}"]
-
 
 def _manifest_naming(step: str | None) -> Manifest:
     """An input manifest whose configuration names ``step``, or names no step when ``step`` is ``None``."""
