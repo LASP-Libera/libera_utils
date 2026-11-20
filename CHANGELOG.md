@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.28.0] - 2026-11-19
+
 ### Added
 
 - Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
@@ -1170,7 +1172,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.28.0...HEAD
+[5.28.0]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...5.28.0
 [5.27.0]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...5.27.0
 [5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
