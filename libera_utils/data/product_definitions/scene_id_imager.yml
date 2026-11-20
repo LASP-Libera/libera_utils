@@ -7,12 +7,8 @@
 
 attributes:
   ProductID: SCENE-ID-IMAGER
-  # Populated at write time by the runner / write_libera_data_product (present but per-file), matching the other
-  # Libera product definitions.
-  algorithm_version: null
-  # Provenance attribute set at write time by the shared SCENE-ID runner (create_and_write_data_product), matching
-  # the SCENE-ID-CAM products. TODO[LIBSDC-822]: Update once umm-g writer is implemented.
-  InputGranules: null
+  algorithm_version: null # TODO[LIBSDC-870]: Set from the installed package version once the product writer does
+  InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
 
 coordinates:
   # Time of observation, one value per footprint. Mirrors the L1B_RAD/CAM coordinate convention so downstream code

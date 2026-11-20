@@ -1,9 +1,7 @@
 # Libera SCENE-ID-CAM-CAMTIME product definition.
 attributes:
   ProductID: SCENE-ID-CAM-CAMTIME
-  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
-  # values vary per file).
-  algorithm_version: null
+  algorithm_version: null # TODO[LIBSDC-870]: Set from the installed package version once the product writer does
   InputGranules: null # TODO[LIBSDC-869]: Update once umm-g writer is implemented
 
 coordinates:
