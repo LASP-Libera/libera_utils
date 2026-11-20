@@ -102,6 +102,10 @@ image, and raises `ValueError` for a name in that form whose fields do not parse
 
 Only the global (`M`) EASE-Grid 2.0 mask grids are accepted, as `.bin`.
 
+Each ancillary file also gives `partition_key`, `version` and `revision` (see Partition Schemes). Its `revision` is
+the production time for the MODIS and VIIRS L3 products and an IGBP tile, the `R` field for ERA5 and a version
+archive, and `None` for CERES, the VIIRS SDR, NISE and a mask grid.
+
 The ERA5 name follows the Libera data product form: `utc_start` and `utc_end` are the first and last hourly steps in
 the file (`YYYYMMDDTHHMMSS`), and `revision` is the time the SDC named it, `R` followed by `YYYYMMDDTHHMMSSffffff`.
 `Era5Filename.from_filename_parts` builds one.
@@ -114,27 +118,58 @@ filename's equality check only handles other filenames; for anything else it ret
 falls back to the other operand, so comparing a filename with a string, `None` or a path is `False`. Reassigning
 `path` changes the object's hash, so do not modify a filename that is already a set member or a dictionary key.
 
-## Daily and Version-Partitioned Data Products
+## Partition Schemes
 
-% TODO[LIBSDC-936]: describe the L0, TRIMMED and CAL schemes here once PartitionScheme has them.
+Every `DataProductIdentifier` has one `PartitionScheme`, its `partition_scheme`, which decides how its files are
+named and archived and what partition each file belongs to. A partition holds one logical file; a newer revision of
+that file, such as an L0 gap fill, is a new materialization of the same partition. Every data product filename class
+gives three properties:
 
-This section covers the two schemes `PartitionScheme` has today, `DAILY` and `VERSION`. L0, TRIMMED and CAL products
-take the `DAILY` default until their own schemes are added, though L0 files are named by `L0Filename` or
-`LiberaGroundCcsdsFilename`, not `LiberaDataProductFilename`, and archived under their APID.
+- `partition_key`: the file's partition, formatted by the scheme's `PartitionScheme.key_format`. It is the file's
+  Dagster partition key, so libera_cdk's partitions definitions take their formats from `key_format`. Times are UTC.
+- `version`: in PEP 440 form for a Libera product (`V1-2-3RC1` becomes `1.2.3rc1`), as the name carries it for an
+  external one. `filename_parts.version` keeps the form in the name.
+- `revision`: the UTC time this revision of the file was made, or `None` where the name carries none.
 
-A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename` with its data level and the time
-range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revision>.<ext>`. It is archived under the
-date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date` property gives.
+| Scheme     | Products                                                       | Filename class                                                                   | `partition_key` example |
+| ---------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------- |
+| `TWO_HOUR` | L0                                                             | `L0Filename`, `LiberaGroundCcsdsFilename`                                        | `2025-11-14-12:00`      |
+| `HOURLY`   | `CERES-NOAA20-SSF`, `CERES-NOAA20-CLDPIX`                      | `CeresFilename`                                                                  | `2023-01-01-00:00`      |
+| `DAILY`    | Every product with no other scheme                             | `LiberaDataProductFilename` and the daily ancillaries                            | `2027-01-02`            |
+| `EVENT`    | The TRIMMED and CAL product of each calibration ObsID          | `LiberaDataProductFilename`                                                      | `20270102T193000`       |
+| `VERSION`  | `ADM-CAM`, `ADM-IMAGER`, `MODIS-IGBP`, `NSIDC-LAND-OCEAN-MASK` | `LiberaVersionPartitionedDataProductFilename`, `AncillaryVersionArchiveFilename` | `1.2.3`, `061`          |
 
-A version-partitioned data product, such as an ADM, is valid over more than one day (indefinitely until the next version
-update). It is named by `LiberaVersionPartitionedDataProductFilename` with its data level and no time range,
-`LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under `<ProductID>/<Version>`. It has no
-`applicable_date` and the period that it covers is recorded in the file's variables and metadata. A product is
-version-partitioned when its `DataProductIdentifier` has partition scheme `PartitionScheme.VERSION`, and
-`LiberaVersionPartitionedDataProductFilename` does not accept products with any other scheme.
-`LiberaDataProductFilename` in turn does not accept a version-partitioned product.
+- **TWO_HOUR.** An EDOS PDS name carries no chunk start, so an `L0Filename`'s `partition_key` is `None`: the chunk
+  start comes from its Construction Record. Its `revision` is the EDOS creation time in the name. The Construction
+  Record (`PDS-CR`) has no partition key and is not a Dagster asset. A ground-test capture is a file of its APID's L0
+  product, named by the start of the two-hour bin it was cut from, an even UTC hour, and that bin start is its key;
+  `LiberaGroundCcsdsFilename` rejects a name whose time is not a two-hour bin start or whose APID is not a
+  `LiberaApid` member. Every L0 product but the Construction Record also has a `longest_file_span`, the longest
+  effective span (data time for a data-time-indexed APID, packet time otherwise) one of its files holds, which bounds
+  how far back the L0 coverage window query looks. `format_coverage_key` writes the timestamp of a File Metadata
+  `COVERAGE#` sort key.
+- **HOURLY.** A CERES file holds one hour; its key is the start of that hour. It is still archived under the UTC day
+  of that hour.
+- **DAILY.** A daily data product, such as `RAD-4CH`, is named by `LiberaDataProductFilename` with its data level and
+  the time range of its data, `LIBERA_<Level>_<ProductID>_V<Version>_<Start>_<End>_R<Revision>.<ext>`. It is
+  archived under the date its time range falls on, `<ProductID>/<YYYY>/<MM>/<DD>`, which its `applicable_date`
+  property gives and which is its key.
+- **EVENT.** A TRIMMED or CAL file holds one calibration event and is named like a daily product. Its key is its
+  `utc_start`, so two events of one ObsID on one day have different keys; it is archived under the UTC day of
+  `utc_start`.
+- **VERSION.** A version-partitioned product, such as an ADM, is valid over more than one day (indefinitely until the
+  next version update). A Libera one is named by `LiberaVersionPartitionedDataProductFilename` with its data level
+  and no time range, `LIBERA_<Level>_<ProductID>_V<Version>_R<Revision>.nc`, and archived once under
+  `<ProductID>/<Version>`, with the version in the form the name carries. It has no `applicable_date`, and the period
+  it covers is recorded in the file's variables and metadata. Its key is its PEP 440 version. IGBP and the land/ocean
+  mask are ingested as version archives (`AncillaryVersionArchiveFilename`, see Version archives), each keyed by the
+  version its name carries. A file inside an archive is never ingested on its own; an IGBP tile gives the collection
+  in its own name as its key, and a mask grid the dataset version `1`.
+
+`LiberaDataProductFilename` accepts only DAILY and EVENT products, and `LiberaVersionPartitionedDataProductFilename`
+only VERSION products that are not ancillary; each rejects any other product where the name is made.
 `filenaming.PARTITION_SCHEME_FILENAME_CLASSES` gives the filename class `write_libera_data_product` uses for each
-partition scheme.
+scheme the SDC writes: DAILY, EVENT and VERSION.
 
 ```python
 from libera_utils.io import filenaming
@@ -144,6 +179,13 @@ adm = filenaming.LiberaVersionPartitionedDataProductFilename.from_filename_parts
 )
 print(adm.path.name)  # LIBERA_AUX_ADM-CAM_V1-2-3_R<revision>.nc
 print(adm.archive_prefix)  # ADM-CAM/V1-2-3
+print(adm.partition_key)  # 1.2.3
+
+event = filenaming.LiberaDataProductFilename(
+    "LIBERA_CAL_SWC-365NM_V1-0-0_20270102T193000_20270102T200000_R20270103T080910123456.nc"
+)
+print(event.partition_key)  # 20270102T193000
+print(event.applicable_date)  # 2027-01-02
 ```
 
 ## Working With Paths

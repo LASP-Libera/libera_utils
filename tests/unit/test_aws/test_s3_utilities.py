@@ -85,7 +85,7 @@ class TestManualIngestPut:
                 2,
             ),
             # Demuxed ground CCSDS basename (single APID, no extension)
-            (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
+            (["LIBERA_SDC_1040_ccsds_2025_318_12_00_00"], 1),
             # Version-partitioned data product
             (["LIBERA_AUX_ADM-CAM_V3-14-159_R20270102T112233000000.nc"], 1),
             # External ancillary products, under their upstream names (ERA5 under the SDC's scheme), and the
@@ -163,7 +163,7 @@ class TestManualIngestPut:
     ):
         """A batch larger than one ingester invocation can handle is split across several events."""
         file_names = [
-            f"LIBERA_SDC_1040_ccsds_2025_318_{hour:02d}_00_00"
+            f"LIBERA_SDC_1040_ccsds_2025_318_{2 * hour:02d}_00_00"
             for hour in range(2 * s3_utilities.MAX_FILES_PER_INGEST_EVENT + 1)
         ]
         paths = []
@@ -427,7 +427,7 @@ class TestVerifyIngestion:
     DATA_PRODUCT_FILE = "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R20270102T112233000000.nc"
     L0_PDS_FILE = "P1590011SOMESCIENCEAAA99030231459001.PDS"
     L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
-    GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_13_53_06"
+    GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_12_00_00"
     ANCILLARY_DAILY_FILE = "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051.nc"
     ANCILLARY_NON_DAILY_FILE = "NSIDC-LAND-OCEAN-MASK_1_20000101_R20261020T120000000000.zip"
 
@@ -440,8 +440,8 @@ class TestVerifyIngestion:
 
     @staticmethod
     def _seed_metadata_record(session, table_name, basename, sk):
-        """Seed a single File Metadata record (PK=basename, SK=sk). The base record uses SK="#"; a data product /
-        L0 PDS product record uses SK=applicable_date."""
+        """Seed a single File Metadata record (PK=basename, SK=sk). The base record uses SK="#"; a data product
+        record uses SK=PARTITION#<partition_key>; an L0 PDS product record uses SK=applicable_date."""
         session.resource("dynamodb").Table(table_name).put_item(Item={"PK": basename, "SK": sk})
 
     @staticmethod
@@ -462,11 +462,40 @@ class TestVerifyIngestion:
 
         self._seed_archive_object(session, libera_filename)
         self._seed_metadata_record(
-            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, libera_filename.applicable_date.isoformat()
+            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, f"PARTITION#{libera_filename.partition_key}"
         )
         self._seed_availability_record(session, make_data_availability_table, libera_filename)
 
         # Should not raise. poll_interval=0 keeps the (single, already-satisfied) pass instant.
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            DATA_PRODUCT_FILE,
+            "CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc",
+            "LIBERA_L1A_NOM-HK-SWC-365NM-TRIMMED_V1-0-0_20270102T193000_20270102T200000_R20270103T080910123456.nc",
+        ],
+        ids=["daily", "hourly", "event"],
+    )
+    def test_verify_looks_up_the_partition_file_metadata_record(
+        self, name, make_test_archive_buckets, make_data_availability_table, make_file_metadata_table
+    ):
+        """A data product's File Metadata check reads its PARTITION#<partition key> record, not a record keyed by
+        its applicable date or bare partition key."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.AbstractValidFilename.from_file_path(name)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_availability_record(session, make_data_availability_table, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, name, libera_filename.applicable_date.isoformat())
+        self._seed_metadata_record(session, make_file_metadata_table, name, libera_filename.partition_key)
+        with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+        self._seed_metadata_record(
+            session, make_file_metadata_table, name, f"PARTITION#{libera_filename.partition_key}"
+        )
         s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
 
     def test_verify_times_out_when_a_record_is_missing(
@@ -479,7 +508,7 @@ class TestVerifyIngestion:
         # Seed archive + metadata but NOT the availability record.
         self._seed_archive_object(session, libera_filename)
         self._seed_metadata_record(
-            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, libera_filename.applicable_date.isoformat()
+            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, f"PARTITION#{libera_filename.partition_key}"
         )
 
         with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
@@ -576,7 +605,7 @@ class TestVerifyIngestion:
 
         self._seed_archive_object(session, libera_filename)
         self._seed_metadata_record(
-            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, libera_filename.applicable_date.isoformat()
+            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, f"PARTITION#{libera_filename.partition_key}"
         )
         self._seed_availability_record(session, make_data_availability_table, libera_filename)
 
@@ -591,7 +620,7 @@ class TestVerifyIngestion:
 
         self._seed_archive_object(session, libera_filename)
         self._seed_metadata_record(
-            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, libera_filename.applicable_date.isoformat()
+            session, make_file_metadata_table, self.ANCILLARY_DAILY_FILE, f"PARTITION#{libera_filename.partition_key}"
         )
 
         with pytest.raises(TimeoutError, match="Ingestion verification timed out"):

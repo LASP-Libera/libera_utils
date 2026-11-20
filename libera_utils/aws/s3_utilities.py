@@ -65,11 +65,12 @@ ManualIngestFilename = (
     | AncillaryDataProductFilename
 )
 
-# The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata and Data Availability
-# records are keyed on its applicable date, and an L0 or ground CCSDS file has its own record rules. A non-daily
-# file (a version-partitioned data product, or the version archive of IGBP or the land/ocean mask) has no
-# applicable date, so ``put --verify`` stages it but cannot verify it.
-# TODO[LIBSDC-880]: verify non-daily products once the ingester defines their records
+# The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata record is its
+# ``PARTITION#<partition key>`` record and its Data Availability record is keyed on its applicable date, and an L0 or
+# ground CCSDS file has its own record rules. A version-partitioned file (a Libera version-partitioned data product, or
+# the version archive of IGBP or the land/ocean mask) has no applicable date, so ``put --verify`` stages it but cannot
+# verify it.
+# TODO[LIBSDC-880]: verify version-partitioned products once the ingester defines their records
 VerifiableIngestFilename = (
     L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | DailyAncillaryDataProductFilename
 )
@@ -363,7 +364,10 @@ def verify_ingestion(
     1. The file exists in its expected archive bucket (at its filename-derived archive prefix).
     2. A Data Availability record exists for the data product/version/applicable-date (skipped for L0 PDS/CR and
        ground CCSDS files, which the SDC does not write availability records for).
-    3. A File Metadata record exists for the file basename.
+    3. A File Metadata record exists for the file basename. For a Libera data product or a daily ancillary file it
+       is the record whose sort key is ``PARTITION#<partition_key>``, which File Metadata writes once it has seen
+       the file archived; the partition key is the applicable date for a DAILY file, the start hour for an HOURLY
+       CERES file, and the event start for a TRIMMED or CAL (EVENT) file.
 
     A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
     its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary file
@@ -428,6 +432,7 @@ def verify_ingestion(
         }
         if spec["is_data_product"]:
             spec["applicable_date"] = libera_filename.applicable_date.isoformat()
+            spec["partition_key"] = libera_filename.partition_key
             spec["data_product_id"] = str(libera_filename.data_product_id)
             spec["version"] = libera_filename.filename_parts.version
         elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
@@ -473,8 +478,12 @@ def verify_ingestion(
                 passed = _archive_object_exists(s3_client, spec["bucket"], spec["key"])
             elif check_name == "metadata":
                 if spec["is_data_product"]:
-                    # Data products: fetch the product record by its full (PK=basename, SK=applicable_date) key.
-                    response = metadata_table.get_item(Key={"PK": spec["name"], "SK": spec["applicable_date"]})
+                    # Data products: fetch the PARTITION# record, (PK=basename, SK=PARTITION#<partition_key>). File
+                    # Metadata writes it only once it has seen the file archived; the base record (SK="#") exists
+                    # before the move, so it would not show the file fully ingested.
+                    response = metadata_table.get_item(
+                        Key={"PK": spec["name"], "SK": f"PARTITION#{spec['partition_key']}"}
+                    )
                     passed = "Item" in response
                 else:
                     # L0 and ground CCSDS: the ingester writes a base record (SK="#") for every file, plus a

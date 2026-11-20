@@ -381,10 +381,11 @@ def parse_cli_args(cli_args: list):
         "--verify",
         action="store_true",
         help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
-        "and, for dated data products, data availability records), then report the result. A non-daily file (a "
-        "version-partitioned data product, or the version archive of IGBP or the land/ocean mask) is staged but "
-        "cannot be verified yet, and the command then exits with an error naming it. Requires only read "
-        "permissions.",
+        "and, for dated data products, data availability records), then report the result. A data product's file "
+        "metadata record is looked up at sort key PARTITION#<partition key>, so every data product times out until "
+        "the SDC's Data Ingester writes those records. A version-partitioned file (a Libera version-partitioned data "
+        "product, or the version archive of IGBP or the land/ocean mask) is staged but cannot be verified yet, and "
+        "the command then exits with an error naming it. Requires only read permissions.",
     )
     s3_put_parser.add_argument(
         "--timeout",

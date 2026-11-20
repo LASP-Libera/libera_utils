@@ -19,7 +19,8 @@ from space_packet_parser.xtce.definitions import XtcePacketDefinition
 from space_packet_parser.xtce.validation import validate_xtce
 
 from libera_utils.config import config
-from libera_utils.constants import LiberaApid
+from libera_utils.constants import DataProductIdentifier, LiberaApid
+from libera_utils.io import filenaming
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -449,8 +450,8 @@ _EQUIVALENCE_CASES = pytest.mark.parametrize(
         ),
         pytest.param(
             [
-                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_13_00_00"),
-                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_13_20_00"),
+                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_12_00_00"),
+                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_14_00_00"),
             ],
             LiberaApid.icie_wfov_sci.value,
             0,
@@ -691,6 +692,25 @@ def test_jpss_sc_pos_data_time_range_spans_both_sample_groups(pds_fixture, reque
     for group_first, group_last in group_spans.values():
         assert first <= dt64_to_utc_datetime(group_first)
         assert last >= dt64_to_utc_datetime(group_last)
+
+
+@pytest.mark.parametrize(
+    "pds_fixture",
+    ["test_jpss1_pds_file_1", "test_jpss1_pds_file_2", "test_jpss1_pds_file_3", "test_jpss4_pds_file_1"],
+)
+def test_jpss_sc_pos_data_time_span_is_within_its_longest_file_span(pds_fixture, request):
+    """Each SC-POS PDS test file's data time span is within SC-POS-PDS's longest_file_span.
+
+    The bound is set from these same files, so this guards the value against falling below them; it does not show
+    that no flight file spans longer.
+    """
+    packet_file = request.getfixturevalue(pds_fixture)
+    product = filenaming.L0Filename(packet_file).data_product_id
+    assert product is DataProductIdentifier.l0_jpss_sc_pos_pds
+
+    first, last = extract_data_time_range(packet_file, int(LiberaApid.jpss_sc_pos), skip_header_bytes=0)
+
+    assert last - first <= product.longest_file_span
 
 
 def _scripted_worker(connection, packet_file, packet_definition, apid, generator_kwargs):

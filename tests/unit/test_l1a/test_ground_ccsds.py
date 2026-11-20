@@ -56,7 +56,7 @@ def _patch_scan(monkeypatch, *, packet_span=PACKET_SPAN, data_span=DATA_SPAN, da
 def test_scan_uses_apid_from_filename(tmp_path: Path, monkeypatch):
     """With no explicit apid, the scan resolves it from the basename."""
     _patch_scan(monkeypatch)
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     span = scan_ground_ccsds_file(f)
@@ -78,7 +78,7 @@ def test_scan_explicit_apid_overrides_filename(tmp_path: Path, monkeypatch):
 def test_scan_packet_time_only_apid_has_no_data_times(tmp_path: Path, monkeypatch):
     """A packet-time-indexed APID gets no data times and is not marked degraded."""
     _patch_scan(monkeypatch)
-    f = tmp_path / "LIBERA_SDC_1057_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1057_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     span = scan_ground_ccsds_file(f)
@@ -91,7 +91,7 @@ def test_scan_packet_time_only_apid_has_no_data_times(tmp_path: Path, monkeypatc
 def test_scan_records_packet_time_when_data_time_undetermined(tmp_path: Path, monkeypatch):
     """A data-time failure keeps the packet-time span and records why."""
     _patch_scan(monkeypatch, data_exc=DataTimeUndeterminedError("no usable sample times"))
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     span = scan_ground_ccsds_file(f)
@@ -103,7 +103,7 @@ def test_scan_records_packet_time_when_data_time_undetermined(tmp_path: Path, mo
 def test_scan_degraded_reason_names_the_apid_that_returned_none(tmp_path: Path, monkeypatch):
     """A None data span records a reason for its own APID, not a hard-coded WFOV message."""
     _patch_scan(monkeypatch, data_span=None)
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     span = scan_ground_ccsds_file(f)
@@ -111,19 +111,28 @@ def test_scan_degraded_reason_names_the_apid_that_returned_none(tmp_path: Path, 
 
 
 def test_scan_returns_none_for_apid_outside_libera_apid(tmp_path: Path, caplog):
-    """An APID with no LiberaApid member cannot produce searchable metadata."""
-    f = tmp_path / "LIBERA_SDC_9_ccsds_2025_318_13_00_00"
+    """An APID with no LiberaApid member, passed explicitly, cannot produce searchable metadata."""
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING):
-        assert scan_ground_ccsds_file(f) is None
+        assert scan_ground_ccsds_file(f, apid=9) is None
     assert "not a known LiberaApid" in caplog.text
+
+
+def test_scan_rejects_a_name_whose_apid_is_outside_libera_apid(tmp_path: Path):
+    """With no APID given, a capture name whose APID has no LiberaApid member is rejected as a filename."""
+    f = tmp_path / "LIBERA_SDC_9_ccsds_2025_318_12_00_00"
+    f.write_bytes(b"")
+
+    with pytest.raises(ValueError, match="APID 9 is not a Libera APID"):
+        scan_ground_ccsds_file(f)
 
 
 def test_scan_returns_none_when_apid_has_no_packet_config(tmp_path: Path, caplog):
     """A known APID with no L1A packet configuration yields no times at all."""
     # 1013 icie_sw_stat is a LiberaApid member with no entry in the L1A processing configs.
-    f = tmp_path / "LIBERA_SDC_1013_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1013_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING):
@@ -133,7 +142,7 @@ def test_scan_returns_none_when_apid_has_no_packet_config(tmp_path: Path, caplog
 
 def test_scan_returns_none_on_parse_failure(tmp_path: Path, caplog):
     """A file with nothing parseable for its APID yields no span, not an empty one."""
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING):
@@ -149,7 +158,7 @@ def test_scan_propagates_resource_exhaustion(tmp_path: Path, caplog, monkeypatch
     from libera_utils.l1a import ground_ccsds as mod
 
     monkeypatch.setattr(mod, "parse_packets_to_dataset", mock.Mock(side_effect=error))
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING), pytest.raises(type(error)) as excinfo:
@@ -165,7 +174,7 @@ def test_scan_returns_none_on_missing_file_error(tmp_path: Path, caplog, monkeyp
     monkeypatch.setattr(
         mod, "parse_packets_to_dataset", mock.Mock(side_effect=OSError(errno.ENOENT, "No such file or directory"))
     )
-    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_12_00_00"
     f.write_bytes(b"")
 
     with caplog.at_level(logging.WARNING):

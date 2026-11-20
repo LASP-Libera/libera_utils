@@ -157,8 +157,26 @@ class TestLiberaDataProductDefinition:
     def test_generate_filename_daily_requires_time_variable(self, test_product_definition, test_dataset):
         """A daily product without a time variable raises, naming the missing argument"""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        with pytest.raises(ValueError, match="RAD-4CH is a daily product.*no time_variable was given"):
+        with pytest.raises(ValueError, match="RAD-4CH has partition scheme DAILY.*no time_variable was given"):
             definition.generate_data_product_filename(test_dataset)
+
+    def test_generate_filename_event_product(self, test_product_definition, test_dataset):
+        """An EVENT product is named with the time range of its data, and keyed by its start"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        dataset = test_dataset.assign_attrs(ProductID="NOM-HK-SWC-365NM-TRIMMED")
+        fn = definition.generate_data_product_filename(dataset, time_variable="radiometer_time")
+        assert type(fn) is LiberaDataProductFilename
+        assert fn.partition_key == "20240101T000000"
+
+    @pytest.mark.parametrize(("product_id", "scheme"), [("SC-POS-PDS", "TWO_HOUR"), ("CERES-NOAA20-CLDPIX", "HOURLY")])
+    def test_generate_filename_rejects_a_scheme_the_sdc_does_not_write(
+        self, test_product_definition, test_dataset, product_id, scheme
+    ):
+        """An L0 or CERES product has no SDC-written filename, so naming one raises rather than guessing"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        dataset = test_dataset.assign_attrs(ProductID=product_id)
+        with pytest.raises(ValueError, match=f"has partition scheme {scheme}, which no SDC-written filename class"):
+            definition.generate_data_product_filename(dataset, time_variable="radiometer_time")
 
     def test_generate_filename_daily_rejects_non_datetime_time_variable(self, test_product_definition, test_dataset):
         """A daily product's time variable must be datetime64"""
