@@ -18,16 +18,14 @@ import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    ANCILLARY_INPUTS_CONFIGURATION_KEY,
-    fmatch_cli_handler,
-    select_manifest_files_by_product_id,
+    RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS,
 )
 from libera_utils.footprint_matching.footprint_match_algorithm import (
-    RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS,
+    fmatch_cli_handler,
+    manifest_files_by_product_id,
 )
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import PROCESSING_STEP_ID_CONFIGURATION_KEY, Manifest, ManifestType
@@ -54,29 +52,27 @@ IMAGER_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS[ProcessingStepIdentifier.aux_fmatc
 IMAGER_CONFIG = FMATCH_RUNNER_CONFIGS[IMAGER]
 
 
-def _run_cli(step: ProcessingStepIdentifier, directory, ancillary_root, *input_files):
-    """Run an FMATCH runner the way its container does: the CLI handler on an input manifest naming ``step``.
+@pytest.fixture
+def run_cli(stage_fmatch_ancillary_granules):
+    """Factory running an FMATCH runner the way its container does: the CLI handler on an input manifest naming a step.
 
-    The manifest lists ``input_files`` and one placeholder granule per reader ``step``'s mode reads, under
-    ``ancillary_root``, mapped to its reader in ``configuration["ancillary_inputs"]``. ``fake_aggregation`` aggregates
-    from the fake readers instead of opening them.
+    The returned function takes the step, the directory to write the manifest to, the directory to stage the ancillary
+    granules in and the input files. The manifest lists the input files and, from ``stage_fmatch_ancillary_granules``,
+    one empty granule of each product the step's mode reads, which the runner selects by name. ``fake_aggregation``
+    aggregates from the fake readers instead of opening them.
     """
-    ancillary_root.mkdir(parents=True, exist_ok=True)
-    ancillary = {}
-    for reader_key in ReaderRegistry.get_readers_for_mode(FMATCH_RUNNER_CONFIGS[step].mode):
-        granule = ancillary_root / f"{reader_key}.nc"
-        granule.touch()
-        ancillary[reader_key] = [str(granule)]
-    manifest = Manifest(
-        manifest_type=ManifestType.INPUT,
-        configuration={
-            PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step),
-            ANCILLARY_INPUTS_CONFIGURATION_KEY: ancillary,
-        },
-    )
-    manifest.add_files(*input_files, *(path for paths in ancillary.values() for path in paths))
-    manifest_path = manifest.write(directory)
-    return fmatch_cli_handler(argparse.Namespace(manifest=str(manifest_path), processing_step_id=None))
+
+    def _run(step: ProcessingStepIdentifier, directory, ancillary_root, *input_files):
+        granules = stage_fmatch_ancillary_granules(ancillary_root, FMATCH_RUNNER_CONFIGS[step].mode, empty=True)
+        manifest = Manifest(
+            manifest_type=ManifestType.INPUT,
+            configuration={PROCESSING_STEP_ID_CONFIGURATION_KEY: str(step)},
+        )
+        manifest.add_files(*input_files, *granules.values())
+        manifest_path = manifest.write(directory)
+        return fmatch_cli_handler(argparse.Namespace(manifest=str(manifest_path), processing_step_id=None))
+
+    return _run
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -144,24 +140,24 @@ def imager_uses_fake_readers(monkeypatch, set_mode_readers, fake_sources, era5_p
 class TestRadiometerRunnerWorkflow:
     """The FMATCH-CAM runner carries L1B geolocation into its product and drops footprints L1B cannot geolocate."""
 
-    def test_l1b_geolocation_reaches_the_product(self, tmp_path, stage_cam_inputs):
+    def test_l1b_geolocation_reaches_the_product(self, tmp_path, stage_cam_inputs, run_cli):
         """The pass-through columns must survive the whole runner path, not just assembly."""
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         l1b_file, cf_cam_file = stage_cam_inputs(inputs, n_footprints=8)
 
-        output_manifest = Manifest.from_file(_run_cli(CAM, inputs, tmp_path / "ancillary", l1b_file, cf_cam_file))
+        output_manifest = Manifest.from_file(run_cli(CAM, inputs, tmp_path / "ancillary", l1b_file, cf_cam_file))
 
         with xr.open_dataset(output_manifest.files[0]) as product, xr.open_dataset(l1b_file) as l1b:
             assert product["Latitude"].values == pytest.approx(l1b["Latitude"].values, rel=1e-6)
             assert product["Solar_Zenith_Surface"].values == pytest.approx(l1b["Solar_Zenith_Surface"].values, rel=1e-6)
 
-    def test_non_finite_l1b_footprints_are_excluded(self, tmp_path, stage_cam_inputs):
+    def test_non_finite_l1b_footprints_are_excluded(self, tmp_path, stage_cam_inputs, run_cli):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         input_files = stage_cam_inputs(inputs, n_footprints=10, n_invalid=4)
 
-        output_manifest = Manifest.from_file(_run_cli(CAM, inputs, tmp_path / "ancillary", *input_files))
+        output_manifest = Manifest.from_file(run_cli(CAM, inputs, tmp_path / "ancillary", *input_files))
 
         with xr.open_dataset(output_manifest.files[0]) as product:
             assert product.sizes["RADIOMETER_TIME"] == 6
@@ -171,22 +167,22 @@ class TestRadiometerRunnerWorkflow:
 class TestImagerProduct:
     """FMATCH-IMAGER writes the CLDPIX/CERES SSF fields alongside the ERA5 pressure-level fields."""
 
-    def _run(self, tmp_path, l1b_radiometer_file_factory):
+    def _run(self, tmp_path, l1b_radiometer_file_factory, run_cli):
         inputs = tmp_path / "inputs"
         inputs.mkdir(parents=True)
         l1b_file = l1b_radiometer_file_factory(6, directory=inputs)
-        return Manifest.from_file(_run_cli(IMAGER, inputs, tmp_path / "ancillary", l1b_file))
+        return Manifest.from_file(run_cli(IMAGER, inputs, tmp_path / "ancillary", l1b_file))
 
-    def test_run_writes_the_cldpix_and_era5_variable_set(self, tmp_path, l1b_radiometer_file_factory):
-        output_manifest = self._run(tmp_path, l1b_radiometer_file_factory)
+    def test_run_writes_the_cldpix_and_era5_variable_set(self, tmp_path, l1b_radiometer_file_factory, run_cli):
+        output_manifest = self._run(tmp_path, l1b_radiometer_file_factory, run_cli)
 
         with xr.open_dataset(output_manifest.files[0]) as product:
             names = set(product.variables)
             assert any(name.startswith(CLDPIXReader.READER_KEY + "_") for name in names)
             assert any(name.startswith(ERA5PressureLevelReader.READER_KEY + "_") for name in names)
 
-    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, l1b_radiometer_file_factory):
-        output_manifest = self._run(tmp_path, l1b_radiometer_file_factory)
+    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, l1b_radiometer_file_factory, run_cli):
+        output_manifest = self._run(tmp_path, l1b_radiometer_file_factory, run_cli)
 
         written = LiberaDataProductFilename.from_file_path(output_manifest.files[0])
         assert written.data_product_id is DataProductIdentifier.aux_fmatch_imager
@@ -196,8 +192,8 @@ class TestManifestInputSelection:
     """A runner must take only its own primary input product out of a mixed manifest."""
 
     _INPUT_DIR = "/dropbox/inputs"
-    # A staged ancillary granule: a real, non-Libera filename that must be ignored by manifest selection.
-    _ANCILLARY_NAME = "MCD12Q1.A2023001.h09v05.061.hdf"
+    # A staged ancillary granule, under its provider's name, which selecting a Libera input must leave out.
+    _ANCILLARY_NAME = "NISE_AMSR2_20260611.HDFEOS"
 
     def _manifest(self, *filenames: str) -> Manifest:
         return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
@@ -207,7 +203,7 @@ class TestManifestInputSelection:
         other = _libera_product_name(DataProductIdentifier.l1b_cam)
         manifest = self._manifest(wanted, other, self._ANCILLARY_NAME)
 
-        selected = select_manifest_files_by_product_id(manifest, CAM_CONFIG.input_product_id)
+        selected = manifest_files_by_product_id(manifest).get(CAM_CONFIG.input_product_id, [])
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
@@ -217,7 +213,7 @@ class TestManifestInputSelection:
         other = _libera_product_name(DataProductIdentifier.l1b_cam)
         manifest = self._manifest(other, wanted, self._ANCILLARY_NAME)
 
-        selected = select_manifest_files_by_product_id(manifest, CAM_CAMTIME_CONFIG.input_product_id)
+        selected = manifest_files_by_product_id(manifest).get(CAM_CAMTIME_CONFIG.input_product_id, [])
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
@@ -226,7 +222,7 @@ class TestManifestInputSelection:
         cloud_fraction = _libera_product_name(DataProductIdentifier.l2_cf_cam)
         manifest = self._manifest(_libera_product_name(DataProductIdentifier.l1b_rad), cloud_fraction)
 
-        selected = select_manifest_files_by_product_id(manifest, CAM_CONFIG.cloud_fraction_product_id)
+        selected = manifest_files_by_product_id(manifest).get(CAM_CONFIG.cloud_fraction_product_id, [])
 
         assert selected == [f"{self._INPUT_DIR}/{cloud_fraction}"]
 
@@ -235,7 +231,7 @@ class TestManifestInputSelection:
         fmatch_product = fmatch_product_file_factory(OperationalMode.CAM).name
         manifest = self._manifest(fmatch_product, _libera_product_name(DataProductIdentifier.l1b_rad))
 
-        selected = select_manifest_files_by_product_id(manifest, DataProductIdentifier.l1b_rad)
+        selected = manifest_files_by_product_id(manifest).get(DataProductIdentifier.l1b_rad, [])
 
         assert len(selected) == 1
         assert "FMATCH" not in selected[0]
@@ -285,7 +281,7 @@ class TestRunnerOutputThroughSceneId:
         ],
     )
     def test_runner_product_writes_a_scene_id_product(
-        self, step, scene_id_step, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory
+        self, step, scene_id_step, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory, run_cli
     ):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
@@ -294,7 +290,7 @@ class TestRunnerOutputThroughSceneId:
             if FMATCH_RUNNER_CONFIGS[step].cloud_fraction_product_id is not None
             else (l1b_radiometer_file_factory(8, directory=inputs),)
         )
-        fmatch_product_path = Manifest.from_file(_run_cli(step, inputs, tmp_path / "ancillary", *input_files)).files[0]
+        fmatch_product_path = Manifest.from_file(run_cli(step, inputs, tmp_path / "ancillary", *input_files)).files[0]
 
         scene_id_config = SCENE_ID_RUNNER_CONFIGS[scene_id_step]
         footprint_data = run_scene_identification(fmatch_product_path, scene_id_config)
