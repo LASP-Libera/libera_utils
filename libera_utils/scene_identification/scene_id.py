@@ -649,25 +649,37 @@ _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 }
 
 
-def _warn_if_no_camera_cloud_fraction(footprint_data: xr.Dataset, fmatch_path: str | pathlib.Path | S3Path) -> None:
-    """Log a warning when an FMATCH-CAM product's camera cloud fraction has no finite value.
+def _check_camera_cloud_fraction(footprint_data: xr.Dataset, fmatch_path: str | pathlib.Path | S3Path) -> None:
+    """Check that an FMATCH-CAM product's camera cloud fraction can classify its footprints.
 
-    Every scene SCENE-ID-CAM classifies bounds cloud fraction, so such a product classifies no footprint: every
-    scene ID is 0. FMATCH-CAM writes ``Cloud_Fraction_Camera`` as fill until it reads the radiometer-timescale CF-CAM
-    product (LIBSDC-785), so the product is still written, and the warning says why it is empty.
+    ``Cloud_Fraction_Camera`` is in percent, [0, 100], as ``fmatch_cam.yml`` declares (``units: percent``) and as the
+    scene-definition bins expect. Every scene SCENE-ID-CAM classifies bounds cloud fraction, so a product with no
+    finite cloud fraction would classify no footprint.
 
     Parameters
     ----------
     footprint_data : xarray.Dataset
         The footprint data a CAM reader extracted, holding the ``Cloud_Fraction`` column.
     fmatch_path : str | pathlib.Path | cloudpathlib.S3Path
-        The FMATCH product the data was read from, named in the warning.
+        The FMATCH product the data was read from, named in the error.
+
+    Raises
+    ------
+    ValueError
+        If a finite cloud fraction lies outside [0, 100], or no footprint has a finite cloud fraction.
     """
-    if not np.isfinite(footprint_data[FootprintVariables.CLOUD_FRACTION].to_numpy()).any():
-        logger.warning(
-            "%s: Cloud_Fraction_Camera has no finite value, so every footprint is left unmatched (scene ID 0). "
-            "FMATCH-CAM writes it as fill until the radiometer-timescale CF-CAM is read (LIBSDC-785).",
-            fmatch_path,
+    cloud_fraction = footprint_data[FootprintVariables.CLOUD_FRACTION].to_numpy()
+    finite = np.isfinite(cloud_fraction)
+    out_of_range = np.count_nonzero(finite & ((cloud_fraction < 0) | (cloud_fraction > 100)))
+    if out_of_range:
+        raise ValueError(
+            f"{fmatch_path}: {out_of_range} Cloud_Fraction_Camera value(s) lie outside [0, 100] percent; check the "
+            "CF-CAM product FMATCH read for this granule."
+        )
+    if not finite.any():
+        raise ValueError(
+            f"{fmatch_path}: the CF-CAM input held no finite cloud fraction for this granule's footprints, so every "
+            "scene ID would be 0; check the CF-CAM product FMATCH read for this granule."
         )
 
 
@@ -707,9 +719,7 @@ class FootprintData:
 
         FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
         Libera-camera-derived cloud fraction and the scene properties needed for classification. The footprint
-        ``Latitude`` and ``Longitude`` pass straight through. A product whose
-        camera cloud fraction has no finite value is read with a logged warning, since every footprint is then left
-        unmatched.
+        ``Latitude`` and ``Longitude`` pass straight through.
 
         Parameters
         ----------
@@ -726,7 +736,7 @@ class FootprintData:
         FileNotFoundError
             If ``fmatch_path`` does not exist.
         ValueError
-            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file.
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER file. If no footprint has an ``IGBP_Surface_Type`` (every value is fill). If a finite ``Cloud_Fraction_Camera`` lies outside [0, 100] percent, or no footprint has a finite one.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -735,7 +745,7 @@ class FootprintData:
             expected_product=DataProductIdentifier.aux_fmatch_cam,
             passthrough_variables=_FMATCH_GEOLOCATION_PASSTHROUGH_VARIABLES,
         )
-        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
+        _check_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
 
     @classmethod
@@ -747,8 +757,7 @@ class FootprintData:
         per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
         both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
         ``Camera_Pixel_X_Min``/``Camera_Pixel_X_Max``/``Camera_Pixel_Y_Min``/``Camera_Pixel_Y_Max``, PSF bounding
-        box, boresight geolocation) that the camera-timescale product passes straight through. A product whose camera
-        cloud fraction has no finite value is read with a logged warning, since every footprint is then left unmatched.
+        box, boresight geolocation) that the camera-timescale product passes straight through.
 
         Parameters
         ----------
@@ -766,7 +775,8 @@ class FootprintData:
         FileNotFoundError
             If ``fmatch_path`` does not exist.
         ValueError
-            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file.
+            If the file lacks a variable this reader reads, for example a FMATCH-IMAGER-CAMTIME file. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
+            If a finite ``Cloud_Fraction_Camera`` lies outside [0, 100] percent, or no footprint has a finite one.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -775,7 +785,7 @@ class FootprintData:
             passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
             expected_product=DataProductIdentifier.aux_fmatch_cam_camtime,
         )
-        _warn_if_no_camera_cloud_fraction(extracted_data, fmatch_path)
+        _check_camera_cloud_fraction(extracted_data, fmatch_path)
         return cls(extracted_data)
 
     @classmethod
@@ -804,7 +814,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM file, which has no
-            CERES SSF or CLDPIX variables.
+            CERES SSF or CLDPIX variables. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -850,7 +860,7 @@ class FootprintData:
             If ``fmatch_path`` does not exist.
         ValueError
             If the file lacks a variable this reader reads, for example a FMATCH-CAM-CAMTIME file, which has no
-            CERES SSF or CLDPIX variables.
+            CERES SSF or CLDPIX variables. If no footprint has an ``IGBP_Surface_Type`` (every value is fill).
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
@@ -915,7 +925,9 @@ class FootprintData:
         FileNotFoundError
             If ``fmatch_path`` does not exist.
         ValueError
-            If the file lacks a variable the reader reads, most often a FMATCH file of another product.
+            If the file lacks a variable the reader reads, most often a FMATCH file of another product. If the
+            reader reads ``IGBP_Surface_Type`` and no footprint has one (every value is fill, or the product has no
+            footprints).
         """
         logger.info("Reading FMATCH product %s", fmatch_path)
         # netCDF4 opens only a filesystem path or an in-memory buffer, so the bytes are read through smart_open (local,
@@ -926,19 +938,17 @@ class FootprintData:
         except FileNotFoundError as err:
             raise FileNotFoundError(f"Unable to open input file: {fmatch_path}") from err
         store = xr.backends.NetCDF4DataStore(nc.Dataset(pathlib.Path(str(fmatch_path)).name, memory=fmatch_bytes))
+        names = [*(column.source_name for column in column_map.values()), *passthrough_variables, time_variable]
         with xr.open_dataset(store) as opened_dataset:
-            fmatch_dataset = opened_dataset.load()
-
-        missing = [
-            name
-            for name in (*(column.source_name for column in column_map.values()), *passthrough_variables)
-            if name not in fmatch_dataset.variables
-        ]
-        if missing:
-            raise ValueError(
-                f"{fmatch_path} is missing required variable(s) {missing}; check that the manifest's input is a "
-                f"{expected_product.value} file"
-            )
+            missing = [name for name in names if name not in opened_dataset.variables]
+            if missing:
+                raise ValueError(
+                    f"{fmatch_path} is missing required variable(s) {missing}; check that the manifest's input is a "
+                    f"{expected_product.value} file"
+                )
+            # Decode only the variables the reader uses, not the whole product.
+            fmatch_dataset = opened_dataset[names].load()
+        del fmatch_bytes
 
         data_variables: dict[str, tuple[list[str], NDArray]] = {}
         for target, column in column_map.items():
@@ -968,6 +978,13 @@ class FootprintData:
         for variable_name in passthrough_variables:
             source_variable = fmatch_dataset[variable_name]
             data_variables[variable_name] = (list(source_variable.dims), source_variable.to_numpy())
+
+        surface_type = data_variables.get(FootprintVariables.IGBP_SURFACE_TYPE)
+        if surface_type is not None and not np.isfinite(surface_type[1]).any():
+            raise ValueError(
+                f"{fmatch_path}: IGBP_Surface_Type is fill for every footprint, so no footprint has a surface type and "
+                "every scene ID would be 0; check the IGBP granules FMATCH read for this product."
+            )
 
         parsed_dataset = xr.Dataset(data_variables)
         logger.info("FMATCH product read successfully with sizes %s", dict(parsed_dataset.sizes))

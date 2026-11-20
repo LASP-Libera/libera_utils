@@ -5,14 +5,15 @@ Every class but ``TestRunnerOutputThroughSceneId`` tests the FMATCH runners: wha
 L1B geolocation reaching the written product, dropping non-finite L1B footprints and the FMATCH-IMAGER variable set.
 ``TestRunnerOutputThroughSceneId`` is the FMATCH to SCENE-ID chain test: it checks that a product the FMATCH runner
 writes is read by SCENE-ID under the product names both declare, not the classification, since the fake readers supply
-no classification inputs and every footprint is left unmatched. Ancillary aggregation runs through the fake readers
+no classification inputs beyond the staged CF-CAM cloud fraction and the IGBP code the test writes. Ancillary
+aggregation runs through the fake readers
 (``fake_aggregation``), so no real ancillary granule is opened.
 """
 
 import argparse
 from datetime import UTC, datetime
 
-import numpy as np
+import netCDF4
 import pytest
 import xarray as xr
 
@@ -269,19 +270,22 @@ class TestRunnerOutputThroughSceneId:
 
     This checks that the names FMATCH writes line up with the names SCENE-ID reads and writes, not classification:
     the fake readers supply none of SCENE-ID's classification inputs (IGBP, CERES SSF clear coverage, CLDPIX, ERA5
-    winds), so those are fill and every footprint is left unmatched. ``tests/integration/test_scene_id.py`` covers real
-    classification from an FMATCH product with valid inputs.
+    winds). SCENE-ID refuses a granule with no surface type, so the test writes a valid IGBP code into the product
+    before SCENE-ID reads it. ``tests/integration/test_scene_id.py`` covers real classification from an FMATCH product
+    with valid inputs.
     """
 
     @pytest.mark.parametrize(
-        ("step", "scene_id_step"),
+        ("step", "scene_id_step", "classifies"),
         [
-            (CAM, ProcessingStepIdentifier.aux_scene_id_cam),
-            (IMAGER, ProcessingStepIdentifier.aux_scene_id_imager),
+            # FMATCH-CAM reads the staged CF-CAM cloud fraction, so with the IGBP code every footprint classifies.
+            (CAM, ProcessingStepIdentifier.aux_scene_id_cam, True),
+            # The fakes supply no CERES SSF clear coverage, so FMATCH-IMAGER's cloud fraction is fill: none classifies.
+            (IMAGER, ProcessingStepIdentifier.aux_scene_id_imager, False),
         ],
     )
     def test_runner_product_writes_a_scene_id_product(
-        self, step, scene_id_step, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory, run_cli
+        self, step, scene_id_step, classifies, tmp_path, stage_cam_inputs, l1b_radiometer_file_factory, run_cli
     ):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
@@ -291,6 +295,8 @@ class TestRunnerOutputThroughSceneId:
             else (l1b_radiometer_file_factory(8, directory=inputs),)
         )
         fmatch_product_path = Manifest.from_file(run_cli(step, inputs, tmp_path / "ancillary", *input_files)).files[0]
+        with netCDF4.Dataset(fmatch_product_path, "a") as fmatch_product:
+            fmatch_product["IGBP_Surface_Type"][:] = 10
 
         scene_id_config = SCENE_ID_RUNNER_CONFIGS[scene_id_step]
         footprint_data = run_scene_identification(fmatch_product_path, scene_id_config)
@@ -303,4 +309,4 @@ class TestRunnerOutputThroughSceneId:
             assert set(definition.variables) <= set(product.variables)
             for scene_definition in standard_scene_definitions(scene_id_config.scene_types):
                 scene_ids = product[f"Scene_ID_{scene_definition.type}"].values
-                assert np.count_nonzero(scene_ids) == 0, scene_definition.type
+                assert ((scene_ids > 0) if classifies else (scene_ids == 0)).all(), scene_definition.type

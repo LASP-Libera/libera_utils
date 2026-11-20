@@ -7,7 +7,6 @@ is the guard that the SCENE-ID product definitions can be written under ``strict
 ``TestSceneIdContainerRun`` runs each variant the way its container does, through the ``libera-utils scene-id`` CLI.
 """
 
-import logging
 from datetime import UTC, datetime
 
 import netCDF4
@@ -324,33 +323,34 @@ class TestFmatchReaders:
             pytest.param("from_fmatch_cam_camtime", OperationalMode.CAM_CAMTIME, id="cam-camtime"),
         ],
     )
-    def test_cam_reader_warns_when_cloud_fraction_is_all_fill(
-        self, fmatch_product_file_factory, tmp_path, caplog, reader, mode
-    ):
-        """A CAM product with no finite camera cloud fraction is read, with a warning naming the file and LIBSDC-785."""
+    def test_cam_reader_rejects_an_all_fill_cloud_fraction(self, fmatch_product_file_factory, reader, mode):
+        """A CAM product with no finite camera cloud fraction raises, naming the file and the CF-CAM input."""
         input_path = fmatch_product_file_factory(mode, n_footprints=4)
         with netCDF4.Dataset(input_path, "a") as dataset:
             dataset["Cloud_Fraction_Camera"][:] = np.nan
 
-        with caplog.at_level(logging.WARNING, logger="libera_utils.scene_identification.scene_id"):
-            footprint_data = getattr(FootprintData, reader)(input_path)
+        with pytest.raises(ValueError, match="CF-CAM input held no finite cloud fraction") as raised:
+            getattr(FootprintData, reader)(input_path)
+        assert str(input_path) in str(raised.value)
 
-        assert not np.isfinite(footprint_data._data["Cloud_Fraction"].values).any()
-        warnings = [
-            record
-            for record in caplog.records
-            if record.name == "libera_utils.scene_identification.scene_id" and record.levelno == logging.WARNING
-        ]
-        assert len(warnings) == 1
-        assert str(input_path) in warnings[0].getMessage()
-        assert "LIBSDC-785" in warnings[0].getMessage()
+    @pytest.mark.parametrize(
+        ("reader", "mode"),
+        [
+            pytest.param("from_fmatch_cam", OperationalMode.CAM, id="cam"),
+            pytest.param("from_fmatch_cam_camtime", OperationalMode.CAM_CAMTIME, id="cam-camtime"),
+        ],
+    )
+    def test_cam_reader_rejects_a_cloud_fraction_outside_percent(self, fmatch_product_file_factory, reader, mode):
+        """A finite camera cloud fraction above 100 percent raises, naming the file and the count."""
+        input_path = fmatch_product_file_factory(mode, n_footprints=4)
+        with netCDF4.Dataset(input_path, "a") as dataset:
+            values = dataset["Cloud_Fraction_Camera"][:]
+            values.flat[0] = 150.0
+            dataset["Cloud_Fraction_Camera"][:] = values
 
-    def test_cam_reader_does_not_warn_with_a_cloud_fraction(self, fmatch_product_file_factory, tmp_path, caplog):
-        """A CAM product with a camera cloud fraction is read without the all-fill warning."""
-        input_path = fmatch_product_file_factory(OperationalMode.CAM, n_footprints=4)
-        with caplog.at_level(logging.WARNING, logger="libera_utils.scene_identification.scene_id"):
-            FootprintData.from_fmatch_cam(input_path)
-        assert "LIBSDC-785" not in caplog.text
+        with pytest.raises(ValueError, match=r"1 Cloud_Fraction_Camera value\(s\) lie outside \[0, 100\]") as raised:
+            getattr(FootprintData, reader)(input_path)
+        assert str(input_path) in str(raised.value)
 
 
 def _assert_imager_sources(dataset: xr.Dataset) -> None:
@@ -630,6 +630,22 @@ class TestMissingIgbpCode:
 
         assert dataset["Scene_ID_ERBE"].values[2, -1] == 0
         assert (dataset["Scene_ID_ERBE"].values[0] > 0).all()
+
+    @pytest.mark.parametrize(
+        ("mode", "step"),
+        [
+            (OperationalMode.CAM, CAM),
+            (OperationalMode.CAM_CAMTIME, CAM_CAMTIME),
+            (OperationalMode.IMAGER, IMAGER),
+            (OperationalMode.IMAGER_CAMTIME, IMAGER_CAMTIME),
+        ],
+    )
+    def test_granule_with_no_surface_type_raises(self, fmatch_product_file_factory, tmp_path, mode, step):
+        """A granule whose every IGBP code is fill raises rather than writing an all-zero product."""
+        input_path = _with_missing_igbp(fmatch_product_file_factory(mode, n_footprints=3), tmp_path, ...)
+
+        with pytest.raises(ValueError, match="IGBP_Surface_Type is fill for every footprint"):
+            run_scene_identification(input_path, RUNNER_CONFIGS[step])
 
     def test_written_product_carries_the_fill_value_for_the_unmatched_footprint(
         self, fmatch_product_file_factory, tmp_path
