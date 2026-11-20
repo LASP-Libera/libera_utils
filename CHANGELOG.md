@@ -7,33 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `AncillaryReader.PRODUCT_ID`, the `DataLevel.ANC` product a reader reads. A reader without one raises `TypeError` when defined. (#92)
-
-### Changed
-
-- **BREAKING:** The FMATCH runner picks its ancillary granules out of the input manifest's `files` by the product each name parses to, as it picks its Libera inputs, and gives each reader the granules of its `PRODUCT_ID`. The manifest no longer carries `configuration["ancillary_inputs"]`, and its granules must be named in their product's ingested form, so IGBP is listed as its version archive. Every file in `files` must parse as a Libera or ancillary data product name, or the run raises `FmatchInputError`. (#92)
-
-### Removed
-
-- **BREAKING:** `footprint_match_algorithm.ancillary_inputs_from_manifest`, `select_manifest_files_by_product_id` and `ANCILLARY_INPUTS_CONFIGURATION_KEY`, replaced by `manifest_files_by_product_id` and `ancillary_inputs_by_reader`. (#92)
-
 ## [6.1.0] - 2026-11-19
 
 ### Added
 
 - `libera_utils.footprint_matching.footprint_match_algorithm`, one runner for the four FMATCH products, run as `libera-utils fmatch <manifest>` from the `libera-utils-fmatch` Docker target. The manifest's `configuration["processing_step_id"]` or `--processing_step_id` picks the product. (#92)
-  - It reads L1B RAD-4CH, or CF-CAM-CAMTIME for the camera-timescale products, and FMATCH-CAM also reads CF-CAM `Cloud_Fraction` (percent), matched to the footprints by exact `radiometer_time`. The ancillary granules come from `configuration["ancillary_inputs"]`, by reader key; a version archive (`AncillaryVersionArchiveFilename`), such as IGBP's, is unpacked to its product's files once per run.
+  - It reads L1B RAD-4CH, or CF-CAM-CAMTIME for the camera-timescale products, and FMATCH-CAM also reads CF-CAM `Cloud_Fraction` (percent), matched to the footprints by exact `radiometer_time`. Every input, the ancillary granules included, is picked out of the manifest's `files` by the product its name parses to, and each reader is given the granules of its `PRODUCT_ID`; a file whose name does not parse as a Libera or ancillary product raises `FmatchInputError`. A version archive (`AncillaryVersionArchiveFilename`), such as IGBP's, is unpacked to its product's files once per run.
   - It raises `FmatchInputError` for a missing or unusable input, including an ancillary granule dated more than its reader's `GRANULE_DATE_WINDOW` from the footprints or a version archive that is not the reader's only granule, holds a file in its product's form whose fields do not parse, or does not hold one release of its product's files, and `CloudFractionTimeMismatchError` when CF-CAM rows do not line up with the L1B times.
   - The camera-timescale products raise `ValueError` at aggregation until CF-CAM-CAMTIME carries the camera ephemeris (LIBSDC-943).
 - The FMATCH user guide, `doc/source/user-docs/fmatch.md`. (#92)
 
 ### Changed
 
+- Every `AncillaryReader` sets `PRODUCT_ID`, the `DataLevel.ANC` product it reads; a reader without one raises `TypeError` when defined. (#92)
 - `AncillaryReader.granule_span(path)` is public (was `PassReader._granule_span`), and `GRANULE_DATE_WINDOW` is a class attribute, one day by default and `None` for IGBP. A reader with a window and no `granule_span` raises `TypeError` when defined. (#92)
 - `FMATCH_WORKERS` defaults to `"auto"`, sizing the aggregation pool from the available CPUs and memory (`FMATCH_WORKER_MEMORY_BYTES`). (#92)
-- The footprint reader `FLASHFluxReader` (module `readers.flashflux`) is `CeresSsfReader` (module `readers.ceres_ssf`), registry key `CERES_SSF` (was `FLASHFlux`), since the granules it reads are CERES SSF (`CER_SSF_NOAA20-FM6-VIIRS_...`). A manifest's `ancillary_inputs` keys its SSF granules `CERES_SSF`, and the FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME `FLASHFlux_*` variables are `CERES_SSF_*`. (#92)
+- The footprint reader `FLASHFluxReader` (module `readers.flashflux`) is `CeresSsfReader` (module `readers.ceres_ssf`), registry key `CERES_SSF` (was `FLASHFlux`), since the granules it reads are CERES SSF (`CER_SSF_NOAA20-FM6-VIIRS_...`). The FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME `FLASHFlux_*` variables are `CERES_SSF_*`. (#92)
 - `CeresSsfReader` reads the CERES SSF Edition1C layout: cloud-layer fields from `Cloudy_Footprint_Area`, TOA insolation and `Surface_Albedo` (`broadband_surface_albedo`) from `TOA_and_Surface_Fluxes`, and the lower/upper layer and multilayer coverages from the `Conditions` and `MultiCld` entries. It raises `ValueError` on a granule in another layout, such as the Edition 5 development (`alpha4`) layout it read before. (#92)
 
 ### Removed
