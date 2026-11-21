@@ -1,13 +1,16 @@
 """Pytest plugin module for SPICE-related fixtures"""
 
+import re
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 import spiceypy as spice
 from curryer import spicetime
 
 from libera_utils.config import config
+from libera_utils.libera_spice.kernel_manager import KernelManager
 
 
 @pytest.fixture
@@ -111,6 +114,99 @@ def furnish_test_pck(test_pck):
     spice.kclear()
 
 
+#: Libya-4 pseudo-invariant calibration site, the target of the simulated overpass the frozen
+#: dynamic kernels cover.
+LIBYA4_LAT_DEG = 28.55
+LIBYA4_LON_DEG = 23.39
+
+#: Ideal, misalignment-free mechanism axes of rotation. The measured axes in the frame kernel are
+#: small perturbations of these.
+NOMINAL_AZ_AXIS = np.array([0.0, 0.0, 1.0])
+NOMINAL_EL_AXIS = np.array([1.0, 0.0, 0.0])
+
+#: Keywords carrying the OAV3 measured misalignments, with their ideal values.
+#: The three ``*_IN_STAND`` vectors are read by ``kernel_maker`` to build the mechanism CKs;
+#: ``TKFRAME_-143013011_Q`` is the radiometer boresight rotation derived from ``LIBERA_EL0_Z_IN_STAND``.
+_NOMINAL_FRAME_VALUES = {
+    "LIBERA_EL0_Z_IN_STAND": "( 0.0, 0.0, 1.0 )",
+    "LIBERA_EL_AOR_IN_STAND": f"( {', '.join(map(str, NOMINAL_EL_AXIS))} )",
+    "LIBERA_AZ_AOR_IN_STAND": f"( {', '.join(map(str, NOMINAL_AZ_AXIS))} )",
+    "TKFRAME_-143013011_Q": "( 1.0, 0.0, 0.0, 0.0 )",
+}
+
+
+def write_nominal_frame_kernel(source: Path, destination: Path) -> Path:
+    """Write a copy of the frame kernel ``source`` to ``destination`` with the misalignments removed.
+
+    Parameters
+    ----------
+    source : pathlib.Path
+        A Libera frame kernel declaring each keyword in ``_NOMINAL_FRAME_VALUES`` once.
+    destination : pathlib.Path
+        Where to write the misalignment-free copy.
+
+    Returns
+    -------
+    pathlib.Path
+        ``destination``.
+
+    Raises
+    ------
+    AssertionError
+        If a keyword in ``_NOMINAL_FRAME_VALUES`` is defined in ``source`` other than exactly once,
+        since the substitution would then leave measured values in place or miss a definition.
+    """
+    text = source.read_text()
+    for keyword, ideal in _NOMINAL_FRAME_VALUES.items():
+        # Unbounded count on purpose: capping at one would make the check below mean "at least
+        # once", and a duplicated definition would be silently half-substituted.
+        text, count = re.subn(
+            rf"^(\s*{re.escape(keyword)}\s*=\s*)\([^)]*\)",
+            lambda m, ideal=ideal: m.group(1) + ideal,
+            text,
+            flags=re.MULTILINE,
+        )
+        if count != 1:
+            raise AssertionError(
+                f"{keyword} found {count} times in {source}, expected exactly once; the frame kernel layout changed."
+            )
+    destination.write_text(text)
+    return destination
+
+
+@pytest.fixture
+def nominal_frame_kernel(tmp_path):
+    """A misalignment-free copy of the production Libera frame kernel, derived at test time.
+
+    Zeroes the measured axes of rotation and the radiometer boresight rotation, leaving every
+    other frame definition -- including the spacecraft parentage -- exactly as the production
+    kernel has it. Tests that need ideal geometry (an A/B against the measured misalignment, or
+    a comparison against an external reference computed without it) furnish this in place of
+    ``LIBERA_KERNEL_FRAME``.
+
+    Derived rather than checked in on purpose: a frozen copy silently stops tracking the
+    production kernel in every respect except the misalignment it was made to remove.
+    """
+    return write_nominal_frame_kernel(Path(config.get("LIBERA_KERNEL_FRAME")), tmp_path / "libera_nominal.frames.fk.tf")
+
+
+@pytest.fixture
+def isolated_kernel_cache(tmp_path, monkeypatch):
+    """Redirect the on-disk kernel cache into ``tmp_path`` for the duration of a test.
+
+    :class:`~libera_utils.libera_spice.spice_utils.KernelFileCache` keys on basename and
+    returns any cached copy younger than its timeout without inspecting content, so a test
+    that materializes kernels can otherwise pick up a stale copy left by an earlier run or by
+    a developer's own work. Production filenames carry a unique creation-time field and never
+    collide; test fixtures regenerated under a reused name can.
+    """
+    cache_root = tmp_path / "kernel_cache"
+    cache_root.mkdir()
+    monkeypatch.setattr("libera_utils.libera_spice.spice_utils.caching.get_local_cache_dir", lambda: cache_root)
+    monkeypatch.setattr("libera_utils.libera_spice.kernel_manager.get_local_cache_dir", lambda: cache_root)
+    return cache_root
+
+
 @pytest.fixture
 def generic_kernel_dir(monkeypatch, spice_test_data_path):
     """Set ``GENERIC_KERNEL_DIR`` to bundled NAIF kernels under tests/test_data/spice."""
@@ -147,3 +243,15 @@ def furnish_testing_kernels(
     """
     yield
     spice.kclear()
+
+
+@pytest.fixture
+def frozen_kernel_manager(generic_kernel_dir, isolated_kernel_cache, test_data_path):
+    """A KernelManager with the committed dynamic kernels furnished, as libera_rad does it."""
+    kernel_dir = test_data_path / "dynamic_kernels"
+    kernel_paths = sorted(f for f in kernel_dir.iterdir() if f.is_file())
+    assert kernel_paths, f"No frozen kernels in {kernel_dir}"
+
+    km = KernelManager()
+    km.load_libera_dynamic_kernels(kernel_paths, needs_naif_kernels=True, needs_static_kernels=True)
+    return km

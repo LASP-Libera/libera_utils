@@ -1,12 +1,18 @@
-"""Line-of-sight alignment test.
+"""Line-of-sight alignment against the engineering computation.
 
-Validates that the measured Libera frame misalignments (Az/El axes of rotation + radiometer
-boresight, stored in the frame kernel) reproduce the independent engineering computation of the
-line-of-sight in the LIBERA_BASE (STAND) frame over a RAP scan.
+Validation provenance
+---------------------
+This is the test that satisfied the **measured frame misalignment** validation for LIBSDC-806.
+The reference vectors are the OAV3 ground-test results (J. Fernandez); they are measurements, not
+conventions, and the tolerances here must not be loosened without re-running that analysis.
 
-This is a partial check: the engineering computation stops at the LIBERA_BASE frame (it does not
-reach the spacecraft/JPSS ephemeris or geolocation stages), so we compare LOS unit vectors in
-LIBERA_BASE, not geolocated lat/lon.
+What it establishes: the measured misalignments stored in the frame kernel (Az/El axes of
+rotation plus radiometer boresight) reproduce the independent engineering line-of-sight in the
+LIBERA_BASE (STAND) frame over a RAP scan.
+
+This is a partial check. The engineering computation stops at LIBERA_BASE and never reaches the
+spacecraft ephemeris or geolocation stages, so the comparison is of LOS unit vectors in
+LIBERA_BASE, not of geolocated lat/lon.
 """
 
 import numpy as np
@@ -57,8 +63,8 @@ def test_los_alignment_vs_engineering(curryer_lsk, short_tmp_path, spice_test_da
     engineering_los = scan[["u_LOS_STAND_x", "u_LOS_STAND_y", "u_LOS_STAND_z"]].to_numpy()
 
     # Build the mechanism quaternions directly from the already-corrected angles (the encoder correction
-    # is exercised separately in the tier0 kernel test; here the input is post-correction, as the
-    # engineering reference is).
+    # is exercised separately by test_mechanism_cks_apply_the_encoder_correction; here the input is
+    # already post-correction, as the engineering reference is).
     kernel_df = pd.DataFrame(
         {"AXIS_SAMPLE_ICIE_ET": et, "ICIE__AXIS_AZ_FILT": corrected_az, "ICIE__AXIS_EL_FILT": corrected_el}
     )
