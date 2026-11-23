@@ -5,7 +5,13 @@ import csv
 import pytest
 
 from libera_utils import obsids
-from libera_utils.constants import DataLevel, DataProductIdentifier, LiberaApid, ProcessingStepIdentifier
+from libera_utils.constants import (
+    DataLevel,
+    DataProductIdentifier,
+    LiberaApid,
+    PartitionScheme,
+    ProcessingStepIdentifier,
+)
 from libera_utils.obsids import (
     _COLUMNS,
     _COMBINER_INPUT_COLUMNS,
@@ -196,6 +202,12 @@ class TestObsidRegistry:
         registered = {spec.trimmed_product for spec in iter_trim_eligible()}
         declared = {product for product in DataProductIdentifier if product.name.endswith("_trimmed")}
         assert declared == registered
+
+    def test_event_products_are_the_registered_calibration_event_products(self):
+        """The products tagged PartitionScheme.EVENT are exactly the registry's TRIMMED and CAL products."""
+        event = {product for product in DataProductIdentifier if product.partition_scheme is PartitionScheme.EVENT}
+        registered = {product for product in DataProductIdentifier if obsids.is_calibration_event_product(product)}
+        assert event == registered
 
     def test_get_combiner_step_returns_the_step_producing_the_obsids_cal_product(self):
         """TRIMMED product, combiner step and CAL product are 1:1:1."""

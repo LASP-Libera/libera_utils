@@ -226,6 +226,7 @@ def make_test_archive_buckets(create_mock_bucket):
     """Creates the test archive buckets for the libera unit tests"""
     create_mock_bucket("libera-l0-data-test")
     create_mock_bucket("libera-spice-kernels-test")
+    create_mock_bucket("libera-l1a-data-test")
     create_mock_bucket("libera-l1b-data-test")
     create_mock_bucket("libera-l2-data-test")
     create_mock_bucket("libera-ancillary-data-test")
@@ -327,33 +328,8 @@ def make_event_capturing_session(mock_s3_context_with_profile):
 
 
 @pytest.fixture
-def make_data_availability_table(mock_s3_context_with_profile):
-    """Creates a mocked SDC Data Availability DynamoDB table (PK=applicable_date, SK=DataProductId#Version).
-
-    Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
-    Returns the table name so tests can discover, seed, and assert against it.
-    """
-    table_name = "SDCDataIngesterDataAvailabilityTableTest123"
-    session = boto3.Session(profile_name="test-profile")
-    client = session.client("dynamodb", region_name=session.region_name)
-    client.create_table(
-        TableName=table_name,
-        KeySchema=[
-            {"AttributeName": "PK", "KeyType": "HASH"},
-            {"AttributeName": "SK", "KeyType": "RANGE"},
-        ],
-        AttributeDefinitions=[
-            {"AttributeName": "PK", "AttributeType": "S"},
-            {"AttributeName": "SK", "AttributeType": "S"},
-        ],
-        BillingMode="PAY_PER_REQUEST",
-    )
-    return table_name
-
-
-@pytest.fixture
 def make_file_metadata_table(mock_s3_context_with_profile):
-    """Creates a mocked SDC File Metadata DynamoDB table (PK=file basename, SK=applicable_date).
+    """Creates a mocked SDC File Metadata DynamoDB table (PK=file basename, SK="#" for a file's base record).
 
     Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
     Returns the table name so tests can discover, seed, and assert against it.

@@ -771,8 +771,8 @@ class LiberaDataProductDefinition(BaseModel):
         """Generate a standardized Libera data product filename.
 
         The product's partition scheme selects its filename class through ``PARTITION_SCHEME_FILENAME_CLASSES``. A
-        daily product is named with its data level and the time range of its data, taken from `time_variable`. A
-        version-partitioned product, one whose DataProductIdentifier has partition scheme
+        DAILY or EVENT product is named with its data level and the time range of its data, taken from
+        `time_variable`. A version-partitioned product, one whose DataProductIdentifier has partition scheme
         ``PartitionScheme.VERSION`` (such as an ADM), is named with its data level, product ID, version, and revision,
         so it needs no time variable.
 
@@ -780,11 +780,11 @@ class LiberaDataProductDefinition(BaseModel):
         ----------
         dataset : Dataset
             The Dataset for which to create a filename. Used to extract the product ID, the algorithm version, for a
-            daily product the start and end times, and the revision, which is the dataset's ``date_created``
+            DAILY or EVENT product the start and end times, and the revision, which is the dataset's ``date_created``
             attribute.
         time_variable : str | None
             Name of the datetime64 time variable whose minimum and maximum are the filename's start and end times.
-            It need not be sorted. Required for a daily product. Not used for a version-partitioned product, and a
+            It need not be sorted. Required for a DAILY or EVENT product. Not used for a version-partitioned product, and a
             ``UserWarning`` is issued if it is given.
 
         Returns
@@ -803,14 +803,21 @@ class LiberaDataProductDefinition(BaseModel):
         KeyError
             If the dataset lacks the ``ProductID``, ``algorithm_version`` or ``date_created`` attribute.
         ValueError
-            If ``date_created`` is not an ISO 8601 datetime string, if the product is daily and `time_variable` is
-            None, or if `time_variable` does not have a datetime64 dtype.
+            If ``date_created`` is not an ISO 8601 datetime string, if the product's partition scheme has no filename
+            class the SDC writes (TWO_HOUR or HOURLY), if the product is DAILY or EVENT and `time_variable` is None,
+            or if `time_variable` does not have a datetime64 dtype.
         """
         product_id = DataProductIdentifier(dataset.attrs["ProductID"])
         version = dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE]
         revision = datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE])
 
-        filename_class = PARTITION_SCHEME_FILENAME_CLASSES[product_id.partition_scheme]
+        filename_class = PARTITION_SCHEME_FILENAME_CLASSES.get(product_id.partition_scheme)
+        if filename_class is None:
+            raise ValueError(
+                f"{product_id} has partition scheme {product_id.partition_scheme}, which no SDC-written filename class "
+                "names: its files keep their EDOS or upstream names. Write only products with partition scheme "
+                f"{', '.join(PARTITION_SCHEME_FILENAME_CLASSES)}."
+            )
         if filename_class is LiberaVersionPartitionedDataProductFilename:
             if time_variable is not None:
                 # stacklevel 3 points the warning at the caller of write_libera_data_product.
@@ -826,7 +833,8 @@ class LiberaDataProductDefinition(BaseModel):
 
         if time_variable is None:
             raise ValueError(
-                f"{product_id} is a daily product, and its filename needs the time range of its data, but no "
+                f"{product_id} has partition scheme {product_id.partition_scheme}, so its filename needs the time range "
+                "of its data, but no "
                 "time_variable was given. Pass time_variable, the name of the datetime64 variable spanning the data."
             )
 

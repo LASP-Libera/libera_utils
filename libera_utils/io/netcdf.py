@@ -73,7 +73,7 @@ def write_libera_data_product(
     2. (Dataset input only) Set the ``date_created`` attribute to the current UTC time, overwriting (with a warning) any value the input Dataset already carries.
     3. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
     4. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
-    5. Generate the data product filename using the product definition and, for a daily product, the specified time variable. The filename's revision is the ``date_created`` set in step 1 or 2.
+    5. Generate the data product filename using the product definition and, for a DAILY or EVENT product, the specified time variable. The filename's revision is the ``date_created`` set in step 1 or 2.
     6. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
     A product already present at the generated path is replaced, on local disk and in S3
@@ -90,8 +90,8 @@ def write_libera_data_product(
     output_path : str | PathType
         Base path (directory or S3 prefix) at which to write the product file
     time_variable : str | None
-        Name of the datetime64 variable that indicates time. Required for a daily product, whose filename carries
-        the start and end time of this variable. Not used for a version-partitioned product, one whose
+        Name of the datetime64 variable that indicates time. Required for a DAILY or EVENT product, whose filename
+        carries the start and end time of this variable. Not used for a version-partitioned product, one whose
         DataProductIdentifier has partition scheme ``PartitionScheme.VERSION``, and a ``UserWarning`` is issued if it
         is given.
     dynamic_product_attributes : dict[str, Any] | None
@@ -123,7 +123,8 @@ def write_libera_data_product(
     Raises
     ------
     ValueError
-        If `dynamic_product_attributes` is passed alongside a Dataset, if the product is daily and
+        If `dynamic_product_attributes` is passed alongside a Dataset, if the product's partition scheme is
+        TWO_HOUR or HOURLY, whose files the SDC does not write, if the product is DAILY or EVENT and
         `time_variable` is None or does not have a datetime64 dtype, or, when `strict` is True, if
         the Dataset does not conform to the product definition. With `worker_compressed_variables`, before any data is
         computed: if the engine is not ``h5netcdf``; if a name is not a Dask-backed data variable

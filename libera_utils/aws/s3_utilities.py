@@ -9,8 +9,6 @@ from operator import itemgetter
 from pathlib import Path
 
 import boto3
-from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.aws.utils import (
@@ -24,7 +22,6 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
     AbstractValidFilename,
     AncillaryDataProductFilename,
-    DailyAncillaryDataProductFilename,
     L0Filename,
     LiberaDataProductFilename,
     LiberaGroundCcsdsFilename,
@@ -39,7 +36,6 @@ logger = logging.getLogger(__name__)
 # Partial name used to uniquely identify the SDC Ingest Dropbox bucket by regex search (see find_*_by_partial_name in
 # aws.utils). The SDC event bus partial name is shared via aws.utils.SDC_EVENT_BUS_PARTIAL_NAME.
 INGEST_DROPBOX_BUCKET_PARTIAL_NAME = "ingestdropbox"
-DATA_AVAILABILITY_TABLE_PARTIAL_NAME = "DataAvailabilityTable"
 FILE_METADATA_TABLE_PARTIAL_NAME = "FileMetadataTable"
 
 # These values are part of the NewFilesAvailable event contract and must match exactly what the SDC expects.
@@ -65,22 +61,11 @@ ManualIngestFilename = (
     | AncillaryDataProductFilename
 )
 
-# The filename classes ``verify_ingestion`` has checks for: a dated product's File Metadata and Data Availability
-# records are keyed on its applicable date, and an L0 or ground CCSDS file has its own record rules. A non-daily
-# file (a version-partitioned data product, or the version archive of IGBP or the land/ocean mask) has no
-# applicable date, so ``put --verify`` stages it but cannot verify it.
-# TODO[LIBSDC-880]: verify non-daily products once the ingester defines their records
-VerifiableIngestFilename = (
-    L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename | DailyAncillaryDataProductFilename
-)
-
-
-class IngestionNotVerifiedError(RuntimeError):
-    """Files were staged for ingest, but ``s3-utils put --verify`` could not verify their ingestion.
-
-    Raised after staging, so every file named in the message has been staged and its ``NewFilesAvailable`` event
-    emitted.
-    """
+# The File Metadata base record of every ingested file (sort key "#") carries these attributes. The Data Ingester sets
+# ingested-time when it ingests the file and archived-time once it has moved the file to its archive bucket.
+_BASE_RECORD_SORT_KEY = "#"
+_INGESTED_TIME_ATTRIBUTE = "ingested-time"
+_ARCHIVED_TIME_ATTRIBUTE = "archived-time"
 
 
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
@@ -127,17 +112,13 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
 
-    With ``--verify``, every file is staged and the ingestion of each L0, ground CCSDS, daily Libera data product and
-    daily ancillary file is verified. A non-daily file (a version-partitioned data product, or the version archive
-    of IGBP or the land/ocean mask) is staged but not verified, and the handler then raises naming it.
+    With ``--verify``, every file is staged and then each one's ingestion is verified from its File Metadata base
+    record (see ``verify_ingestion``).
 
     Raises
     ------
-    IngestionNotVerifiedError
-        If ``--verify`` is given and any file is non-daily (a version-partitioned data product or a non-daily
-        ancillary product), which ingestion verification does not yet support. Every file has still been staged.
     TimeoutError
-        If ``--verify`` is given and the verifiable files are not fully ingested within ``--timeout`` seconds.
+        If ``--verify`` is given and the files are not all ingested and archived within ``--timeout`` seconds.
     """
     now = datetime.now(UTC)
     configure_task_logging(f"aws_s3_put_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
@@ -155,25 +136,11 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 
     if parsed_args.verify:
-        # TODO[LIBSDC-880]: verify ingestion of non-daily files, then verify every staged file.
-        verifiable = [f for f in libera_filenames if isinstance(f, VerifiableIngestFilename)]
-        unverified = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
-        if unverified:
-            logger.warning(
-                "Staged %d non-daily file(s) that --verify cannot yet verify: %s", len(unverified), unverified
-            )
-        if verifiable:
-            logger.info(
-                "Verifying full ingestion of %d file(s) (timeout %.0fs)...", len(verifiable), parsed_args.timeout
-            )
-            verify_ingestion(verifiable, boto_session=boto_session, timeout=parsed_args.timeout)
-            logger.info("Verified full ingestion of %d file(s).", len(verifiable))
-        if unverified:
-            raise IngestionNotVerifiedError(
-                f"Staged {len(unverified)} non-daily file(s) whose ingestion --verify cannot yet confirm: "
-                f"{unverified}. Their NewFilesAvailable events were emitted. Confirm each one is archived under its "
-                "archive prefix in its archive bucket."
-            )
+        logger.info(
+            "Verifying full ingestion of %d file(s) (timeout %.0fs)...", len(libera_filenames), parsed_args.timeout
+        )
+        verify_ingestion(libera_filenames, boto_session=boto_session, timeout=parsed_args.timeout)
+        logger.info("Verified full ingestion of %d file(s).", len(libera_filenames))
     else:
         logger.info(
             "Staged %d file(s) to the Ingest Dropbox and emitted the NewFilesAvailable event(s). The SDC Data "
@@ -338,51 +305,30 @@ def put_new_files_available_event(files: list[dict], *, boto_session: boto3.Sess
     logger.info(f"Put NewFilesAvailable event with {len(files)} file(s) to event bus {event_bus_name}")
 
 
-def _archive_object_exists(s3_client, bucket: str, key: str) -> bool:
-    """Return whether an object exists at the given bucket/key (read-only ``head_object``)."""
-    try:
-        s3_client.head_object(Bucket=bucket, Key=key)
-        return True
-    except ClientError as err:
-        if err.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
-            return False
-        raise
-
-
 def verify_ingestion(
-    libera_filenames: list[VerifiableIngestFilename],
+    libera_filenames: list[ManualIngestFilename],
     *,
     boto_session: boto3.Session,
     timeout: float = DEFAULT_VERIFY_TIMEOUT_SECONDS,
     poll_interval: float = VERIFY_POLL_INTERVAL_SECONDS,
 ) -> None:
-    """Block until every staged file is confirmed fully ingested, or raise on timeout.
+    """Block until every staged file is confirmed ingested and archived, or raise on timeout.
 
-    For each file, up to three read-only checks are polled until they pass:
+    A file is confirmed when its File Metadata base record, ``(PK=<basename>, SK="#")``, exists and has both
+    ``ingested-time``, which the Data Ingester sets when it ingests the file, and ``archived-time``, which it sets once
+    it has moved the file to its archive bucket. Every kind of staged file has a base record, so every file is checked
+    the same way.
 
-    1. The file exists in its expected archive bucket (at its filename-derived archive prefix).
-    2. A Data Availability record exists for the data product/version/applicable-date (skipped for L0 PDS/CR and
-       ground CCSDS files, which the SDC does not write availability records for).
-    3. A File Metadata record exists for the file basename.
-
-    A daily external ancillary file is checked as a Libera data product is: its product File Metadata record and
-    its Data Availability record, keyed on its applicable date and upstream version. A non-daily ancillary file
-    (the version archive of IGBP or the land/ocean mask) has no applicable date and no checks here, so it is
-    rejected before any lookup; ``s3_put_cli_handler`` keeps such files out of the list it verifies.
-
-    A ground CCSDS capture passes on its base File Metadata row alone, so a successful
-    verification does not mean its packet time span was indexed into a searchable row.
-
-    All required AWS resources are resolved once up front; finding zero or more than one of any resource raises
-    immediately (it indicates a mismatch between Libera Utils and the deployed SDC). Checks are polled every
-    ``poll_interval`` seconds and each check stops being polled as soon as it passes. A per-file summary is always
-    logged; if any check is still unsatisfied at ``timeout``, a ``TimeoutError`` is raised.
+    The File Metadata table is resolved once up front; finding zero tables or more than one raises immediately (it
+    indicates a mismatch between Libera Utils and the deployed SDC). Each file's base record is read every
+    ``poll_interval`` seconds until it passes. A per-file summary is always logged; if any file has not passed at
+    ``timeout``, a ``TimeoutError`` is raised.
 
     Parameters
     ----------
     libera_filenames : list of AbstractDataProductFilename
-        The L0, ground CCSDS, Libera data product and daily ancillary filenames staged for ingest, as returned by
-        ``manual_ingest_data_products`` less any non-daily ancillary file.
+        The L0, ground CCSDS, Libera data product and external ancillary filenames staged for ingest, as returned by
+        ``manual_ingest_data_products``.
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
     timeout : float, optional
@@ -392,127 +338,49 @@ def verify_ingestion(
 
     Raises
     ------
-    TypeError
-        If any file is not an L0, ground CCSDS, Libera data product or daily ancillary filename, such as a
-        non-daily ancillary file.
+    ValueError
+        If zero or more than one File Metadata table is found in the account.
     TimeoutError
-        If any expected record/object is still missing when the timeout elapses.
+        If any file's base record is still missing, or lacks ``ingested-time`` or ``archived-time``, when the timeout
+        elapses.
     """
-    unverifiable = [f.path.name for f in libera_filenames if not isinstance(f, VerifiableIngestFilename)]
-    if unverifiable:
-        raise TypeError(
-            f"Cannot verify ingestion of {unverifiable}: only L0, ground CCSDS, Libera data product and daily "
-            "ancillary files have records to check. Ingest a non-daily file without --verify and confirm it in "
-            "its archive bucket."
-        )
-
-    s3_client = boto_session.client("s3")
-    dynamodb = boto_session.resource("dynamodb")
-
-    # Resolve all required resources once. Any 0/>1 match raises immediately (Libera Utils / SDC mismatch).
-    archive_bucket_by_level: dict = {}
-    dated_product_types = (LiberaDataProductFilename, DailyAncillaryDataProductFilename)
-    needs_availability = any(isinstance(f, dated_product_types) for f in libera_filenames)
-    file_specs = []
-    for libera_filename in libera_filenames:
-        data_level = libera_filename.data_product_id.data_level
-        if data_level not in archive_bucket_by_level:
-            archive_bucket_by_level[data_level] = find_bucket_in_account_by_partial_name(
-                boto_session, data_level.archive_bucket_name
-            )
-        spec = {
-            "name": libera_filename.path.name,
-            "bucket": archive_bucket_by_level[data_level],
-            "key": f"{libera_filename.archive_prefix}/{libera_filename.path.name}",
-            "is_data_product": isinstance(libera_filename, dated_product_types),
-        }
-        if spec["is_data_product"]:
-            spec["applicable_date"] = libera_filename.applicable_date.isoformat()
-            spec["data_product_id"] = str(libera_filename.data_product_id)
-            spec["version"] = libera_filename.filename_parts.version
-        elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
-            # A ground capture gets its base record plus a searchable record per applicable date its
-            # packets cover. A file whose packets yield no usable time span keeps only its base
-            # record, so the base record alone counts as ingested.
-            spec["min_metadata_count"] = 1
-        else:
-            # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets a base
-            # record plus a product record (SK=applicable_date) per applicable date it covers. We can't derive
-            # a PDS's applicable dates here, so we verify via record count.
-            is_construction_record = libera_filename.data_product_id == DataProductIdentifier.l0_pds_cr
-            spec["min_metadata_count"] = 1 if is_construction_record else 2
-        file_specs.append(spec)
-
-    metadata_table = dynamodb.Table(
+    metadata_table = boto_session.resource("dynamodb").Table(
         find_dynamodb_table_in_account_by_partial_name(boto_session, FILE_METADATA_TABLE_PARTIAL_NAME)
     )
-    availability_table = (
-        dynamodb.Table(
-            find_dynamodb_table_in_account_by_partial_name(boto_session, DATA_AVAILABILITY_TABLE_PARTIAL_NAME)
-        )
-        if needs_availability
-        else None
-    )
-
-    # Outstanding checks as (file_index, check_name) pairs; each is dropped as soon as it passes.
-    pending = set()
-    for i, spec in enumerate(file_specs):
-        pending.add((i, "archive"))
-        pending.add((i, "metadata"))
-        if spec["is_data_product"]:
-            pending.add((i, "availability"))
+    names = [libera_filename.path.name for libera_filename in libera_filenames]
+    # The last state seen for each file not yet verified: what its base record is missing.
+    missing = dict.fromkeys(names, "no base record")
 
     deadline = time.monotonic() + timeout
     while True:
-        # Memoize availability lookups within a pass so files sharing a record aren't fetched twice.
-        availability_memo: dict = {}
-        newly_passed = set()
-        for i, check_name in pending:
-            spec = file_specs[i]
-            if check_name == "archive":
-                passed = _archive_object_exists(s3_client, spec["bucket"], spec["key"])
-            elif check_name == "metadata":
-                if spec["is_data_product"]:
-                    # Data products: fetch the product record by its full (PK=basename, SK=applicable_date) key.
-                    response = metadata_table.get_item(Key={"PK": spec["name"], "SK": spec["applicable_date"]})
-                    passed = "Item" in response
-                else:
-                    # L0 and ground CCSDS: the ingester writes a base record (SK="#") for every file, plus a
-                    # product record (SK=applicable_date) per applicable date the file covers. A file's data
-                    # can span more than one day, so this count is a floor rather than an exact number.
-                    response = metadata_table.query(KeyConditionExpression=Key("PK").eq(spec["name"]))
-                    passed = response.get("Count", 0) >= spec["min_metadata_count"]
-            else:  # availability
-                # The Data Availability table is keyed by PK=applicable_date, SK="<DataProductId>#<Version>".
-                memo_key = (spec["applicable_date"], spec["data_product_id"], spec["version"])
-                if memo_key not in availability_memo:
-                    availability_response = availability_table.get_item(
-                        Key={"PK": spec["applicable_date"], "SK": f"{spec['data_product_id']}#{spec['version']}"}
-                    )
-                    availability_memo[memo_key] = "Item" in availability_response
-                passed = availability_memo[memo_key]
-            if passed:
-                newly_passed.add((i, check_name))
-
-        pending -= newly_passed
-        if not pending or time.monotonic() >= deadline:
+        for name in list(missing):
+            item = metadata_table.get_item(Key={"PK": name, "SK": _BASE_RECORD_SORT_KEY}).get("Item")
+            if item is None:
+                missing[name] = "no base record"
+                continue
+            unset = [attr for attr in (_INGESTED_TIME_ATTRIBUTE, _ARCHIVED_TIME_ATTRIBUTE) if not item.get(attr)]
+            if unset:
+                missing[name] = f"{' and '.join(unset)} not set"
+            else:
+                del missing[name]
+        if not missing or time.monotonic() >= deadline:
             break
         time.sleep(poll_interval)
 
-    _log_ingestion_verification_summary(file_specs, pending)
-    if pending:
+    _log_ingestion_verification_summary(names, missing)
+    if missing:
         raise TimeoutError(
-            f"Ingestion verification timed out after {timeout:.0f}s: {len(pending)} check(s) across "
-            f"{len({i for i, _ in pending})} file(s) did not pass. See the logged summary for details."
+            f"Ingestion verification timed out after {timeout:.0f}s: {len(missing)} of {len(names)} file(s) are not "
+            "yet ingested and archived. See the logged summary for what each one's File Metadata base record lacks."
         )
 
 
-def _log_ingestion_verification_summary(file_specs: list[dict], pending: set) -> None:
-    """Log a per-file PASS/MISSING summary of the ingestion verification checks."""
-    for i, spec in enumerate(file_specs):
-        check_names = ["archive", "metadata"] + (["availability"] if spec["is_data_product"] else [])
-        statuses = [f"{name}={'MISSING' if (i, name) in pending else 'OK'}" for name in check_names]
-        logger.info("Ingestion verification for %s: %s", spec["name"], ", ".join(statuses))
+def _log_ingestion_verification_summary(names: list[str], missing: dict[str, str]) -> None:
+    """Log a per-file summary of ingestion verification: PASS, or what the file's base record lacks."""
+    for name in names:
+        logger.info(
+            "Ingestion verification for %s: %s", name, f"MISSING ({missing[name]})" if name in missing else "PASS"
+        )
 
 
 def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:

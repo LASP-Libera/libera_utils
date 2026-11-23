@@ -7,19 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.28.0] - 2026-11-19
+
 ### Added
 
-- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
+- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version (none for NISE, whose name carries none) and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
 - `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, archived under `<ProductID>/<version>/<production YYYYMMDD>`. IGBP's version is its three-digit MCD12Q1 collection. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), gives `None` for a file not in that form, and raises `ValueError` for one in that form whose fields do not parse. (#107)
-- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the version archives it staged but cannot verify. Until the Data Ingester ingests external products (LIBSDC-859), their files are staged but not ingested, and `--verify` times out on the daily ones. (#107)
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except an IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. (#107)
+- `PartitionScheme` gains `TWO_HOUR` (every L0 product), `HOURLY` (`CERES-NOAA20-SSF` and `CERES-NOAA20-CLDPIX`)
+  and `EVENT` (every calibration ObsID's TRIMMED and CAL product), and `PartitionScheme.key_format` gives each
+  scheme's partition key format, which is Dagster's: `%Y-%m-%d` daily, `%Y-%m-%d-%H:%M` two-hour and hourly,
+  `%Y%m%dT%H%M%S` event, and `None` for version.
+- `DataProductIdentifier.longest_file_span` gives each L0 product but the Construction Record the longest effective
+  span (data time for a data-time-indexed APID, packet time otherwise) one of its files holds, the bound for the L0
+  coverage window query: 3 hours for `WFOV-SCI-PDS`, an estimate until it is measured (LIBSDC-957), and 2 hours 10
+  minutes for the rest.
+- `libera_utils.constants.format_coverage_key` writes the timestamp of a File Metadata `COVERAGE#` sort key in the
+  one format whose string order is time order: UTC, `YYYY-MM-DDTHH:MM:SS`, fractional seconds only when present, and
+  no zone suffix. It raises `ValueError` for a naive datetime.
+- Every data product filename class gives `partition_key` (its partition in its product's scheme, the Dagster
+  partition key, or `None` for an EDOS L0 file, whose chunk start comes from its Construction Record), `version` (PEP
+  440 for a Libera product, `V1-2-3RC1` becoming `1.2.3rc1`; as provided in the filename for an external one, or
+  `None` where the name carries none, as for NISE; a land/ocean mask grid gives the NSIDC-0609 dataset version `1`)
+  and `revision` (a UTC datetime, or `None` where the name carries none).
+- `libera_utils.io.ancillary_metadata.read_ancillary_file_metadata` reads a CERES or NISE file's version and revision
+  from the metadata inside the file, which its name does not carry: CERES SSF's `date_created`, CERES CLDPIX's
+  `processTime` (which gives no zone and is read as UTC), and NISE's core-metadata `VERSIONID` and
+  `PRODUCTIONDATETIME`; a CERES file's version is the production strategy in its name. A missing or unparsable value
+  raises `ValueError` naming the file and the attribute. A file on S3 is read from cloudpathlib's local copy.
 
 ### Changed
 
 - **BREAKING:** `DataProductIdentifier.anc_modis_igbp` and `anc_nsidc_land_ocean_mask` are partitioned by `PartitionScheme.VERSION`, not `DAILY`. (#107)
-- `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
+- **BREAKING:** `LiberaVersionPartitionedDataProductFilename` rejects an ancillary product, whose version archive is
+  named by `AncillaryVersionArchiveFilename`.
+- **BREAKING:** `LiberaDataProductFilename` accepts only `DAILY` and `EVENT` products, so an L0 or CERES product named
+  in its form is rejected, and `write_libera_data_product` raises `ValueError` for an L0 or CERES product instead of
+  naming it. Its version field, like `check_version_number_format`, needs digits in each part, so `V--` is rejected.
+- **BREAKING:** A ground-test capture (`LiberaGroundCcsdsFilename`) must be named by the start of its two-hour bin, an
+  even UTC hour with minutes and seconds `00`; any other time is rejected.
+- **BREAKING:** A ground-test capture is a file of its APID's L0 product: `LiberaGroundCcsdsFilename.data_product_id`
+  is `LiberaApid(apid).data_product_id` instead of `GROUND-CCSDS`, so captures of different APIDs in one bin are in
+  different partitions, and a name whose APID is not a `LiberaApid` member is rejected.
+- `AbstractValidFilename.from_file_path`, and so `s3-utils put`, gives a ground-test capture's or Libera data
+  product's own message for a name in its form with a field the class rejects, such as a capture time that is not a
+  bin start, instead of saying the name is in no known form.
+- **BREAKING:** `s3-utils put --verify` (`verify_ingestion`) checks only each staged file's File Metadata base record
+  (sort key `#`) and passes once it has both `ingested-time` and `archived-time`. It verifies every staged file,
+  version-partitioned ones included, and no longer checks the archive bucket, the Data Availability table, a
+  `PARTITION#` record or an L0 file's record count.
 
 ### Removed
 
+- **BREAKING:** `DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), since a ground-test capture is a file of its
+  APID's L0 product, and `libera_utils.io.filenaming.MAX_CCSDS_APID`.
+- **BREAKING:** `libera_utils.aws.s3_utilities.IngestionNotVerifiedError`, `VerifiableIngestFilename` and
+  `DATA_AVAILABILITY_TABLE_PARTIAL_NAME`, since `s3-utils put --verify` verifies every staged file from its base
+  record alone.
 - **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 
 ## [5.27.0] - 2026-11-18
@@ -1138,7 +1182,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.28.0...HEAD
+[5.28.0]: https://github.com/LASP-Libera/libera_utils/compare/5.27.0...5.28.0
 [5.27.0]: https://github.com/LASP-Libera/libera_utils/compare/5.26.0...5.27.0
 [5.26.0]: https://github.com/LASP-Libera/libera_utils/compare/5.25.0...5.26.0
 [5.25.0]: https://github.com/LASP-Libera/libera_utils/compare/5.24.0...5.25.0
