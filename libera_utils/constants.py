@@ -169,6 +169,7 @@ def format_coverage_key(instant: datetime) -> str:
 # test PDS files in tests/test_data/packets hold 1 h 59 min 59.1 s of data time each, under 2 h 10 min. WFOV science
 # data time can lag its packet time, so WFOV-SCI-PDS is given 3 h.
 _L0_LONGEST_FILE_SPAN = timedelta(hours=2, minutes=10)
+# TODO[LIBSDC-957]: set from the longest data-time span measured in WFOV-SCI PDS files
 _WFOV_SCI_LONGEST_FILE_SPAN = timedelta(hours=3)
 
 

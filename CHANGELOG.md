@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `%Y%m%dT%H%M%S` event, and `None` for version.
 - `DataProductIdentifier.longest_file_span` gives each L0 product but the Construction Record the longest effective
   span (data time for a data-time-indexed APID, packet time otherwise) one of its files holds, the bound for the L0
-  coverage window query: 3 hours for `WFOV-SCI-PDS` and 2 hours 10 minutes for the rest.
+  coverage window query: 3 hours for `WFOV-SCI-PDS`, an estimate until it is measured (LIBSDC-957), and 2 hours 10
+  minutes for the rest.
 - `libera_utils.constants.format_coverage_key` writes the timestamp of a File Metadata `COVERAGE#` sort key in the
   one format whose string order is time order: UTC, `YYYY-MM-DDTHH:MM:SS`, fractional seconds only when present, and
   no zone suffix. It raises `ValueError` for a naive datetime.
