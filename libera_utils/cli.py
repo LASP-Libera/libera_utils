@@ -362,8 +362,6 @@ def parse_cli_args(cli_args: list):
         help="Stage data product files for full SDC ingest (archiving + metadata + data availability)",
     )
     s3_put_parser.set_defaults(func=s3_utilities.s3_put_cli_handler)
-    # TODO[LIBSDC-859]: drop the ancillary note from this help and from usage.md once the Data Ingester ingests
-    # external products.
     s3_put_parser.add_argument(
         "file_paths",
         type=str,
@@ -371,21 +369,13 @@ def parse_cli_args(cli_args: list):
         metavar="file_path",
         help="Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data product "
         "or external ancillary product file. "
-        "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata. "
-        "External ancillary product files are staged, but the SDC Data Ingester does not ingest them yet, so "
-        "--verify times out on the daily ones.",
+        "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata.",
     )
-    # TODO[LIBSDC-880]: verify version-partitioned data product files in --verify, then drop the note from the help
-    # text.
     s3_put_parser.add_argument(
         "--verify",
         action="store_true",
-        help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
-        "and, for dated data products, data availability records), then report the result. A data product's file "
-        "metadata record is looked up at sort key PARTITION#<partition key>, so every data product times out until "
-        "the SDC's Data Ingester writes those records. A version-partitioned file (a Libera version-partitioned data "
-        "product, or the version archive of IGBP or the land/ocean mask) is staged but cannot be verified yet, and "
-        "the command then exits with an error naming it. Requires only read permissions.",
+        help="After triggering ingest, block until the File Metadata base record of each file shows it ingested and "
+        "archived (ingested-time and archived-time set), then report the result. Requires only read permissions.",
     )
     s3_put_parser.add_argument(
         "--timeout",

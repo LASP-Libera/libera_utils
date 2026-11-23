@@ -340,29 +340,12 @@ batch are split at the same limit.
 Each path must be a properly named L0, ground CCSDS, daily or version-partitioned Libera data product, or external
 ancillary product file (manifests and other filename types are rejected).
 
-% TODO[LIBSDC-859]: once the Data Ingester ingests external products, remove the paragraph below and the note in
-% the put help.
-
-External ancillary product files are staged, but the SDC Data Ingester does not ingest them yet, so `--verify` times
-out on the daily ones.
-
-By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
-block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata record
-and (for Libera and daily external ancillary data products) a Data Availability record. For a data product, the File
-Metadata record checked is the one whose sort key is `PARTITION#<partition key>` (see File Naming Conventions), which
-File Metadata writes once it has seen the file archived. Until the SDC Data Ingester writes those records, `--verify`
-times out for every data product, daily included. A version-partitioned ancillary file (the version archive of IGBP
-or the land/ocean mask) has no applicable date and cannot be verified yet: it is staged with the other files, which are
-verified, and the command then exits with an error naming it. Verification needs only read permissions. Use `--timeout`
-to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command logs a per-file
-summary and exits with an error.
-
-% TODO[LIBSDC-880]: once --verify verifies version-partitioned data product files, remove the paragraph below and the
-% note in the --verify help.
-
-`--verify` does not yet verify version-partitioned data product files (such as ADMs). They are staged and their events
-emitted with the other files, and once the other files are verified the command exits with an error naming the
-version-partitioned files it could not verify.
+By default the command returns as soon as the files are staged and the events are emitted. Pass `--verify` to instead
+block until each staged file is confirmed ingested: its File Metadata base record (sort key `#`) exists and has both
+`ingested-time`, set when the Data Ingester ingests the file, and `archived-time`, set once it has moved the file to
+its archive bucket. Every staged file is verified, whatever its product. Verification needs only read permissions. Use
+`--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command
+logs a per-file summary and exits with an error.
 
 ```shell
 usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]
@@ -370,16 +353,13 @@ usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [
 positional arguments:
   file_path          Path(s) to the file(s) to ingest. Each must be a properly named L0, ground CCSDS, Libera data
                      product or external ancillary product file. Files are staged to the SDC Ingest Dropbox and the
-                     SDC Data Ingester handles archiving and metadata. External ancillary product files are staged,
-                     but the SDC Data Ingester does not ingest them yet, so --verify times out on the daily ones.
+                     SDC Data Ingester handles archiving and metadata.
 
 options:
   -h, --help         show this help message and exit
-  --verify           After triggering ingest, block until each file is confirmed fully ingested (archived with
-                     metadata and, for dated data products, data availability records), then report the result. A non-
-                     daily file (a version-partitioned data product, or the version archive of IGBP or the land/ocean
-                     mask) is staged but cannot be verified yet, and the command then exits with an error naming it.
-                     Requires only read permissions.
+  --verify           After triggering ingest, block until the File Metadata base record of each file shows it ingested
+                     and archived (ingested-time and archived-time set), then report the result. Requires only read
+                     permissions.
   --timeout TIMEOUT  Seconds to wait for ingestion verification when --verify is set. Default is 300 (5 minutes).
 ```
 

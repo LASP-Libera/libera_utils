@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
 - `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, archived under `<ProductID>/<version>/<production YYYYMMDD>`. IGBP's version is its three-digit MCD12Q1 collection. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), gives `None` for a file not in that form, and raises `ValueError` for one in that form whose fields do not parse. (#107)
-- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. `put --verify` verifies the daily ones, then raises `IngestionNotVerifiedError` naming the version archives it staged but cannot verify. Until the Data Ingester ingests external products (LIBSDC-859), their files are staged but not ingested, and `--verify` times out on the daily ones. (#107)
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. (#107)
 - `PartitionScheme` gains `TWO_HOUR` (every L0 product), `HOURLY` (`CERES-NOAA20-SSF` and `CERES-NOAA20-CLDPIX`)
   and `EVENT` (every calibration ObsID's TRIMMED and CAL product), and `PartitionScheme.key_format` gives each
   scheme's partition key format, which is Dagster's: `%Y-%m-%d` daily, `%Y-%m-%d-%H:%M` two-hour and hourly,
@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** `DataProductIdentifier.anc_modis_igbp` and `anc_nsidc_land_ocean_mask` are partitioned by `PartitionScheme.VERSION`, not `DAILY`. (#107)
-- `verify_ingestion` raises `TypeError` for a filename class it has no checks for, instead of checking it as an L0 file. (#107)
 - **BREAKING:** `LiberaVersionPartitionedDataProductFilename` rejects an ancillary product, whose version archive is
   named by `AncillaryVersionArchiveFilename`.
 - **BREAKING:** `LiberaDataProductFilename` accepts only `DAILY` and `EVENT` products, so an L0 or CERES product named
@@ -46,14 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AbstractValidFilename.from_file_path`, and so `s3-utils put`, gives a ground-test capture's or Libera data
   product's own message for a name in its form with a field the class rejects, such as a capture time that is not a
   bin start, instead of saying the name is in no known form.
-- **BREAKING:** `s3-utils put --verify` checks a data product's File Metadata record at sort key
-  `PARTITION#<partition_key>` instead of its applicable date. Against an SDC whose Data Ingester does not yet write
-  `PARTITION#` records (libera_cdk LIBSDC-938), `--verify` times out for every data product, daily included.
+- **BREAKING:** `s3-utils put --verify` (`verify_ingestion`) checks only each staged file's File Metadata base record
+  (sort key `#`) and passes once it has both `ingested-time` and `archived-time`. It verifies every staged file,
+  version-partitioned ones included, and no longer checks the archive bucket, the Data Availability table, a
+  `PARTITION#` record or an L0 file's record count.
 
 ### Removed
 
 - **BREAKING:** `DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), since a ground-test capture is a file of its
   APID's L0 product, and `libera_utils.io.filenaming.MAX_CCSDS_APID`.
+- **BREAKING:** `libera_utils.aws.s3_utilities.IngestionNotVerifiedError`, `VerifiableIngestFilename` and
+  `DATA_AVAILABILITY_TABLE_PARTIAL_NAME`, since `s3-utils put --verify` verifies every staged file from its base
+  record alone.
 - **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). The footprint granules FMATCH reads are CERES SSF (`CER_SSF_...`), identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), and no FLASHFlux (`FLASH_SSF_...`) input is used, so `CeresFilename` rejects `FLASH_SSF_` names. (#107)
 
 ## [5.27.0] - 2026-11-18
