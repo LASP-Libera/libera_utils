@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
+- Filename classes that parse external ancillary products under their providers' names: `CeresFilename` (CERES SSF, CLDPIX), `ModisViirsDailyFilename`, `ViirsSdrFilename`, `NsidcNiseFilename` and `Era5Filename`, whose `from_filename_parts` builds the SDC's ERA5 name. Each gives its `DataProductIdentifier`, version (none for NISE, whose name carries none) and the UTC period the file is used for, and archives under `<ProductID>/YYYY/MM/DD`. They are built on the bases `AncillaryDataProductFilename`, `DailyAncillaryDataProductFilename` and `AncillaryArchiveMemberFilename`; `ANCILLARY_ARCHIVE_MEMBER_CLASSES` maps each version-partitioned product to its member class. (#107)
 - `AncillaryVersionArchiveFilename` names the zip that holds every file of one version of IGBP or the land/ocean mask, `<ProductID>_<version>_<production YYYYMMDD>_<revision>.zip`, archived under `<ProductID>/<version>/<production YYYYMMDD>`. IGBP's version is its three-digit MCD12Q1 collection. Its `member_filename` parses a file in the zip with `ModisIgbpFilename` (an MCD12Q1 tile) or `NsidcLandOceanMaskFilename` (a global NSIDC-0609 grid), gives `None` for a file not in that form, and raises `ValueError` for one in that form whose fields do not parse. (#107)
-- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except a loose IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. (#107)
+- `AbstractValidFilename.from_file_path` and `s3-utils put` accept these names, except an IGBP tile or mask grid, which is ingested only inside its version archive and is rejected with a message naming that archive. (#107)
 - `PartitionScheme` gains `TWO_HOUR` (every L0 product), `HOURLY` (`CERES-NOAA20-SSF` and `CERES-NOAA20-CLDPIX`)
   and `EVENT` (every calibration ObsID's TRIMMED and CAL product), and `PartitionScheme.key_format` gives each
   scheme's partition key format, which is Dagster's: `%Y-%m-%d` daily, `%Y-%m-%d-%H:%M` two-hour and hourly,
@@ -26,8 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no zone suffix. It raises `ValueError` for a naive datetime.
 - Every data product filename class gives `partition_key` (its partition in its product's scheme, the Dagster
   partition key, or `None` for an EDOS L0 file, whose chunk start comes from its Construction Record), `version` (PEP
-  440 for a Libera product, `V1-2-3RC1` becoming `1.2.3rc1`; as named for an external one) and `revision` (a UTC
-  datetime, or `None` where the name carries none).
+  440 for a Libera product, `V1-2-3RC1` becoming `1.2.3rc1`; as provided in the filename for an external one, or
+  `None` where the name carries none, as for NISE; a land/ocean mask grid gives the NSIDC-0609 dataset version `1`)
+  and `revision` (a UTC datetime, or `None` where the name carries none).
+- `libera_utils.io.ancillary_metadata.read_ancillary_file_metadata` reads a CERES or NISE file's version and revision
+  from the metadata inside the file, which its name does not carry: CERES SSF's `date_created`, CERES CLDPIX's
+  `processTime` (which gives no zone and is read as UTC), and NISE's core-metadata `VERSIONID` and
+  `PRODUCTIONDATETIME`; a CERES file's version is the production strategy in its name. A missing or unparsable value
+  raises `ValueError` naming the file and the attribute. A file on S3 is read from cloudpathlib's local copy.
 
 ### Changed
 

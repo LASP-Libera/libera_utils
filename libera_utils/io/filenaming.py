@@ -198,19 +198,20 @@ VIIRS_SDR_REGEX = re.compile(
     r"\.h5$"
 )
 
-# NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2). The name carries no version; NISE_VERSION is the
-# collection's VERSIONID from the files' core metadata.
+# NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2). The name carries no version or revision; both are
+# in the file's core metadata.
 NSIDC_NISE_REGEX = re.compile(r"^NISE_AMSR2_(?P<date>[0-9]{8})\.HDFEOS$")
-NISE_VERSION = "1"
 
 # NSIDC EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0609), global (M) grids only, at the resolutions the
-# dataset provides. The name carries no version; NSIDC_LAND_OCEAN_MASK_VERSION is the dataset version.
+# dataset provides.
 NSIDC_LAND_OCEAN_MASK_REGEX = re.compile(
     r"^EASE2_M(?P<resolution_km>03|6\.25|09|12\.5|25|36)km"
     r"\.LOCImask_land50_coast0km"
     r"\.(?P<columns>[0-9]+)x(?P<rows>[0-9]+)"
     r"\.bin$"
 )
+# A mask grid's name carries no version, and NSIDC-0609 has had only version 1, so every grid parses as "1". A grid of
+# a later version would still parse as "1"; its version archive is keyed by the version in the zip's name.
 NSIDC_LAND_OCEAN_MASK_VERSION = "1"
 
 # The version-partitioned ancillary products (IGBP and the land/ocean mask) are ingested as one zip archive per
@@ -299,9 +300,8 @@ class AbstractValidFilename(ABC):
         ValueError
             If no filename class accepts the path. A ground-test capture or Libera data product name that is in its
             class's form but has a field the class rejects, such as a capture time that is not a two-hour bin start,
-            is rejected with that class's message. A loose file of a version-partitioned ancillary product (an
-            MCD12Q1 tile or an NSIDC-0609 grid) is rejected with a message naming the version archive it is
-            ingested in.
+            is rejected with that class's message. A file that is ingested only inside a version archive (an
+            MCD12Q1 tile or an NSIDC-0609 grid) is rejected with a message naming that archive.
         """
         for CandidateClass in (
             L0Filename,
@@ -505,7 +505,8 @@ class AbstractDataProductFilename(AbstractValidFilename):
     @property
     @abstractmethod
     def version(self) -> str | None:
-        """The version of the file's product, PEP 440 for a Libera product and as named for an external one.
+        """The version of the file's product, PEP 440 for a Libera product, and as provided in the filename for an
+        external one, or None where the name carries none.
 
         Returns
         -------
@@ -1745,12 +1746,18 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
     not build them. Setting the path parses every field, so a name whose fields match the pattern but do not form
     a real date or time is rejected when the object is created.
 
-    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string),
-    ``revision`` (the production or creation time the name carries, or ``None``) and ``utc_start`` / ``utc_end``,
-    the UTC period the file is used for. CERES gives its hour, and VIIRS L3 and NISE their day, each ending at the
-    start of the next hour or day (end exclusive); the VJ143C1 BRDF composite gives its nominal day, although it
-    spans 16 days; a VIIRS SDR granule gives its ``t`` and ``e`` times; ERA5 gives its first and last hourly steps
-    (end inclusive). They are ``None`` for a version archive and the files inside it, whose names give no period.
+    Each concrete class's parsed parts include ``data_product_id``, ``version`` (the upstream version string, or
+    ``None`` where the name carries none), ``revision`` (the production or creation time the name carries, or
+    ``None``) and ``utc_start`` / ``utc_end``, the UTC period the file is used for. CERES gives its hour, and VIIRS
+    L3 and NISE their day, each ending at the start of the next hour or day (end exclusive); the VJ143C1 BRDF
+    composite gives its ``A`` date, the ninth day of the 16-day retrieval window it is computed from (the 8 days
+    before to the 7 after), the day the retrieval weights most (LP DAAC VJ143C1 product description); a VIIRS SDR
+    granule gives its start and stop times (``t``, ``e``); ERA5 gives its first and last hourly steps (end
+    inclusive). They are ``None`` for a version archive and the files inside it, whose names give no period.
+
+    A CERES or NISE file's revision, and a NISE file's version, are in the file itself:
+    :func:`~libera_utils.io.ancillary_metadata.read_ancillary_file_metadata` reads them. A filename class never
+    opens its file.
     """
 
     @AbstractValidFilename.path.setter
@@ -1835,18 +1842,19 @@ class AncillaryDataProductFilename(AbstractDataProductFilename):
         """
         scheme = self.data_product_id.partition_scheme
         if scheme is PartitionScheme.VERSION:
-            return self.version
+            return self.filename_parts.version
         if scheme is PartitionScheme.DAILY:
             return _format_partition_key(scheme, self.filename_parts.applicable_date)
         return _format_partition_key(scheme, self.filename_parts.utc_start)
 
     @property
-    def version(self) -> str:
-        """The upstream version as the name carries it, or the dataset version where the name carries none.
+    def version(self) -> str | None:
+        """The upstream version as provided in the filename, the NSIDC-0609 dataset version for a mask grid, or None
+        where the name carries none (NISE).
 
         Returns
         -------
-        str
+        str | None
             The version
         """
         return self.filename_parts.version
@@ -1900,8 +1908,9 @@ class DailyAncillaryDataProductFilename(AncillaryDataProductFilename):
     def applicable_date(self) -> date:
         """The UTC date the file's data apply to, as named in the filename.
 
-        A granule shorter than a day (hourly CERES, an ~85 s VIIRS SDR granule) or longer (the 16-day VIIRS BRDF
-        composite) takes the date its name gives: the start date, or the BRDF composite's nominal date.
+        A granule shorter than a day (hourly CERES, an ~85 s VIIRS SDR granule) or computed from more than a day
+        (the VIIRS BRDF composite) takes the date its name gives: the start date, or the BRDF composite's ``A``
+        date, the ninth day of its 16-day retrieval window.
         """
         return self.filename_parts.applicable_date
 
@@ -1923,6 +1932,9 @@ class CeresFilename(DailyAncillaryDataProductFilename):
 
     - ``version`` is the production strategy, e.g. ``Edition1C`` for SSF or ``1P9test`` for CLDPIX.
     - ``configuration_code`` is the six-digit CERES configuration code.
+    - ``revision`` is ``None``: the name carries none.
+      :func:`~libera_utils.io.ancillary_metadata.read_ancillary_file_metadata` reads it from the file's
+      ``date_created`` (SSF) or ``processTime`` (CLDPIX).
     - ``utc_start`` is the start of the hour and ``utc_end`` the start of the next; ``applicable_date`` is the UTC
       date of ``utc_start``.
     """
@@ -2020,8 +2032,9 @@ class ModisViirsDailyFilename(DailyAncillaryDataProductFilename):
     daily grids; the yearly MCD12Q1 land cover map in the same form is named by
     :class:`~libera_utils.io.filenaming.ModisIgbpFilename`.
 
-    - ``applicable_date`` is the ``A`` date, and ``utc_start`` / ``utc_end`` span that day. For the 16-day BRDF
-      composite (``VJ143C1``) it is the composite's nominal date, which the provider issues daily.
+    - ``applicable_date`` is the ``A`` date, and ``utc_start`` / ``utc_end`` span that day. The BRDF composite
+      (``VJ143C1``), issued daily, is computed from a 16-day retrieval window, the 8 days before its ``A`` date to
+      the 7 after, and weights the ``A`` date, the window's ninth day, most (LP DAAC VJ143C1 product description).
     - ``version`` is the three-digit collection.
     - ``production_time`` is the UTC time the provider produced the file.
     """
@@ -2143,9 +2156,15 @@ class ViirsSdrFilename(DailyAncillaryDataProductFilename):
     ``<kind>_j01_d<YYYYMMDD>_t<HHMMSSs>_e<HHMMSSs>_b<orbit>_c<YYYYMMDDHHMMSSffffff>_<origin>_ops.h5``,
     e.g. ``IVCDB_j01_d20241002_t1244587_e1246229_b67009_c20241004192414197049_oebc_ops.h5``.
 
+    The fields, per the JPSS Common Data Format Control Book - External (CDFCB-X) Vol. I, Rev F, Table 3.4.1-1:
+    ``d`` is the granule's start date, ``t`` its start time and ``e`` its stop time (UTC, to tenths of a second);
+    ``b`` is the orbit number; ``c`` is the creation time (UTC, to the microsecond); and the origin, e.g. ``oebc``, is
+    the IDPS Operational Environment B plus a compression flag (``c`` for compressed).
+
     - ``kind`` is ``IVCDB`` (radiances, VIIRS-DualGain-Cal-IP) or ``ICDBG`` (geolocation, VIIRS-MOD-UNAGG-GEO).
       Both are the one product ``VIIRS-NOAA20-M4-SDR``, as single granules or aggregates.
-    - ``utc_start`` and ``utc_end`` carry tenths of a second; an end earlier than the start is on the next day.
+    - ``utc_start`` and ``utc_end`` are the ``t`` and ``e`` times on the ``d`` date; an end earlier than the start is
+      on the next day.
     - ``applicable_date`` is the ``d`` (start) date.
     - ``version`` is the ``c`` creation time, as its 20 digits.
     """
@@ -2194,8 +2213,9 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
     """Filename class for the NSIDC Near-real-time Ice and Snow Extent from AMSR2 (NISE_A2).
 
     Form: ``NISE_AMSR2_<YYYYMMDD>.HDFEOS``, e.g. ``NISE_AMSR2_20260610.HDFEOS``. ``applicable_date`` is the named
-    date, which ``utc_start`` / ``utc_end`` span. The name carries no version, so ``version`` is the NISE_A2
-    collection version, ``"1"``, the ``VERSIONID`` in the files' core metadata.
+    date, which ``utc_start`` / ``utc_end`` span. The name carries no version or revision, so both are ``None``;
+    :func:`~libera_utils.io.ancillary_metadata.read_ancillary_file_metadata` reads the ``VERSIONID`` and
+    ``PRODUCTIONDATETIME`` in the file's core metadata.
     """
 
     _regex = NSIDC_NISE_REGEX
@@ -2224,8 +2244,7 @@ class NsidcNiseFilename(DailyAncillaryDataProductFilename):
         utc_end = utc_start + timedelta(days=1)
         return SimpleNamespace(
             data_product_id=DataProductIdentifier.anc_nsidc_ice_snow,
-            # TODO[LIBSDC-859]: Confirm the version Data Availability keys NISE files on
-            version=NISE_VERSION,
+            version=None,
             revision=None,
             applicable_date=applicable_date,
             utc_start=utc_start,

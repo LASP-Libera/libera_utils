@@ -1371,7 +1371,7 @@ ANCILLARY_SAMPLES = [
         "NISE_AMSR2_20260610_subset.HDFEOS",
         filenaming.NsidcNiseFilename,
         DataProductIdentifier.anc_nsidc_ice_snow,
-        "1",
+        None,
         dt.date(2026, 6, 10),
         "NSIDC-ICE-SNOW/2026/06/10",
         id="nise",

@@ -173,10 +173,12 @@ The function automatically:
 - Ensures CF-convention compliance
 
 `time_variable` is required for a daily or event product, and `write_libera_data_product` raises a `ValueError`
-without it. L0 and CERES products (`TWO_HOUR` and `HOURLY`) keep their EDOS and upstream names and cannot be written.
-`time_variable` is not used for version-partitioned products and `write_libera_data_product` issues a `UserWarning`
-if it is given. The function returns a `LiberaDataProductFilename` for a daily or event product and a
+without it. `time_variable` is not used for version-partitioned products and `write_libera_data_product` issues a
+`UserWarning` if it is given. The function returns a `LiberaDataProductFilename` for a daily or event product and a
 `LiberaVersionPartitionedDataProductFilename` for a version-partitioned one.
+
+`write_libera_data_product` writes Libera data products only, those with partition scheme `DAILY`, `EVENT` or
+`VERSION`, and raises a `ValueError` for any other product.
 
 ## Advanced Usage
 

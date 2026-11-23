@@ -112,9 +112,10 @@ its file's `partition_key`.
 
 `LiberaDataProductFilename.applicable_date`, and with it `archive_prefix`, dates an event file by
 the UTC day the event **started**, whatever its length, so an event that crosses midnight is
-archived under its start day. Every other product is dated by the midpoint of its time range. A
-ProductID's `partition_scheme` says which rule it follows; `is_calibration_event_product` answers
-the same question from the registry.
+archived under its start day. `obsids.is_calibration_event_product` says whether a product is the
+TRIMMED or CAL product of an ObsID in `obsid_registry.csv`, and
+`test_event_products_are_the_registered_calibration_event_products` in `tests/unit/test_obsids.py`
+checks that the two name the same products.
 
 ## Consumer 1: the L1A trim step
 
